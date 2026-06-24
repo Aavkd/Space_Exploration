@@ -6,7 +6,14 @@ import {
     POST_FX_PRESET_NAMES,
     resolvePostFxPresetName
 } from '../config/postFxPresets.js';
-import { DeepSpaceEnvironment } from '../space/DeepSpaceEnvironment.js';
+import {
+    UNIVERSE_CONFIG,
+    UNIVERSE_PRESETS,
+    UNIVERSE_PRESET_NAMES,
+    cloneUniverseConfig,
+    resolveUniversePresetName
+} from '../config/universePresets.js';
+import { Universe } from '../space/Universe.js';
 import { GravityField } from '../space/GravityField.js';
 import { Ship } from '../ship/Ship.js';
 import { ShipControls } from '../ship/ShipControls.js';
@@ -17,17 +24,21 @@ import { GamepadInput } from '../input/GamepadInput.js';
 import { SkyDeepSpace } from '../rendering/SkyDeepSpace.js';
 import { RenderPipeline } from '../rendering/RenderPipeline.js';
 import { PostProcessingPanel } from '../rendering/PostProcessingPanel.js';
+import { UniversePanel } from '../rendering/UniversePanel.js';
 import { XRExperience } from '../xr/XRExperience.js';
 import { XRVisualEffects } from '../xr/XRVisualEffects.js';
 import { DiegeticStatusPanel } from '../ui/DiegeticStatusPanel.js';
+import { UniverseNavigation } from '../ui/UniverseNavigation.js';
 
 export class App {
     constructor({ canvas }) {
         this.canvas = canvas;
         this.clock = new THREE.Clock();
         this.scene = new THREE.Scene();
+        this.universeConfig = cloneUniverseConfig(UNIVERSE_CONFIG);
+        this.activeUniversePreset = UNIVERSE_PRESET_NAMES.default;
         this.scene.background = new THREE.Color(0x000005);
-        this.scene.fog = new THREE.FogExp2(0x000005, DEEP_SPACE_PRESET.fogDensity);
+        this.scene.fog = new THREE.FogExp2(0x000005, this.universeConfig.global.fogDensity);
 
         this.camera = new THREE.PerspectiveCamera(
             70,
@@ -42,7 +53,8 @@ export class App {
             canvas: this.canvas,
             antialias: true,
             preserveDrawingBuffer: true,
-            powerPreference: 'high-performance'
+            powerPreference: 'high-performance',
+            logarithmicDepthBuffer: true
         });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -56,10 +68,7 @@ export class App {
         this._setupEnvironmentLighting();
 
         this.sky = new SkyDeepSpace(this.scene);
-        this.environment = new DeepSpaceEnvironment({
-            preset: DEEP_SPACE_PRESET,
-            seed: 'deep-space-vr-foundation'
-        });
+        this.environment = new Universe({ config: this.universeConfig });
         this.scene.add(this.environment.group);
 
         // Gravity is decoupled from the meshes: the environment hands out
@@ -143,6 +152,14 @@ export class App {
             onChange: () => this._handleRuntimeConfigChange(),
             onPreset: (name) => this.applyFxPreset(name)
         });
+        this.universePanel = new UniversePanel({
+            config: this.universeConfig,
+            presets: UNIVERSE_PRESETS,
+            onLiveChange: () => this._handleUniverseLiveChange(),
+            onRegen: () => this.regenerateUniverse(),
+            onPreset: (name) => this.applyUniversePreset(name)
+        });
+        this.universeNavigation = new UniverseNavigation({ universe: this.environment });
         this.diegeticPanel = new DiegeticStatusPanel();
         this.camera.add(this.diegeticPanel.object3D);
         this.xr = new XRExperience({
@@ -212,7 +229,7 @@ export class App {
         }
 
         this.playerRig.update(dt);
-        this.environment.update(this.ship.position, dt);
+        this.environment.update(this.ship.position, dt, this.camera.position);
         this.sky.update(dt, this.camera.position);
 
         // Warp + speed lines react to actual ship speed. The speed-driven warp
@@ -223,6 +240,16 @@ export class App {
         this.renderPipeline.setWarpSpeedFactor(Math.min(speedFactor, warpCeiling));
 
         this._updateTelemetry();
+        this.universeNavigation.update({
+            shipPosition: this.ship.position,
+            camera: this.camera,
+            displayMode: this.displayMode
+        });
+        this.universePanel.updateStats({
+            counts: this.environment.getCounts(),
+            currentNode: this.environment.getCurrentNode(this.ship.position),
+            fps: 1 / Math.max(dt, 0.0001)
+        });
         this._updateDiegeticPanel();
         this.xrVisualEffects.update(dt, {
             config: this.postFxConfig.xrVisualFx,
@@ -284,6 +311,7 @@ export class App {
         this.displayMode = 'vr';
         this._exitPointerLock();
         this.postPanel.setVisible(false);
+        this.universePanel.setVisible(false);
         this._enterPlayerMode();
         this.playerController.setComfortMode(true);
         this._applyRuntimeConfig();
@@ -310,9 +338,34 @@ export class App {
         return this.activePreset;
     }
 
+    applyUniversePreset(name) {
+        const key = resolveUniversePresetName(name);
+        if (!key) return false;
+
+        replaceConfig(this.universeConfig, UNIVERSE_PRESETS[key]);
+        this.activeUniversePreset = UNIVERSE_PRESET_NAMES[key] ?? key;
+        this.universePanel.refresh();
+        this.regenerateUniverse();
+        this._syncDebugDomState();
+        return this.activeUniversePreset;
+    }
+
+    regenerateUniverse() {
+        this.environment.regenerate(this.universeConfig);
+        this.gravityField.setAttractors(this.environment.getAttractors());
+        this._applyUniverseRuntimeConfig();
+        this._syncDebugDomState();
+    }
+
     _handleRuntimeConfigChange() {
         this.activePreset = 'custom';
         this._applyRuntimeConfig();
+        this._syncDebugDomState();
+    }
+
+    _handleUniverseLiveChange() {
+        this.activeUniversePreset = 'custom';
+        this._applyUniverseRuntimeConfig();
         this._syncDebugDomState();
     }
 
@@ -505,6 +558,11 @@ export class App {
             );
         }
 
+        const currentNode = this.environment.getCurrentNode(this.ship.position);
+        if (currentNode) {
+            lines.push(`<b>SECTOR</b> ${currentNode.name} / ${currentNode.theme}`);
+        }
+
         this.telemetryNode.innerHTML = lines.join('\n');
 
         // Contextual interaction prompt (player mode only).
@@ -525,6 +583,8 @@ export class App {
             dampeners: controls.dampeners,
             pilotActive: controls.pilotActive,
             preset: this.activePreset,
+            universe: this.activeUniversePreset,
+            nav: this.universeNavigation.getState(),
             prompt: this.cameraMode === 'player' ? this.playerController.getPrompt() : null
         });
     }
@@ -548,6 +608,13 @@ export class App {
                 this.postPanel.toggle();
                 // The panel needs the mouse, so drop pointer lock when it opens.
                 if (this.postPanel.visible) this._exitPointerLock();
+                return;
+            }
+
+            if (event.code === 'F10') {
+                event.preventDefault();
+                this.universePanel.toggle();
+                if (this.universePanel.visible) this._exitPointerLock();
                 return;
             }
 
@@ -651,7 +718,7 @@ export class App {
         // Pointer lock for first-person mouse look (player mode only). Clicking
         // the canvas grabs the mouse; Esc (browser default) or opening F2 frees it.
         this.canvas.addEventListener('click', () => {
-            if (this.cameraMode === 'player' && !this.postPanel.visible) {
+            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible) {
                 this.canvas.requestPointerLock?.();
             }
         });
@@ -705,9 +772,7 @@ export class App {
 
         this.ship.setBloom((this.postFxConfig.ship?.bloom ?? 1) * shipGlow);
 
-        // Physics knobs surfaced through F2: gravity master gain (Deep Space) and
-        // the linear acceleration cap (VR Comfort).
-        this.gravityField.setGravityScale(this.postFxConfig.deepSpace?.gravityScale ?? 1);
+        this._applyUniverseRuntimeConfig({ sceneGlow, starGlow, nebulaGlow, landmarkGlow });
         this.ship.physics.setAccelerationCap(this.postFxConfig.vrComfort?.accelerationCap ?? 45);
         this.ship.speedLines.setMaxOpacity(this.postFxConfig.vrComfort?.speedLinesMaxOpacity ?? 0.38);
         this.xr.setControllerSpheresVisible(this.postFxConfig.vrComfort?.controllerSpheresVisible ?? true);
@@ -720,18 +785,37 @@ export class App {
         this.playerController.setComfortMode(this.displayMode === 'vr');
 
         this.renderPipeline.applyConfig(this.postFxConfig);
+    }
+
+    _applyUniverseRuntimeConfig({
+        sceneGlow = 1,
+        starGlow = 1,
+        nebulaGlow = 1,
+        landmarkGlow = 1
+    } = {}) {
+        this.gravityField.setGravityScale(this.universeConfig.global.gravityScale ?? 1);
+        if (this.scene.fog) this.scene.fog.density = this.universeConfig.global.fogDensity;
+        this.camera.far = Math.max(DEEP_SPACE_PRESET.cameraFar, this.universeConfig.global.regionRadius * 2.4);
+        this.camera.updateProjectionMatrix();
         this.environment.setRuntimeConfig({
-            starOpacity: this.postFxConfig.deepSpace.starOpacity,
-            starBrightness: this.postFxConfig.deepSpace.starBrightness * sceneGlow * starGlow,
-            starSize: this.postFxConfig.deepSpace.starSize,
-            nebulaOpacity: this.postFxConfig.deepSpace.nebulaOpacity,
-            nebulaBrightness: this.postFxConfig.deepSpace.nebulaBrightness * sceneGlow * nebulaGlow,
-            nebulaScale: this.postFxConfig.deepSpace.nebulaScale
+            global: {
+                gravityScale: this.universeConfig.global.gravityScale,
+                fogDensity: this.universeConfig.global.fogDensity
+            },
+            stars: {
+                ...this.universeConfig.stars,
+                brightness: this.universeConfig.stars.brightness * sceneGlow * starGlow
+            },
+            galaxies: this.universeConfig.galaxies,
+            blackHoles: this.universeConfig.blackHoles,
+            nebulae: {
+                ...this.universeConfig.nebulae,
+                brightness: this.universeConfig.nebulae.brightness * sceneGlow * nebulaGlow
+            },
+            lighting: this.universeConfig.lighting,
+            events: this.universeConfig.events
         });
-        this.environment.setVisualGlow({
-            sceneGlow,
-            landmarkGlow
-        });
+        this.environment.setVisualGlow({ sceneGlow, landmarkGlow });
     }
 
     async _loadInitialJsonPreset() {
@@ -746,6 +830,19 @@ export class App {
             this._applyRuntimeConfig();
         } catch (error) {
             console.warn('Could not load post_processing.json', error);
+        }
+
+        try {
+            const response = await fetch('./assets/config/universe.json');
+            if (!response.ok) return;
+
+            const json = await response.json();
+            mergeConfig(this.universeConfig, json);
+            this.activeUniversePreset = 'custom_json';
+            this.universePanel.refresh();
+            this.regenerateUniverse();
+        } catch (error) {
+            console.warn('Could not load universe.json', error);
         }
     }
 
@@ -792,6 +889,10 @@ export class App {
             getXrVisualFxState: () => this.xrVisualEffects.getDebugState(),
             applyFxPreset: (name) => this.applyFxPreset(name),
             getActivePreset: () => this.activePreset,
+            getUniverseState: () => this.environment.getDebugState(this.ship.position),
+            getUniverseConfig: () => structuredClone(this.universeConfig),
+            applyUniversePreset: (name) => this.applyUniversePreset(name),
+            regenerateUniverse: () => this.regenerateUniverse(),
             getComfortState: () => ({ ...this.postFxConfig.vrComfort }),
             getDiegeticPanelState: () => this.diegeticPanel.getDebugState(),
             getVrHudState: () => ({

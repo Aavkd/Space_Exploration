@@ -137,18 +137,6 @@ export class PostProcessingPanel {
                 ['angle', 'range', 0, 180, 1],
                 ['scale', 'range', 0.5, 4, 0.1]
             ]),
-            this._createGroup('Deep Space', this.config.deepSpace, [
-                ['starOpacity', 'range', 0, 1, 0.01],
-                ['starBrightness', 'range', 0, 6, 0.05],
-                ['starSize', 'range', 1, 18, 0.5],
-                ['nebulaOpacity', 'range', 0, 1.5, 0.01],
-                ['nebulaBrightness', 'range', 0, 6, 0.05],
-                ['nebulaScale', 'range', 0.3, 2.5, 0.01],
-                ['galaxyDensity', 'range', 0, 2, 0.01],
-                ['blackHoleChance', 'range', 0, 1, 0.01],
-                ['anomalyChance', 'range', 0, 1, 0.01],
-                ['gravityScale', 'range', 0, 4, 0.05]
-            ]),
             this._createGroup('VR Comfort', this.config.vrComfort, [
                 ['bloomMax', 'range', 0, 2, 0.01],
                 ['warpMax', 'range', 0, 1, 0.01],

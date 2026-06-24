@@ -22,6 +22,8 @@ src/
   rendering/
   ship/
   space/
+    universe/
+  ui/
 ```
 
 ## Module conventions
@@ -30,10 +32,18 @@ src/
 - Local imports include `.js` extensions.
 - Three.js is loaded through the import map in `index.html` so no build step is required.
 - `src/app/` owns app orchestration, lifecycle, input, resize, and browser wiring.
-- `src/space/` owns Deep Space environment generation and future deterministic chunks.
+- `src/space/` owns the procedural universe facade, seeded environment
+  generation, landmarks, gravity attractor data, and future deterministic
+  universe hooks.
+- `src/space/universe/` owns the Phase 7 subsystem generators: cosmic web,
+  spatial index, stars, galaxies, landmarks, nebulae, dynamic lighting, events,
+  and impostors.
 - `src/ship/` owns the autonomous ship entity, physics, exterior, interior, and anchors.
 - `src/player/` owns player rigs and reference-frame transitions.
-- `src/rendering/` owns sky, post FX, shaders, speed lines, and the F2 panel.
+- `src/rendering/` owns sky, post FX, shaders, speed lines, the F2 post-FX
+  panel, and the F10 universe panel.
+- `src/ui/` owns desktop/VR UI surfaces such as diegetic status and universe
+  navigation markers.
 - `src/config/` owns presets and tunable defaults.
 
 ## Entity decisions
@@ -44,29 +54,44 @@ Future phases should keep this model:
 
 ```text
 World
-  DeepSpaceEnvironment
+  Universe
+    CosmicWeb
+    StarField / GalaxyField / Landmarks / NebulaField
+    UniverseLighting / UniverseEvents
   ShipRoot
     ShipExterior
     ShipInterior
       PlayerRigLocalToShip
 ```
 
-## F2 and presets
+## F2, F10, and presets
 
-The F2 panel exists from the start as a desktop development tool. It already reserves groups for:
+The F2 panel is now the post-FX / comfort / ship development tool. It owns:
 
 - Bloom
 - Warp
 - Retro / Pixel
 - ASCII
 - Halftone
-- Deep Space
 - VR Comfort
+- XR Post FX
+- Ship
 
-The current phase applies a subset directly because the full post-processing chain is intentionally deferred to the visual extraction phase. Preset ordering for future work:
+The F10 panel owns the procedural universe. It exposes:
+
+- Global seed, region, density, fog, and gravity scale
+- Stars
+- Galaxies
+- Black holes / pulsars / anomalies
+- Nebulae / clusters / dust
+- Dynamic lighting
+- Rare events
+- Universe tools: random seed, Regen, JSON import/export, presets, counters
+
+Preset ordering:
 
 1. engine defaults
-2. Deep Space preset
+2. post-FX or Universe preset
 3. user/dev preset
 4. runtime overrides
 
@@ -88,9 +113,14 @@ http://localhost:5177/
 
 - The page loads without a build step.
 - A non-empty Three.js scene is visible.
-- The scene contains stars, a colored galaxy, a nebula, a ship blockout, a black hole placeholder, and an anomaly placeholder.
+- The scene contains the Phase 7 procedural universe: full-sphere star layers,
+  galaxies, nebulae, clusters, dust, black holes, pulsars, anomalies, and POI
+  navigation markers.
 - Press `F2` to open and close the tweak panel.
-- Change `Deep Space > starOpacity` and `nebulaOpacity`; the scene updates live.
+- Press `F10` to open and close the Universe panel.
+- Change a LIVE universe control such as star brightness; the scene updates
+  live. Change a REGEN control such as seed or object counts, then press
+  `Regen`.
 - Use arrow keys for debug camera movement.
 - Confirm the folder structure listed above exists.
 

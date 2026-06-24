@@ -5,11 +5,8 @@ export class SkyDeepSpace {
     constructor(scene) {
         this.scene = scene;
         this.skyDome = this._createSkyDome();
-        this.sunLight = new THREE.DirectionalLight(0xaaccff, 1.0);
-        this.ambientLight = new THREE.AmbientLight(0x222244, 0.3);
 
-        this.sunLight.position.set(100, 500, 100).normalize();
-        this.scene.add(this.skyDome, this.sunLight, this.ambientLight);
+        this.scene.add(this.skyDome);
     }
 
     update(deltaTime, cameraPosition) {

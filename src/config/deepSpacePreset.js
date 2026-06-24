@@ -1,7 +1,7 @@
 export const DEEP_SPACE_PRESET = {
-    cameraFar: 200000,
-    fogDensity: 0.00002,
-    skyRadius: 200000,
+    cameraFar: 1200000,
+    fogDensity: 0.0000015,
+    skyRadius: 1200000,
     starCount: 6000,
     galaxyParticleCount: 3600,
     nebulaParticleCount: 900,

@@ -49,18 +49,6 @@ const desktopDefault = {
         angle: 45,
         scale: 1
     },
-    deepSpace: {
-        starOpacity: 1,
-        starBrightness: 2.4,
-        starSize: 8,
-        nebulaOpacity: 0.72,
-        nebulaBrightness: 2.1,
-        nebulaScale: 1.18,
-        galaxyDensity: 1,
-        blackHoleChance: 0.1,
-        anomalyChance: 0.05,
-        gravityScale: 1
-    },
     vrComfort: {
         bloomMax: 1.6,
         warpMax: 1,

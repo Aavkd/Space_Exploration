@@ -39,6 +39,8 @@ export class DiegeticStatusPanel {
             dampeners: false,
             pilotActive: false,
             preset: 'desktop_default',
+            universe: 'default',
+            nav: '',
             prompt: null
         });
     }
@@ -51,6 +53,8 @@ export class DiegeticStatusPanel {
             dampeners: Boolean(state.dampeners),
             pilotActive: Boolean(state.pilotActive),
             preset: state.preset ?? 'custom',
+            universe: state.universe ?? 'default',
+            nav: summarizeNav(state.nav),
             prompt: state.prompt ?? ''
         };
 
@@ -95,11 +99,12 @@ export class DiegeticStatusPanel {
         ctx.fillText(`SPEED ${state.speed.toString().padStart(4, ' ')} M/S`, 48, 210);
         ctx.fillText(`PILOT ${state.pilotActive ? 'LINKED' : 'STANDBY'}`, 48, 270);
         ctx.fillText(`DAMP ${state.dampeners ? 'ON' : 'OFF'}`, 48, 330);
-        ctx.fillText(`FX ${state.preset.toUpperCase()}`, 48, 390);
+        ctx.fillText(`FX ${state.preset.toUpperCase().slice(0, 18)} / U ${state.universe.toUpperCase().slice(0, 16)}`, 48, 390);
 
         ctx.fillStyle = state.prompt ? '#ffcc75' : 'rgba(155, 220, 255, 0.68)';
         ctx.font = '700 28px Consolas, monospace';
-        ctx.fillText(state.prompt ? trimPrompt(state.prompt) : 'NO LOCAL ACTION', 48, 462);
+        ctx.fillText(state.nav || 'NAV NO TARGET', 48, 430);
+        ctx.fillText(state.prompt ? trimPrompt(state.prompt) : 'NO LOCAL ACTION', 48, 474);
 
         this.texture.needsUpdate = true;
     }
@@ -125,4 +130,13 @@ function trimPrompt(prompt) {
         .replace('through the airlock ', '')
         .toUpperCase()
         .slice(0, 34);
+}
+
+function summarizeNav(nav) {
+    const marker = nav?.markers?.[0];
+    if (!marker) return '';
+    const distance = marker.distance > 1000
+        ? `${(marker.distance / 1000).toFixed(1)}K`
+        : `${marker.distance.toFixed(0)}M`;
+    return `NAV ${marker.name.toUpperCase().slice(0, 19)} ${distance}`;
 }
