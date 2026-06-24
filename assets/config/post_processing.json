@@ -1,0 +1,56 @@
+{
+  "bloom": {
+    "enabled": true,
+    "strength": 1.2,
+    "radius": 0.8,
+    "threshold": 0.1
+  },
+  "warp": {
+    "enabled": true,
+    "debugSpeedFactor": 0.15,
+    "blurStrength": 0.04,
+    "blurSamples": 12,
+    "aberrationStrength": 0.00005,
+    "vignetteStrength": 0.4,
+    "streakIntensity": 0.015,
+    "distortion": 0.04
+  },
+  "retro": {
+    "enabled": true,
+    "pixelSize": 4,
+    "colorDepth": 16,
+    "contrast": 0.9,
+    "saturation": 0.5,
+    "scanlineIntensity": 0.15,
+    "scanlineCount": 1.5,
+    "noiseIntensity": 0,
+    "vignetteStrength": 0.4,
+    "vignetteIntensity": 0.6,
+    "aberration": 0,
+    "brightness": -0.02,
+    "exposure": 3
+  },
+  "ascii": {
+    "enabled": false,
+    "zoom": 1,
+    "fontCharCount": 10,
+    "colorChar": false,
+    "invert": false,
+    "fillColor": "#ffffff",
+    "backgroundColor": "#000000"
+  },
+  "halftone": {
+    "enabled": false,
+    "dotSize": 1,
+    "angle": 45,
+    "scale": 1
+  },
+  "deepSpace": {
+    "starOpacity": 1,
+    "starBrightness": 2.4,
+    "starSize": 8,
+    "nebulaOpacity": 0.72,
+    "nebulaBrightness": 2.1,
+    "nebulaScale": 1.18
+  }
+}

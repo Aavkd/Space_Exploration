@@ -1,0 +1,166 @@
+{
+  "version": "phase-02-procedural-blockout",
+  "units": "meters",
+  "source": "src/ship/ShipModel.js",
+  "replacementContract": "A final GLB can replace the procedural blockout if it preserves the anchor ids and approximate interaction clearances.",
+  "dimensions": {
+    "length": 34,
+    "width": 13.6,
+    "height": 7.4,
+    "deckHeight": 0,
+    "eyeHeight": 1.65,
+    "mainCeilingHeight": 2.7,
+    "corridorClearWidth": 3.2,
+    "airlockClearWidth": 2.2,
+    "airlockClearDepth": 2.6
+  },
+  "pieces": [
+    {
+      "id": "mainHull",
+      "role": "Primary dark pressure hull",
+      "size": [10.8, 4.9, 33.2],
+      "localPosition": [0, 1.8, 0],
+      "material": "darkMetal"
+    },
+    {
+      "id": "cockpitCanopy",
+      "role": "Forward view bay and exterior silhouette cue",
+      "size": [5.8, 1.8, 5.0],
+      "localPosition": [0, 3.0, -12.8],
+      "material": "cyanGlass"
+    },
+    {
+      "id": "aftEngineBlock",
+      "role": "Reactor and drive housing",
+      "size": [10.6, 4.3, 5.4],
+      "localPosition": [0, 1.65, 14.3],
+      "material": "darkPanelMetal"
+    },
+    {
+      "id": "sidePods",
+      "role": "Utility pods that make the exterior readable from distance",
+      "size": [1.2, 1.5, 18.0],
+      "localPosition": [6.15, 1.0, 1.8],
+      "mirrored": true,
+      "material": "darkPanelMetal"
+    },
+    {
+      "id": "thrusterCluster",
+      "role": "Four visible aft thrusters",
+      "size": [8.4, 3.0, 1.8],
+      "localPosition": [0, 1.75, 17.45],
+      "material": "darkPanelMetalAndOrangeGlow"
+    },
+    {
+      "id": "interiorDecks",
+      "role": "Walkable cockpit, corridor, observation bay, airlock, and reactor floors",
+      "size": [6.2, 0.12, 27.4],
+      "localPosition": [0, 0, -0.5],
+      "material": "matteDeckMetal"
+    },
+    {
+      "id": "pilotSeat",
+      "role": "Future sit/take-control interaction prop",
+      "size": [1.2, 1.5, 1.3],
+      "localPosition": [0, 0.75, -11.55],
+      "material": "utilitySeat"
+    },
+    {
+      "id": "airlockChamber",
+      "role": "Ship-local to exterior transition volume",
+      "size": [2.8, 2.7, 3.2],
+      "localPosition": [-4.7, 1.25, 4.2],
+      "material": "darkPanelMetalAndOrangeGlow"
+    },
+    {
+      "id": "reactorCore",
+      "role": "Technical bay visual anchor",
+      "size": [1.6, 2.4, 1.6],
+      "localPosition": [0, 1.35, 10.5],
+      "material": "cyanEmissiveCore"
+    }
+  ],
+  "zones": [
+    {
+      "id": "cockpit",
+      "center": [0, 1.25, -11.4],
+      "size": [5.8, 2.7, 6.2],
+      "role": "Pilot seat, controls, and forward bay window"
+    },
+    {
+      "id": "circulation",
+      "center": [0, 1.25, -2.2],
+      "size": [3.2, 2.7, 11.6],
+      "role": "Short central route between cockpit, airlock, and reactor bay"
+    },
+    {
+      "id": "observationBay",
+      "center": [0, 1.25, 2.2],
+      "size": [5.4, 2.7, 4.4],
+      "role": "Side windows and stable visual reference"
+    },
+    {
+      "id": "airlock",
+      "center": [-4.7, 1.25, 4.2],
+      "size": [2.8, 2.7, 3.2],
+      "role": "Reference-frame transition chamber"
+    },
+    {
+      "id": "reactor",
+      "center": [0, 1.25, 10.4],
+      "size": [6.2, 2.7, 5.4],
+      "role": "Technical/reactor bay"
+    }
+  ],
+  "anchors": [
+    {
+      "id": "cockpitSeat",
+      "zone": "cockpit",
+      "localPosition": [0, 0.45, -11.75],
+      "forward": [0, 0, -1],
+      "interactionRadius": 1.1
+    },
+    {
+      "id": "pilotControls",
+      "zone": "cockpit",
+      "localPosition": [0, 1.1, -13.15],
+      "forward": [0, 0, -1],
+      "interactionRadius": 1.2
+    },
+    {
+      "id": "exitAirlock",
+      "zone": "airlock",
+      "localPosition": [-5.7, 1.05, 4.2],
+      "forward": [-1, 0, 0],
+      "interactionRadius": 1.25
+    },
+    {
+      "id": "interiorSpawn",
+      "zone": "circulation",
+      "localPosition": [0, 0, -1.4],
+      "forward": [0, 0, -1],
+      "interactionRadius": 0.8
+    },
+    {
+      "id": "exteriorSpawn",
+      "zone": "exterior",
+      "localPosition": [-9.2, 0.4, 4.2],
+      "forward": [1, 0, 0],
+      "interactionRadius": 1.5
+    },
+    {
+      "id": "cameraDebugMount",
+      "zone": "circulation",
+      "localPosition": [0, 1.65, -3.8],
+      "forward": [0, -0.03, -1],
+      "interactionRadius": 0
+    }
+  ],
+  "vrConstraints": {
+    "minimumClearWidth": 2.2,
+    "preferredCorridorWidth": 3.2,
+    "minimumCeilingHeight": 2.4,
+    "stableVisualReferences": ["ceilingRibs", "handrails", "deckCenterlineGlow", "windowFrames"],
+    "avoid": ["narrow crawlspaces", "rapid flashing lights", "aircraft-style cramped cockpit"]
+  }
+}

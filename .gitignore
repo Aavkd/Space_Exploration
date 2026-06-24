@@ -1,0 +1,31 @@
+# Large 3D model files (exceed GitHub's 100 MB limit — use Git LFS if needed)
+*.glb
+*.gltf
+*.fbx
+*.obj
+*.dae
+*.blend
+*.usdz
+
+# Large binary assets
+*.hdr
+*.exr
+*.mp4
+*.mov
+*.avi
+*.wav
+*.mp3
+
+# Node / npm
+node_modules/
+dist/
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp

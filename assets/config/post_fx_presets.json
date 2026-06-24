@@ -1,0 +1,12 @@
+{
+  "desktop_default": {
+    "source": "src/config/postFxPresets.js",
+    "notes": "Runtime presets live in JS for phase 1. This JSON placeholder reserves browser import/export workflow."
+  },
+  "vr_safe": {
+    "bloomMax": 0.8,
+    "warpMax": 0.25,
+    "rotationMode": "snap",
+    "accelerationCap": 18
+  }
+}

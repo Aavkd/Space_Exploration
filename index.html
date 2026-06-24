@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Space VR Foundation</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <canvas id="app-canvas"></canvas>
+    <div id="hud">
+        <div class="hud-title">DEEP SPACE VR</div>
+        <div class="hud-line">Click to look (mouse) | DualSense: press any button to connect</div>
+        <div class="hud-line">Walk: W/S/A/D or LS | look: mouse or RS | C / Triangle interact</div>
+        <div class="hud-line">Pilot: W/S thrust | A/D strafe | R/F up-down</div>
+        <div class="hud-line">Pilot: Arrows pitch/yaw | Q/E roll | Shift boost | Z damp | X brake</div>
+        <div class="hud-line">DualSense pilot: L2/R2 thrust | L1/R1 yaw | LS pitch/roll | RS look</div>
+        <div class="hud-line">DualSense pilot: D-pad strafe/lift | Cross boost | Circle brake | Square damp</div>
+        <div class="hud-line">EVA float: W/S/A/D + R/F up-down (look-relative)</div>
+        <div class="hud-line">1 exterior cam | 2 interior cam | V back to player</div>
+        <div class="hud-line">F2 FX panel | F3 markers | F4 Retro | F6 ASCII | F7 Halftone | P/L anim</div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="./src/main.js"></script>
+</body>
+</html>
