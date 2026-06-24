@@ -1,7 +1,8 @@
 export class PostProcessingPanel {
-    constructor({ config, onChange }) {
+    constructor({ config, onChange, onPreset }) {
         this.config = config;
         this.onChange = onChange;
+        this.onPreset = onPreset;
         this.visible = false;
         this.element = this._createElement();
         document.body.appendChild(this.element);
@@ -11,6 +12,15 @@ export class PostProcessingPanel {
     toggle() {
         this.visible = !this.visible;
         this.element.hidden = !this.visible;
+    }
+
+    setVisible(visible) {
+        this.visible = Boolean(visible);
+        this.element.hidden = !this.visible;
+    }
+
+    refresh() {
+        this._render();
     }
 
     _createElement() {
@@ -83,7 +93,9 @@ export class PostProcessingPanel {
                 ['enabled', 'checkbox'],
                 ['strength', 'range', 0, 2, 0.01],
                 ['radius', 'range', 0, 2, 0.01],
-                ['threshold', 'range', 0, 1, 0.01]
+                ['threshold', 'range', 0, 1, 0.01],
+                ['xrStrengthScale', 'range', 0, 2, 0.01],
+                ['xrRadiusScale', 'range', 0, 2, 0.01]
             ]),
             this._createGroup('Warp', this.config.warp, [
                 ['enabled', 'checkbox'],
@@ -140,7 +152,27 @@ export class PostProcessingPanel {
             this._createGroup('VR Comfort', this.config.vrComfort, [
                 ['bloomMax', 'range', 0, 2, 0.01],
                 ['warpMax', 'range', 0, 1, 0.01],
-                ['accelerationCap', 'range', 1, 60, 1]
+                ['rotationMode', 'select', ['snap', 'smooth']],
+                ['snapAngleDeg', 'range', 15, 60, 5],
+                ['smoothTurnRateDeg', 'range', 15, 90, 1],
+                ['walkSpeed', 'range', 0.8, 3.2, 0.05],
+                ['accelerationCap', 'range', 1, 60, 1],
+                ['comfortVignetteEnabled', 'checkbox'],
+                ['comfortVignetteStrength', 'range', 0, 0.5, 0.01],
+                ['speedLinesMaxOpacity', 'range', 0, 0.5, 0.01],
+                ['legacyComposerPostFxDisabled', 'checkbox'],
+                ['controllerSpheresVisible', 'checkbox'],
+                ['vrUserScale', 'range', 0.25, 1.5, 0.01]
+            ]),
+            this._createGroup('XR Post FX', this.config.xrPostFx, [
+                ['enabled', 'checkbox'],
+                ['previewOnDesktop', 'checkbox'],
+                ['backend', 'select', ['custom', 'library']],
+                ['quality', 'select', ['low', 'medium', 'high']],
+                ['performanceBudgetMs', 'range', 4, 33, 1],
+                ['failHardOnError', 'checkbox'],
+                ['foveation', 'range', 0, 1, 0.05],
+                ['sceneSamples', 'range', 0, 4, 1]
             ]),
             this._createGroup('Ship', this.config.ship, [
                 ['brightness', 'range', 0, 2, 0.01],
@@ -160,15 +192,25 @@ export class PostProcessingPanel {
         for (const [key, type, min, max, step] of controls) {
             const label = document.createElement('label');
             const name = document.createElement('span');
-            const input = document.createElement('input');
+            const input = document.createElement(type === 'select' ? 'select' : 'input');
             name.textContent = key;
-            input.type = type;
 
             if (type === 'checkbox') {
+                input.type = type;
                 input.checked = Boolean(target[key]);
             } else if (type === 'color') {
+                input.type = type;
+                input.value = target[key];
+            } else if (type === 'select') {
+                for (const optionName of min) {
+                    const option = document.createElement('option');
+                    option.value = optionName;
+                    option.textContent = optionName;
+                    input.appendChild(option);
+                }
                 input.value = target[key];
             } else {
+                input.type = type;
                 input.min = min;
                 input.max = max;
                 input.step = step;
@@ -179,6 +221,8 @@ export class PostProcessingPanel {
                 if (type === 'checkbox') {
                     target[key] = input.checked;
                 } else if (type === 'color') {
+                    target[key] = input.value;
+                } else if (type === 'select') {
                     target[key] = input.value;
                 } else {
                     target[key] = Number(input.value);
@@ -202,6 +246,20 @@ export class PostProcessingPanel {
         const importInput = document.createElement('input');
 
         legend.textContent = 'Preset JSON';
+
+        const presetButtons = [
+            ['desktop_default', 'desktop_default'],
+            ['vr_visual_default', 'vr_visual_default'],
+            ['vr_comfort', 'vr_comfort'],
+            ['vr_performance_low', 'vr_perf_low']
+        ].map(([name, label]) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = label;
+            button.addEventListener('click', () => this.onPreset?.(name));
+            return button;
+        });
+
         importName.textContent = 'import';
         importInput.type = 'file';
         importInput.accept = 'application/json,.json';
@@ -217,7 +275,7 @@ export class PostProcessingPanel {
         });
 
         importLabel.append(importName, importInput);
-        tools.append(legend, exportButton, importLabel);
+        tools.append(legend, ...presetButtons, exportButton, importLabel);
         return tools;
     }
 

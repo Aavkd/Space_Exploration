@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { DEEP_SPACE_PRESET } from '../config/deepSpacePreset.js';
-import { POST_FX_PRESETS } from '../config/postFxPresets.js';
+import {
+    POST_FX_PRESETS,
+    POST_FX_PRESET_NAMES,
+    resolvePostFxPresetName
+} from '../config/postFxPresets.js';
 import { DeepSpaceEnvironment } from '../space/DeepSpaceEnvironment.js';
 import { GravityField } from '../space/GravityField.js';
 import { Ship } from '../ship/Ship.js';
@@ -11,8 +15,11 @@ import { RelativeLocomotion } from '../player/RelativeLocomotion.js';
 import { PlayerController, PLAYER_STATE } from '../player/PlayerController.js';
 import { GamepadInput } from '../input/GamepadInput.js';
 import { SkyDeepSpace } from '../rendering/SkyDeepSpace.js';
-import { PostProcessing } from '../rendering/PostProcessing.js';
+import { RenderPipeline } from '../rendering/RenderPipeline.js';
 import { PostProcessingPanel } from '../rendering/PostProcessingPanel.js';
+import { XRExperience } from '../xr/XRExperience.js';
+import { XRVisualEffects } from '../xr/XRVisualEffects.js';
+import { DiegeticStatusPanel } from '../ui/DiegeticStatusPanel.js';
 
 export class App {
     constructor({ canvas }) {
@@ -29,6 +36,7 @@ export class App {
             DEEP_SPACE_PRESET.cameraFar
         );
         this.camera.position.set(38, 16, 62);
+        this.scene.add(this.camera);
 
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
@@ -74,6 +82,7 @@ export class App {
                 this.ship.setGlassOpacity(this.postFxConfig.ship?.glassOpacity ?? 0.15);
                 this.ship.setBrightness(this.postFxConfig.ship?.brightness ?? 1);
                 this.ship.setBloom(this.postFxConfig.ship?.bloom ?? 1);
+                this._applyRuntimeConfig();
             })
             .catch(() => {});
 
@@ -119,7 +128,11 @@ export class App {
         this.input = this._createInputState();
         this.paused = false;
         this.postFxConfig = structuredClone(POST_FX_PRESETS.desktopDefault);
-        this.postProcessing = new PostProcessing({
+        this.activePreset = POST_FX_PRESET_NAMES.desktopDefault;
+        this.displayMode = 'desktop';
+        this._desktopStateBeforeVr = null;
+        this.vrHudVisible = true;
+        this.renderPipeline = new RenderPipeline({
             renderer: this.renderer,
             scene: this.scene,
             camera: this.camera,
@@ -127,8 +140,27 @@ export class App {
         });
         this.postPanel = new PostProcessingPanel({
             config: this.postFxConfig,
-            onChange: () => this._applyRuntimeConfig()
+            onChange: () => this._handleRuntimeConfigChange(),
+            onPreset: (name) => this.applyFxPreset(name)
         });
+        this.diegeticPanel = new DiegeticStatusPanel();
+        this.camera.add(this.diegeticPanel.object3D);
+        this.xr = new XRExperience({
+            renderer: this.renderer,
+            scene: this.scene,
+            camera: this.camera,
+            playerRig: this.playerRig,
+            onSessionStart: () => this._enterVrMode(),
+            onSessionEnd: () => this._leaveVrMode(),
+            onSelect: () => this._handleXrSelect()
+        });
+        this.xrVisualEffects = new XRVisualEffects({
+            scene: this.scene,
+            camera: this.camera,
+            ship: this.ship,
+            environment: this.environment
+        });
+        this.xrVisualEffects.resize(window.innerWidth, window.innerHeight, this.renderer.getPixelRatio());
 
         this._createTelemetryHud();
         this._bindEvents();
@@ -144,9 +176,19 @@ export class App {
     _tick() {
         const dt = Math.min(this.clock.getDelta(), 0.05);
         const gamepad = this.input.gamepad.update();
+        const xrInput = this.xr.update(dt, this.postFxConfig.vrComfort);
+        const xrActive = this.xr.isPresenting;
+        const controlInput = xrActive && !gamepad.connected ? xrInput : gamepad;
 
-        this._handleGamepadButtons(gamepad);
-        this._applyGamepadLook(gamepad, dt);
+        if (xrActive) {
+            if (this.cameraMode !== 'player') this._enterPlayerMode();
+            this._handleGamepadButtons(gamepad);
+            if (gamepad.connected) this._applyGamepadLook(gamepad, dt);
+            else this.playerController.applyComfortTurn(xrInput.turnDelta ?? 0);
+        } else {
+            this._handleGamepadButtons(gamepad);
+            this._applyGamepadLook(gamepad, dt);
+        }
 
         // Ship is simulated every frame whether or not anyone is piloting: when
         // pilot mode is off the command is inactive and it coasts on inertia +
@@ -154,7 +196,7 @@ export class App {
         // `paused` freezes only the live simulation so manual/automated stepping
         // through the debug hooks is deterministic; rendering keeps running.
         if (!this.paused) {
-            const command = this.shipControls.getCommand(this.input.keys, gamepad);
+            const command = this.shipControls.getCommand(this.input.keys, controlInput);
             this.ship.update(dt, command, this.gravityField);
         }
 
@@ -163,8 +205,8 @@ export class App {
         // reads correctly through the windows. In debug mode the Phase 2/3 free
         // cameras drive it instead.
         if (this.cameraMode === 'player') {
-            if (!this.paused) this.playerController.update(dt, this.input.keys, gamepad);
-            this.playerController.updateCamera(this.camera);
+            if (!this.paused) this.playerController.update(dt, this.input.keys, controlInput);
+            if (!xrActive) this.playerController.updateCamera(this.camera);
         } else {
             this._updateDebugCamera(dt);
         }
@@ -178,10 +220,20 @@ export class App {
         // that (or any Warp slider) in F2 always pulls the effect intensity down.
         const speedFactor = THREE.MathUtils.clamp(this.ship.speed / 600, 0, 1);
         const warpCeiling = this.postFxConfig.vrComfort?.warpMax ?? 1;
-        this.postProcessing.setWarpSpeedFactor(Math.min(speedFactor, warpCeiling));
+        this.renderPipeline.setWarpSpeedFactor(Math.min(speedFactor, warpCeiling));
 
         this._updateTelemetry();
-        this.postProcessing.render(dt);
+        this._updateDiegeticPanel();
+        this.xrVisualEffects.update(dt, {
+            config: this.postFxConfig.xrVisualFx,
+            xrActive,
+            shipSpeed: this.ship.speed
+        });
+
+        // One stable render entrypoint. The facade picks desktop EffectComposer
+        // or the custom XR post-FX backend (real Bloom + Retro/Pixel + Color
+        // Depth + Scanlines + Warp) based on the live XR session.
+        this.renderPipeline.render({ scene: this.scene, camera: this.camera, dt });
     }
 
     _handleGamepadButtons(gamepad) {
@@ -216,6 +268,52 @@ export class App {
     _applyGamepadLook(gamepad, dt) {
         if (!gamepad.connected || this.cameraMode !== 'player') return;
         this.playerController.applyGamepadLook(gamepad.axes.rightX, gamepad.axes.rightY, dt);
+    }
+
+    _handleXrSelect() {
+        if (this.cameraMode !== 'player') return false;
+        const action = this.playerController.interact();
+        if (action) {
+            this.xr.pulse({ duration: 80, strength: 0.34 });
+            this._syncDebugDomState();
+        }
+        return action;
+    }
+
+    _enterVrMode() {
+        this.displayMode = 'vr';
+        this._exitPointerLock();
+        this.postPanel.setVisible(false);
+        this._enterPlayerMode();
+        this.playerController.setComfortMode(true);
+        this._applyRuntimeConfig();
+        this._syncDebugDomState();
+    }
+
+    _leaveVrMode() {
+        this.displayMode = 'desktop';
+        this.playerController.setComfortMode(false);
+        this._applyRuntimeConfig();
+        this._enterPlayerMode();
+        this._syncDebugDomState();
+    }
+
+    applyFxPreset(name) {
+        const key = resolvePostFxPresetName(name);
+        if (!key) return false;
+
+        replaceConfig(this.postFxConfig, POST_FX_PRESETS[key]);
+        this.activePreset = POST_FX_PRESET_NAMES[key];
+        this.postPanel.refresh();
+        this._applyRuntimeConfig();
+        this._syncDebugDomState();
+        return this.activePreset;
+    }
+
+    _handleRuntimeConfigChange() {
+        this.activePreset = 'custom';
+        this._applyRuntimeConfig();
+        this._syncDebugDomState();
     }
 
     _updateDebugCamera(dt) {
@@ -303,6 +401,13 @@ export class App {
         this.debugMarkersVisible = Boolean(visible);
         this._applyDebugMarkers();
         return this.debugMarkersVisible;
+    }
+
+    toggleVrHud() {
+        this.vrHudVisible = !this.vrHudVisible;
+        this._updateDiegeticPanel();
+        this._syncDebugDomState();
+        return this.vrHudVisible;
     }
 
     _createTelemetryHud() {
@@ -410,6 +515,20 @@ export class App {
         }
     }
 
+    _updateDiegeticPanel() {
+        const controls = this.shipControls.getState();
+        this.diegeticPanel.object3D.visible = this.displayMode === 'vr' && this.vrHudVisible;
+        this.diegeticPanel.update({
+            displayMode: this.displayMode,
+            playerState: this.playerController.getState(),
+            speed: this.ship.speed,
+            dampeners: controls.dampeners,
+            pilotActive: controls.pilotActive,
+            preset: this.activePreset,
+            prompt: this.cameraMode === 'player' ? this.playerController.getPrompt() : null
+        });
+    }
+
     _setupEnvironmentLighting() {
         const pmrem = new THREE.PMREMGenerator(this.renderer);
         const environment = pmrem.fromScene(new RoomEnvironment(), 0.04);
@@ -456,6 +575,12 @@ export class App {
             if (event.code === 'F3') {
                 event.preventDefault();
                 this.setDebugMarkersVisible(!this.debugMarkersVisible);
+                return;
+            }
+
+            if (event.code === 'KeyH') {
+                event.preventDefault();
+                this.toggleVrHud();
                 return;
             }
 
@@ -557,7 +682,8 @@ export class App {
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
-        this.postProcessing.resize(width, height);
+        this.renderPipeline.resize(width, height);
+        this.xrVisualEffects.resize(width, height, this.renderer.getPixelRatio());
     }
 
     _applyRuntimeConfig() {
@@ -565,21 +691,46 @@ export class App {
         this.ship.setEnvMapIntensity(this.postFxConfig.ship?.envMapIntensity ?? 0.85);
         this.ship.setGlassOpacity(this.postFxConfig.ship?.glassOpacity ?? 0.15);
         this.ship.setBrightness(this.postFxConfig.ship?.brightness ?? 1);
-        this.ship.setBloom(this.postFxConfig.ship?.bloom ?? 1);
+        const xrVisualFx = this.postFxConfig.xrVisualFx ?? {};
+        const xrVisualActive = Boolean(
+            xrVisualFx.enabled &&
+            xrVisualFx.bloomSurrogateEnabled &&
+            (this.displayMode === 'vr' || xrVisualFx.previewOnDesktop)
+        );
+        const sceneGlow = xrVisualActive ? (xrVisualFx.sceneGlow ?? 1) : 1;
+        const shipGlow = xrVisualActive ? (xrVisualFx.shipGlow ?? 1) : 1;
+        const starGlow = xrVisualActive ? (xrVisualFx.starGlow ?? 1) : 1;
+        const nebulaGlow = xrVisualActive ? (xrVisualFx.nebulaGlow ?? 1) : 1;
+        const landmarkGlow = xrVisualActive ? (xrVisualFx.landmarkGlow ?? 1) : 1;
+
+        this.ship.setBloom((this.postFxConfig.ship?.bloom ?? 1) * shipGlow);
 
         // Physics knobs surfaced through F2: gravity master gain (Deep Space) and
         // the linear acceleration cap (VR Comfort).
         this.gravityField.setGravityScale(this.postFxConfig.deepSpace?.gravityScale ?? 1);
         this.ship.physics.setAccelerationCap(this.postFxConfig.vrComfort?.accelerationCap ?? 45);
+        this.ship.speedLines.setMaxOpacity(this.postFxConfig.vrComfort?.speedLinesMaxOpacity ?? 0.38);
+        this.xr.setControllerSpheresVisible(this.postFxConfig.vrComfort?.controllerSpheresVisible ?? true);
+        this.xr.setUserScale(this.displayMode === 'vr' ? (this.postFxConfig.vrComfort?.vrUserScale ?? 1) : 1);
+        this.xr.setFramebufferScaleFactor(xrVisualFx.framebufferScale ?? 1);
+        this.locomotion.setConfig({
+            walkSpeed: this.postFxConfig.vrComfort?.walkSpeed ?? 3.2,
+            runSpeed: Math.max((this.postFxConfig.vrComfort?.walkSpeed ?? 3.2) * 1.85, 1.4)
+        });
+        this.playerController.setComfortMode(this.displayMode === 'vr');
 
-        this.postProcessing.applyConfig(this.postFxConfig);
+        this.renderPipeline.applyConfig(this.postFxConfig);
         this.environment.setRuntimeConfig({
             starOpacity: this.postFxConfig.deepSpace.starOpacity,
-            starBrightness: this.postFxConfig.deepSpace.starBrightness,
+            starBrightness: this.postFxConfig.deepSpace.starBrightness * sceneGlow * starGlow,
             starSize: this.postFxConfig.deepSpace.starSize,
             nebulaOpacity: this.postFxConfig.deepSpace.nebulaOpacity,
-            nebulaBrightness: this.postFxConfig.deepSpace.nebulaBrightness,
+            nebulaBrightness: this.postFxConfig.deepSpace.nebulaBrightness * sceneGlow * nebulaGlow,
             nebulaScale: this.postFxConfig.deepSpace.nebulaScale
+        });
+        this.environment.setVisualGlow({
+            sceneGlow,
+            landmarkGlow
         });
     }
 
@@ -590,7 +741,8 @@ export class App {
 
             const json = await response.json();
             mergeConfig(this.postFxConfig, json);
-            this.postPanel._render();
+            this.activePreset = 'custom_json';
+            this.postPanel.refresh();
             this._applyRuntimeConfig();
         } catch (error) {
             console.warn('Could not load post_processing.json', error);
@@ -604,16 +756,50 @@ export class App {
         window.__deepSpaceApp = this;
         window.__deepSpaceDebug = {
             getPostFxState: () => ({
+                activePreset: this.activePreset,
+                displayMode: this.displayMode,
                 bloom: this.postFxConfig.bloom.enabled,
+                bloomStrength: this.renderPipeline.desktop.bloomPass.strength,
                 warp: this.postFxConfig.warp.enabled,
                 retro: this.postFxConfig.retro.enabled,
                 ascii: this.postFxConfig.ascii.enabled,
                 halftone: this.postFxConfig.halftone.enabled,
-                warpResolution: this.postProcessing.warpPass.uniforms.resolution.value.toArray(),
-                retroResolution: this.postProcessing.retroPass.uniforms.resolution.value.toArray(),
-                asciiResolution: this.postProcessing.asciiPass.uniforms.resolution.value.toArray(),
-                halftoneResolution: this.postProcessing.halftonePass.uniforms.resolution.value.toArray()
+                xrPostFx: this.postFxConfig.xrPostFx?.enabled,
+                xrBackend: this.renderPipeline.requestedXrBackend,
+                activeBackend: this.renderPipeline.activeBackend,
+                warpResolution: this.renderPipeline.desktop.warpPass.uniforms.resolution.value.toArray(),
+                retroResolution: this.renderPipeline.desktop.retroPass.uniforms.resolution.value.toArray()
             }),
+            // --- Phase 06 render pipeline debug surface ---
+            getRenderPipelineState: () => this.renderPipeline.getState(),
+            getXrPostFxState: () => this.renderPipeline.getXrPostFxState(),
+            setXrPostFxBackend: (name) => this.renderPipeline.setXrPostFxBackend(name),
+            setXrPostFxEnabled: (enabled) => {
+                this.postFxConfig.xrPostFx.enabled = Boolean(enabled);
+                const result = this.renderPipeline.setXrPostFxEnabled(enabled);
+                this._syncDebugDomState();
+                return result;
+            },
+            // A/B the real XR combined shader on the desktop canvas (no headset).
+            setXrPreviewOnDesktop: (enabled) => {
+                this.postFxConfig.xrPostFx.previewOnDesktop = Boolean(enabled);
+                this.renderPipeline.previewXrOnDesktop = Boolean(enabled);
+                this.postPanel.refresh();
+                return this.postFxConfig.xrPostFx.previewOnDesktop;
+            },
+            getDisplayMode: () => this.displayMode,
+            getVrState: () => this.xr.getDebugState(),
+            getXrVisualFxState: () => this.xrVisualEffects.getDebugState(),
+            applyFxPreset: (name) => this.applyFxPreset(name),
+            getActivePreset: () => this.activePreset,
+            getComfortState: () => ({ ...this.postFxConfig.vrComfort }),
+            getDiegeticPanelState: () => this.diegeticPanel.getDebugState(),
+            getVrHudState: () => ({
+                enabled: this.vrHudVisible,
+                visible: this.diegeticPanel.object3D.visible,
+                key: 'H'
+            }),
+            toggleVrHud: () => this.toggleVrHud(),
             toggleEngineFx: () => this.ship.toggleEngineFx(),
             setEngineFxVisible: (visible) => this.ship.setEngineFxVisible(visible),
             setDebugMarkersVisible: (visible) => this.setDebugMarkersVisible(visible),
@@ -701,7 +887,7 @@ export class App {
                 return this.paused;
             },
             isPaused: () => this.paused,
-            getWarpSpeedFactor: () => this.postProcessing.warpPass.uniforms.speedFactor.value,
+            getWarpSpeedFactor: () => this.renderPipeline.desktop.warpPass.uniforms.speedFactor.value,
             getSpeedLinesOpacity: () => this.ship.speedLines.object3D.material.opacity,
 
             getShipAnchorNames: () => this.ship.getAnchorNames(),
@@ -780,9 +966,13 @@ export class App {
 
     _syncDebugDomState() {
         const state = {
+            displayMode: this.displayMode,
+            activePreset: this.activePreset,
+            vrHudVisible: this.vrHudVisible,
             cameraMode: this.debugCamera.mode,
             pilotActive: this.shipControls.pilotActive,
             dampeners: this.shipControls.dampeners,
+            xr: this.xr?.getDebugState?.(),
             gamepad: this.input.gamepad.getDebugState(),
             shipAnchors: this.ship.getAnchorNames(),
             anchorValidation: this.ship.validateAnchors(),
@@ -810,4 +1000,9 @@ function mergeConfig(target, source) {
             target[key] = value;
         }
     }
+}
+
+function replaceConfig(target, source) {
+    for (const key of Object.keys(target)) delete target[key];
+    mergeConfig(target, structuredClone(source));
 }

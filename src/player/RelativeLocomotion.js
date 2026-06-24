@@ -45,6 +45,10 @@ export class RelativeLocomotion {
         this._move = new THREE.Vector3();
     }
 
+    setConfig(config = {}) {
+        Object.assign(this.config, config);
+    }
+
     /** Is the ship-local XZ point inside the union of walkable rectangles? */
     containsXZ(x, z) {
         for (const v of this.volumes) {

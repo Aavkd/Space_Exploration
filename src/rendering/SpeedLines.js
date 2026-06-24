@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 
 export class SpeedLines {
-    constructor({ count = 180, length = 280, color = 0xaaccff } = {}) {
+    constructor({ count = 180, length = 280, color = 0xaaccff, maxOpacity = 0.38 } = {}) {
+        this.maxOpacity = maxOpacity;
         this.object3D = new THREE.LineSegments(
             this._createGeometry(count, length),
             new THREE.LineBasicMaterial({
@@ -23,7 +24,13 @@ export class SpeedLines {
         this.object3D.position.z = -80 + (this._travel % 80);
         // Fade fully to zero at rest (no floor) so the line volume does not hover
         // as a faint patch ahead of the ship when stationary.
-        this.object3D.material.opacity = THREE.MathUtils.clamp(speed / 450, 0, 0.38);
+        this.object3D.material.opacity = THREE.MathUtils.clamp(speed / 450, 0, this.maxOpacity);
+    }
+
+    setMaxOpacity(maxOpacity) {
+        if (Number.isFinite(maxOpacity)) {
+            this.maxOpacity = THREE.MathUtils.clamp(maxOpacity, 0, 0.5);
+        }
     }
 
     _createGeometry(count, length) {

@@ -34,6 +34,7 @@ export class PlayerController {
 
         this.state = PLAYER_STATE.WALKING;
         this.prompt = null;
+        this.comfortMode = false;
 
         // Static ship-local anchor positions + interaction radii. Anchors never
         // move in the ship frame, so caching them once at the origin is exact.
@@ -80,6 +81,15 @@ export class PlayerController {
         this.rig.addLook(-x * GAMEPAD_LOOK_RATE * dt, -y * GAMEPAD_LOOK_RATE * dt);
     }
 
+    applyComfortTurn(deltaYaw) {
+        if (Math.abs(deltaYaw) < 1e-6) return;
+        this.rig.addLook(deltaYaw, 0);
+    }
+
+    setComfortMode(active) {
+        this.comfortMode = Boolean(active);
+    }
+
     /** Contextual interact (E / C): take or leave controls, exit/enter airlock. */
     interact() {
         const action = this.getContextualAction();
@@ -119,7 +129,7 @@ export class PlayerController {
             forward: clampAxis(axis(keys, WALK_KEYS.forward, WALK_KEYS.back) - (axes?.leftY ?? 0)),
             strafe: clampAxis(axis(keys, WALK_KEYS.strafeRight, WALK_KEYS.strafeLeft) + (axes?.leftX ?? 0))
         };
-        const run = keys.has(WALK_KEYS.run);
+        const run = !this.comfortMode && keys.has(WALK_KEYS.run);
         this.locomotion.walk(this.rig.position, this.rig.yaw, move, dt, { run });
     }
 
@@ -132,7 +142,7 @@ export class PlayerController {
             strafe: clampAxis(axis(keys, WALK_KEYS.strafeRight, WALK_KEYS.strafeLeft) + (axes?.leftX ?? 0)),
             vertical: clampAxis(axis(keys, WALK_KEYS.up, WALK_KEYS.down) + buttonAxis(button('dpadUp'), button('dpadDown')))
         };
-        const boost = keys.has(WALK_KEYS.run) || button('cross');
+        const boost = !this.comfortMode && (keys.has(WALK_KEYS.run) || button('cross'));
         const orientation = this.rig.getLocalOrientation(this._orientation);
         this.locomotion.floatEVA(this.rig.position, orientation, move, dt, { boost });
     }

@@ -8,7 +8,13 @@ import { Retro16BitShader } from '../postprocessing/Retro16BitShader.js';
 import { ASCIIShader } from '../postprocessing/ASCIIShader.js';
 import { HalftoneShader } from '../postprocessing/HalftoneShader.js';
 
-export class PostProcessing {
+/**
+ * Desktop post-FX backend: the original EffectComposer chain
+ *   RenderPass -> UnrealBloom -> Warp -> Retro -> ASCII -> Halftone
+ * Migrated unchanged from the old PostProcessing class. EffectComposer is kept
+ * strictly as a desktop path; the headset uses XRPostFxPipeline instead.
+ */
+export class DesktopPostFxPipeline {
     constructor({ renderer, scene, camera, config }) {
         this.renderer = renderer;
         this.scene = scene;
@@ -44,7 +50,7 @@ export class PostProcessing {
         this.config = config;
 
         this.bloomPass.enabled = config.bloom.enabled;
-        this.bloomPass.strength = config.bloom.strength;
+        this.bloomPass.strength = Math.min(config.bloom.strength, config.vrComfort?.bloomMax ?? config.bloom.strength);
         this.bloomPass.radius = config.bloom.radius;
         this.bloomPass.threshold = config.bloom.threshold;
 
@@ -101,6 +107,21 @@ export class PostProcessing {
         this.asciiPass.uniforms.resolution.value.copy(resolution);
         this.halftonePass.uniforms.resolution.value.copy(resolution);
         this.bloomPass.setSize(width, height);
+    }
+
+    getDebugState() {
+        return {
+            bloomStrength: this.bloomPass.strength,
+            bloomEnabled: this.bloomPass.enabled,
+            warpEnabled: this.warpPass.enabled,
+            retroEnabled: this.retroPass.enabled,
+            asciiEnabled: this.asciiPass.enabled,
+            halftoneEnabled: this.halftonePass.enabled,
+            warpResolution: this.warpPass.uniforms.resolution.value.toArray(),
+            retroResolution: this.retroPass.uniforms.resolution.value.toArray(),
+            asciiResolution: this.asciiPass.uniforms.resolution.value.toArray(),
+            halftoneResolution: this.halftonePass.uniforms.resolution.value.toArray()
+        };
     }
 
     _loadAsciiTexture() {

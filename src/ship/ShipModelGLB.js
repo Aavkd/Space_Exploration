@@ -31,6 +31,12 @@ const GLASS_MATERIAL_PATTERN = /architectural glass|canopy|windshield|windscreen
 // effects. Hidden while idle; can be re-enabled later as additive thruster FX.
 const FX_SPRITE_MATERIAL_PATTERN = /^fire_mat|^rcs_thruster|hyperdrive_fx/i;
 
+// Thin interior divider/door panels share the "Architectural Glass" material, so
+// material-based glass turns them transparent too -- but one sits across the nose
+// and reads as a white rectangle floating in front of the ship. Hidden by mesh
+// name (non-functional interior dividers in this phase); the canopy stays glass.
+const STRAY_PANEL_MESH_PATTERN = /interior.?divider.?door/i;
+
 export const GLB_SHIP_PARTS = Object.freeze([
     {
         id: 'importedHull',
@@ -177,6 +183,22 @@ function hideFxSprites(model) {
     return hidden;
 }
 
+// Hides the stray interior divider/door panels that otherwise show as a white
+// rectangle floating in front of the nose. Returns the hidden meshes.
+function hideStrayPanels(model) {
+    const hidden = [];
+
+    model.traverse((node) => {
+        if (!node.isMesh) return;
+        if (STRAY_PANEL_MESH_PATTERN.test(node.name || '')) {
+            node.visible = false;
+            hidden.push(node);
+        }
+    });
+
+    return hidden;
+}
+
 /**
  * Builds the GLB-backed ship model bundle. The anchor/interior frame is created
  * synchronously (it is model-independent), while the heavy exterior mesh streams
@@ -231,6 +253,7 @@ export function createGlbShipModel({
                     prepareAuthoredMaterials(model);
                     glassMaterials = applyGlassMaterials(model, { opacity: glassOpacity });
                     fxSprites = hideFxSprites(model);
+                    hideStrayPanels(model);
                 } else {
                     applyHullMaterial(model, hullMaterial);
                 }

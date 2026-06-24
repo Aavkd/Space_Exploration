@@ -83,6 +83,21 @@ export class ShipControls {
         const button = (name) => Boolean(buttons?.[name]?.pressed);
         const value = (name) => buttons?.[name]?.value ?? 0;
 
+        if (gamepad?.source === 'webxr') {
+            return {
+                active: true,
+                dampeners: this.dampeners,
+                airbrake: keys.has(k.airbrake),
+                boost: false,
+                thrust: clampAxis(axis(k.thrustForward, k.thrustBack) - (axes?.leftY ?? 0)),
+                strafe: clampAxis(axis(k.strafeRight, k.strafeLeft) + (axes?.leftX ?? 0)),
+                lift: clampAxis(axis(k.liftUp, k.liftDown) + buttonAxis(button('dpadUp'), button('dpadDown'))),
+                pitch: clampAxis(axis(k.pitchUp, k.pitchDown) + (axes?.rightY ?? 0)),
+                yaw: clampAxis(axis(k.yawLeft, k.yawRight) + (axes?.rightX ?? 0)),
+                roll: clampAxis(axis(k.rollRight, k.rollLeft))
+            };
+        }
+
         return {
             active: true,
             dampeners: this.dampeners,

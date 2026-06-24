@@ -1,81 +1,184 @@
-export const POST_FX_PRESETS = {
-    desktopDefault: {
-        bloom: {
-            enabled: true,
-            strength: 1.2,
-            radius: 0.8,
-            threshold: 0.1
-        },
-        warp: {
-            enabled: true,
-            debugSpeedFactor: 0,
-            blurStrength: 0.04,
-            blurSamples: 12,
-            aberrationStrength: 0.00005,
-            vignetteStrength: 0.4,
-            streakIntensity: 0.015,
-            distortion: 0
-        },
-        retro: {
-            enabled: true,
-            pixelSize: 4,
-            colorDepth: 16,
-            scanlineIntensity: 0.15,
-            scanlineCount: 1.5,
-            saturation: 0.5,
-            contrast: 0.9,
-            noiseIntensity: 0,
-            vignetteStrength: 0.4,
-            vignetteIntensity: 0.6,
-            aberration: 0,
-            brightness: -0.02,
-            exposure: 3
-        },
-        ascii: {
-            enabled: false,
-            zoom: 1,
-            fontCharCount: 10,
-            colorChar: false,
-            invert: false,
-            fillColor: '#ffffff',
-            backgroundColor: '#000000'
-        },
-        halftone: {
-            enabled: false,
-            dotSize: 1,
-            angle: 45,
-            scale: 1
-        },
-        deepSpace: {
-            starOpacity: 1,
-            starBrightness: 2.4,
-            starSize: 8,
-            nebulaOpacity: 0.72,
-            nebulaBrightness: 2.1,
-            nebulaScale: 1.18,
-            galaxyDensity: 1,
-            blackHoleChance: 0.1,
-            anomalyChance: 0.05,
-            gravityScale: 1
-        },
-        vrComfort: {
-            bloomMax: 0.8,
-            // Desktop default is permissive (full warp). The VR-safe preset will
-            // lower this; the F2 slider lets you preview a calmer warp now.
-            warpMax: 1,
-            rotationMode: 'snap',
-            accelerationCap: 45
-        },
-        ship: {
-            envMapIntensity: 0.85,
-            glassOpacity: 0.15,
-            // Dedicated hull brightness multiplier so the ship can read calmer /
-            // less intense than the bloom-heavy environment around it. 1 = as
-            // authored, <1 dims the hull, >1 brightens it.
-            brightness: 1,
-            // Dedicated ship glow multiplier (scales the hull's authored emissive
-            // into the shared bloom), independent of the global Bloom group.
-            bloom: 1
-        }
+const desktopDefault = {
+    bloom: {
+        enabled: true,
+        strength: 1.2,
+        radius: 0.8,
+        threshold: 0.1,
+        // XR-only multipliers so the headset bloom can be nudged relative to
+        // desktop without breaking the shared visual language. 1 = parity.
+        xrStrengthScale: 1,
+        xrRadiusScale: 1
+    },
+    warp: {
+        enabled: true,
+        debugSpeedFactor: 0,
+        blurStrength: 0.04,
+        blurSamples: 12,
+        aberrationStrength: 0.00005,
+        vignetteStrength: 0.4,
+        streakIntensity: 0.015,
+        distortion: 0
+    },
+    retro: {
+        enabled: true,
+        pixelSize: 4,
+        colorDepth: 16,
+        scanlineIntensity: 0.15,
+        scanlineCount: 1.5,
+        saturation: 0.5,
+        contrast: 0.9,
+        noiseIntensity: 0,
+        vignetteStrength: 0.4,
+        vignetteIntensity: 0.6,
+        aberration: 0,
+        brightness: -0.02,
+        exposure: 3
+    },
+    ascii: {
+        enabled: false,
+        zoom: 1,
+        fontCharCount: 10,
+        colorChar: false,
+        invert: false,
+        fillColor: '#ffffff',
+        backgroundColor: '#000000'
+    },
+    halftone: {
+        enabled: false,
+        dotSize: 1,
+        angle: 45,
+        scale: 1
+    },
+    deepSpace: {
+        starOpacity: 1,
+        starBrightness: 2.4,
+        starSize: 8,
+        nebulaOpacity: 0.72,
+        nebulaBrightness: 2.1,
+        nebulaScale: 1.18,
+        galaxyDensity: 1,
+        blackHoleChance: 0.1,
+        anomalyChance: 0.05,
+        gravityScale: 1
+    },
+    vrComfort: {
+        bloomMax: 1.6,
+        warpMax: 1,
+        rotationMode: 'snap',
+        snapAngleDeg: 30,
+        smoothTurnRateDeg: 45,
+        walkSpeed: 3.2,
+        accelerationCap: 45,
+        comfortVignetteEnabled: false,
+        comfortVignetteStrength: 0.18,
+        speedLinesMaxOpacity: 0.38,
+        legacyComposerPostFxDisabled: true,
+        controllerSpheresVisible: true,
+        vrUserScale: 0.55
+    },
+    // Phase 06: the real XR post-FX backend. This is the VR visual feature.
+    xrPostFx: {
+        enabled: true,
+        backend: 'custom',          // 'custom' implemented; 'library' has no shipped WebXR
+        quality: 'high',            // 'low' | 'medium' | 'high' -> bloom blur iterations
+        performanceBudgetMs: 11,
+        failHardOnError: true,      // fail visibly during this feature work
+        foveation: 0,               // 0 = full res edges (crisp retro), 1 = max foveation
+        sceneSamples: 0,            // MSAA on the scene capture; 0 keeps pixels crisp
+        previewOnDesktop: false     // run the XR combined shader on the desktop canvas for A/B
+    },
+    // Retired surrogate overlay/halo system from the earlier prototype. Kept for
+    // config compatibility but disabled: the real XRPostFxPipeline replaces it.
+    xrVisualFx: {
+        enabled: false,
+        previewOnDesktop: false,
+        realPostFxEnabled: false,
+        bloomSurrogateEnabled: false,
+        warpEnabled: false,
+        framebufferScale: 1,
+        sceneGlow: 1,
+        shipGlow: 1,
+        starGlow: 1,
+        nebulaGlow: 1,
+        landmarkGlow: 1
+    },
+    ship: {
+        envMapIntensity: 0.85,
+        glassOpacity: 0.15,
+        brightness: 1,
+        bloom: 1
     }
 };
+
+// Full desktop visual identity in the headset. Bloom/warp/retro values are kept
+// identical to desktop on purpose: parity is the product goal. Only movement
+// comfort + the XR backend differ.
+const vrVisualDefault = cloneConfig(desktopDefault);
+Object.assign(vrVisualDefault.vrComfort, {
+    rotationMode: 'snap',
+    snapAngleDeg: 30,
+    walkSpeed: 2.4,
+    accelerationCap: 28,
+    vrUserScale: 0.55
+});
+vrVisualDefault.xrPostFx.enabled = true;
+vrVisualDefault.xrPostFx.quality = 'high';
+
+// Movement comfort only. Must NOT remove the visual identity, so bloom/retro
+// stay at parity; only locomotion + warp ceiling soften.
+const vrComfort = cloneConfig(vrVisualDefault);
+Object.assign(vrComfort.vrComfort, {
+    warpMax: 0.6,
+    walkSpeed: 1.4,
+    accelerationCap: 18,
+    comfortVignetteEnabled: true,
+    comfortVignetteStrength: 0.16,
+    smoothTurnRateDeg: 45
+});
+
+// Future optimization preset only (after parity is proven). Lowers the XR
+// backend cost; visuals are intentionally reduced, not removed.
+const vrPerformanceLow = cloneConfig(vrVisualDefault);
+vrPerformanceLow.xrPostFx.quality = 'low';
+vrPerformanceLow.xrPostFx.foveation = 0.3;
+vrPerformanceLow.bloom.xrStrengthScale = 0.85;
+vrPerformanceLow.bloom.xrRadiusScale = 0.7;
+Object.assign(vrPerformanceLow.vrComfort, { warpMax: 0.6 });
+
+export const POST_FX_PRESETS = {
+    desktopDefault,
+    vrVisualDefault,
+    vrComfort,
+    vrPerformanceLow,
+    // Back-compat alias for the old name.
+    vrSafe: vrComfort
+};
+
+export const POST_FX_PRESET_NAMES = Object.freeze({
+    desktopDefault: 'desktop_default',
+    vrVisualDefault: 'vr_visual_default',
+    vrComfort: 'vr_comfort',
+    vrPerformanceLow: 'vr_performance_low',
+    vrSafe: 'vr_comfort'
+});
+
+const NAME_TO_KEY = {
+    desktop_default: 'desktopDefault',
+    desktopDefault: 'desktopDefault',
+    vr_visual_default: 'vrVisualDefault',
+    vrVisualDefault: 'vrVisualDefault',
+    vr_comfort: 'vrComfort',
+    vrComfort: 'vrComfort',
+    vr_performance_low: 'vrPerformanceLow',
+    vrPerformanceLow: 'vrPerformanceLow',
+    vr_safe: 'vrComfort',
+    vrSafe: 'vrComfort'
+};
+
+export function resolvePostFxPresetName(name) {
+    return NAME_TO_KEY[name] ?? null;
+}
+
+function cloneConfig(value) {
+    return JSON.parse(JSON.stringify(value));
+}

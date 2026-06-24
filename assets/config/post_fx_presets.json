@@ -1,12 +1,28 @@
 {
   "desktop_default": {
     "source": "src/config/postFxPresets.js",
-    "notes": "Runtime presets live in JS for phase 1. This JSON placeholder reserves browser import/export workflow."
+    "notes": "Full Deep Space desktop preset: bloom, warp, retro/pixel and normal desktop movement."
   },
   "vr_safe": {
-    "bloomMax": 0.8,
-    "warpMax": 0.25,
+    "source": "src/config/postFxPresets.js",
+    "visualPolicy": "keeps desktop visual identity through XR Visual FX substitutes; does not route the headset through EffectComposer",
+    "bloomMax": 1.6,
+    "warpMax": 1,
     "rotationMode": "snap",
-    "accelerationCap": 18
+    "snapAngleDeg": 30,
+    "smoothTurnRateDeg": 45,
+    "walkSpeed": 1.4,
+    "accelerationCap": 18,
+    "comfortVignetteEnabled": false,
+    "comfortVignetteStrength": 0.16,
+    "speedLinesMaxOpacity": 0.38,
+    "legacyComposerPostFxDisabled": true,
+    "xrVisualFxEnabled": true,
+    "xrRealPostFxEnabled": true,
+    "xrFramebufferScale": 0.78,
+    "xrFovCoverage": 1.15,
+    "controllerSpheresVisible": true,
+    "vrUserScale": 0.55,
+    "notes": "Comfort movement preset only. VR entry no longer applies this automatically."
   }
 }

@@ -33,6 +33,12 @@ export class DeepSpaceEnvironment {
         this.nebula = this._createNebula();
         this.blackHole = this._createBlackHole();
         this.anomaly = this._createAnomaly();
+        this.baseVisualGlow = {
+            blackHoleBloom: this.blackHole.bloomIntensity,
+            anomalyBloom: this.anomaly.params.bloomIntensity,
+            galaxyOpacity: this.galaxy.material.opacity,
+            galaxySize: this.galaxy.material.size
+        };
 
         this.group.add(this.stars, this.galaxy, this.nebula, this.blackHole.mesh, this.anomaly.mesh);
     }
@@ -84,6 +90,23 @@ export class DeepSpaceEnvironment {
         this.nebula.material.uniforms.opacity.value = this.runtimeConfig.nebulaOpacity;
         this.nebula.material.uniforms.brightness.value = this.runtimeConfig.nebulaBrightness;
         this.nebula.material.uniforms.scale.value = this.runtimeConfig.nebulaScale;
+    }
+
+    setVisualGlow({ sceneGlow = 1, landmarkGlow = 1 } = {}) {
+        const scene = Math.max(0, sceneGlow);
+        const landmark = Math.max(0, landmarkGlow);
+        const landmarkBoost = scene * landmark;
+
+        this.blackHole.bloomIntensity = this.baseVisualGlow.blackHoleBloom * landmarkBoost;
+        this.anomaly.params.bloomIntensity = this.baseVisualGlow.anomalyBloom * landmarkBoost;
+        this.anomaly.mesh.material.uniforms.uBloomIntensity.value = this.anomaly.params.bloomIntensity;
+
+        this.galaxy.material.opacity = THREE.MathUtils.clamp(
+            this.baseVisualGlow.galaxyOpacity * (0.75 + landmarkBoost * 0.25),
+            0,
+            1
+        );
+        this.galaxy.material.size = this.baseVisualGlow.galaxySize * (0.85 + landmarkBoost * 0.15);
     }
 
     _createStars() {

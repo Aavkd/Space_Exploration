@@ -96,4 +96,26 @@ http://localhost:5177/
 
 ## Next phase notes
 
-The next implementation phase should extract or recreate the complete FX inventory: EffectComposer, Bloom, WarpSpeedShader, Retro16BitShader, ASCIIShader, HalftoneShader, F4/F6/F7 toggles, preset import, resolution updates, and speed lines. The current project has placeholders and conventions so that work can land cleanly.
+The desktop implementation can keep the full FX inventory: EffectComposer,
+Bloom, WarpSpeedShader, Retro16BitShader, ASCIIShader, HalftoneShader,
+F4/F6/F7 toggles, preset import, resolution updates, and speed lines.
+
+The next VR visual implementation target is narrower and stricter: Bloom, Retro
+Pixel, Color Depth, Scanlines, and Warp must reach desktop visual parity first.
+ASCII and Halftone are deferred for VR until that required stack works on Quest
+3.
+
+## Future visual priority
+
+The VR visual identity is a no-compromise feature. Temporary overlay-based
+substitutes are not enough for bloom or pixelation. The future implementation
+target is documented in:
+
+- `D:\Documents\PROJECTS\DEEP_SPACE_VR\docs\phase-06-xr-post-fx-pipeline.md`
+
+That phase should be treated as rendering architecture work: prove an XR-aware
+post-FX backend on Quest 3 before migrating the full desktop visual stack.
+
+The first VR parity target is the desktop reference image:
+
+- `D:\Documents\PROJECTS\DEEP_SPACE_VR\docs\assets\desktop-visual-reference-blackhole-cockpit.png`
