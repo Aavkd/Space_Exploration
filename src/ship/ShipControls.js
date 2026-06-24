@@ -22,7 +22,8 @@ const HELD_KEYS = Object.freeze({
 
 const TOGGLE_KEYS = Object.freeze({
     pilot: 'KeyC',
-    dampeners: 'KeyZ'
+    dampeners: 'KeyZ',
+    hyperdrive: 'Space'
 });
 
 export class ShipControls {
@@ -30,6 +31,9 @@ export class ShipControls {
         // Default flight model is inertial -> dampeners start OFF.
         this.pilotActive = false;
         this.dampeners = dampeners;
+        // PRECISION gear by default; hyperdrive is a latched intent (the eased
+        // spool level lives in Ship). Starts disengaged.
+        this.hyperdriveEngaged = false;
         this.heldKeys = HELD_KEYS;
         this.toggleKeys = TOGGLE_KEYS;
     }
@@ -48,6 +52,10 @@ export class ShipControls {
             this.dampeners = !this.dampeners;
             return 'dampeners';
         }
+        if (code === this.toggleKeys.hyperdrive) {
+            this.hyperdriveEngaged = !this.hyperdriveEngaged;
+            return 'hyperdrive';
+        }
         return null;
     }
 
@@ -62,11 +70,15 @@ export class ShipControls {
      */
     getCommand(keys, gamepad = null) {
         if (!this.pilotActive) {
+            // Hyperdrive is a latched gear: leaving the controls stops thrust input
+            // but must NOT drop the regime, or the ship would suddenly clamp back
+            // to the PRECISION top speed while coasting. Keep emitting the intent.
             return {
                 active: false,
                 dampeners: false,
                 airbrake: false,
                 boost: false,
+                hyperdrive: this.hyperdriveEngaged,
                 thrust: 0,
                 strafe: 0,
                 lift: 0,
@@ -89,6 +101,7 @@ export class ShipControls {
                 dampeners: this.dampeners,
                 airbrake: keys.has(k.airbrake),
                 boost: false,
+                hyperdrive: this.hyperdriveEngaged,
                 thrust: clampAxis(axis(k.thrustForward, k.thrustBack) - (axes?.leftY ?? 0)),
                 strafe: clampAxis(axis(k.strafeRight, k.strafeLeft) + (axes?.leftX ?? 0)),
                 lift: clampAxis(axis(k.liftUp, k.liftDown) + buttonAxis(button('dpadUp'), button('dpadDown'))),
@@ -103,6 +116,7 @@ export class ShipControls {
             dampeners: this.dampeners,
             airbrake: keys.has(k.airbrake) || button('circle'),
             boost: keys.has(k.boost) || button('cross'),
+            hyperdrive: this.hyperdriveEngaged,
             thrust: clampAxis(axis(k.thrustForward, k.thrustBack) + value('r2') - value('l2')),
             strafe: clampAxis(axis(k.strafeRight, k.strafeLeft) + buttonAxis(button('dpadRight'), button('dpadLeft'))),
             lift: clampAxis(axis(k.liftUp, k.liftDown) + buttonAxis(button('dpadUp'), button('dpadDown'))),
@@ -113,7 +127,11 @@ export class ShipControls {
     }
 
     getState() {
-        return { pilotActive: this.pilotActive, dampeners: this.dampeners };
+        return {
+            pilotActive: this.pilotActive,
+            dampeners: this.dampeners,
+            hyperdriveEngaged: this.hyperdriveEngaged
+        };
     }
 }
 

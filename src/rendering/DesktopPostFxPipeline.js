@@ -98,6 +98,12 @@ export class DesktopPostFxPipeline {
         this.warpPass.uniforms.speedFactor.value = Math.max(speedFactor, this.config.warp.debugSpeedFactor);
     }
 
+    // Floored at the configured baseline so the F2 distortion slider stays
+    // meaningful; the speed-driven value rides on top of it.
+    setWarpDistortion(distortion) {
+        this.warpPass.uniforms.distortion.value = Math.max(distortion ?? 0, this.config.warp.distortion ?? 0);
+    }
+
     resize(width, height) {
         this.composer.setSize(width, height);
         const pixelRatio = this.renderer.getPixelRatio();

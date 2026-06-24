@@ -66,6 +66,13 @@ export class RenderPipeline {
         this.xr.setWarpSpeedFactor(value);
     }
 
+    // Phase 08: speed-driven radial warp distortion, capped + eased by the caller
+    // (desktop and VR use different caps; see App._tick).
+    setWarpDistortion(value) {
+        this.desktop.setWarpDistortion(value);
+        this.xr.setWarpDistortion(value);
+    }
+
     resize(width, height) {
         this.desktop.resize(width, height);
         // XR targets size themselves from the XR framebuffer every frame.

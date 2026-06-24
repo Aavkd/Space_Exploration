@@ -7,6 +7,7 @@ const BUTTON_NAMES = Object.freeze([
     'r1',
     'l2',
     'r2',
+    'r3', // right-hand face button (A/X), used for the hyperdrive toggle
     'dpadUp',
     'dpadDown',
     'dpadLeft',
@@ -78,6 +79,11 @@ export class WebXRInput {
         buttons.r2.value = rightTrigger.value;
         buttons.l2.pressed = leftTrigger.pressed;
         buttons.l2.value = leftTrigger.value;
+
+        // Right-hand face button (A on Quest) -> hyperdrive toggle intent.
+        const rightFace = readButton(right, 4);
+        buttons.r3.pressed = rightFace.pressed;
+        buttons.r3.value = rightFace.value;
 
         for (const name of BUTTON_NAMES) {
             const previous = this._previousButtons[name]?.pressed ?? false;

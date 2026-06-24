@@ -17,7 +17,13 @@ const desktopDefault = {
         aberrationStrength: 0.00005,
         vignetteStrength: 0.4,
         streakIntensity: 0.015,
-        distortion: 0
+        distortion: 0,
+        // Phase 08: overall speed-FX intensity (warp factor, distortion, FOV,
+        // speed lines). `speedFxScale` applies while piloting; `speedFxOnFootScale`
+        // applies when nobody is at the controls (walking the ship / EVA) so the
+        // drift FX read calmer on foot. Eased between the two on take/leave.
+        speedFxScale: 1,
+        speedFxOnFootScale: 0.35
     },
     retro: {
         enabled: true,
@@ -62,7 +68,28 @@ const desktopDefault = {
         speedLinesMaxOpacity: 0.38,
         legacyComposerPostFxDisabled: true,
         controllerSpheresVisible: true,
-        vrUserScale: 0.55
+        vrUserScale: 0.55,
+        // Phase 08 extreme-speed cues (capped). Desktop widens FOV + distorts;
+        // VR cannot widen FOV (device-supplied projection) so it gets a small,
+        // conservative distortion cap that can be dialed to 0 for diegetic-only.
+        fovBoostMaxDesktop: 40,
+        warpDistortionMaxDesktop: 0.6,
+        warpDistortionMaxVR: 0.25
+    },
+    // Phase 08 hyperdrive gear. PRECISION is the unscaled baseline; these values
+    // describe the HYPERDRIVE end of the spool and its FX recalibration.
+    hyperdrive: {
+        enabled: true,
+        hyperForwardMult: 120, // forwardForce multiplier at full spool
+        accelCap: 6000, // accelerationCap eases up to this at full spool
+        safetyClamp: 250000, // top-speed guard when the design clamp lifts
+        angularScale: 0.5, // angular authority reduced by (1 - this*level)
+        engageTime: 0.9, // spool-up time constant (s)
+        disengageTime: 0.5, // spool-down time constant (s)
+        warpRefPrecision: 1500, // speed mapped to full warp in PRECISION
+        warpRefHyper: 18000, // speed mapped to full warp at full spool (~600*mult^0.7)
+        fovStart: 8000, // m/s where FOV/distortion cues begin
+        fovMax: 60000 // m/s where FOV/distortion cues saturate
     },
     // Phase 06: the real XR post-FX backend. This is the VR visual feature.
     xrPostFx: {

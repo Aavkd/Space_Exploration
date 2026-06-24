@@ -105,7 +105,9 @@ export class PostProcessingPanel {
                 ['aberrationStrength', 'range', 0, 0.01, 0.00001],
                 ['vignetteStrength', 'range', 0, 1, 0.01],
                 ['streakIntensity', 'range', 0, 0.2, 0.001],
-                ['distortion', 'range', 0, 1, 0.01]
+                ['distortion', 'range', 0, 1, 0.01],
+                ['speedFxScale', 'range', 0, 1, 0.01],
+                ['speedFxOnFootScale', 'range', 0, 1, 0.01]
             ]),
             this._createGroup('Retro / Pixel', this.config.retro, [
                 ['enabled', 'checkbox'],
@@ -148,9 +150,25 @@ export class PostProcessingPanel {
                 ['comfortVignetteEnabled', 'checkbox'],
                 ['comfortVignetteStrength', 'range', 0, 0.5, 0.01],
                 ['speedLinesMaxOpacity', 'range', 0, 0.5, 0.01],
+                ['fovBoostMaxDesktop', 'range', 0, 70, 1],
+                ['warpDistortionMaxDesktop', 'range', 0, 1, 0.01],
+                ['warpDistortionMaxVR', 'range', 0, 1, 0.01],
                 ['legacyComposerPostFxDisabled', 'checkbox'],
                 ['controllerSpheresVisible', 'checkbox'],
                 ['vrUserScale', 'range', 0.25, 1.5, 0.01]
+            ]),
+            this._createGroup('Hyperdrive', this.config.hyperdrive, [
+                ['enabled', 'checkbox'],
+                ['hyperForwardMult', 'range', 1, 300, 1],
+                ['accelCap', 'range', 100, 12000, 100],
+                ['safetyClamp', 'range', 10000, 500000, 10000],
+                ['angularScale', 'range', 0, 1, 0.01],
+                ['engageTime', 'range', 0.1, 3, 0.05],
+                ['disengageTime', 'range', 0.1, 3, 0.05],
+                ['warpRefPrecision', 'range', 200, 4000, 50],
+                ['warpRefHyper', 'range', 2000, 60000, 500],
+                ['fovStart', 'range', 1000, 40000, 500],
+                ['fovMax', 'range', 10000, 150000, 1000]
             ]),
             this._createGroup('XR Post FX', this.config.xrPostFx, [
                 ['enabled', 'checkbox'],

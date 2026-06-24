@@ -132,6 +132,12 @@ export class XRPostFxPipeline {
         this.warp.speedFactor = THREE.MathUtils.clamp(floored, 0, 1);
     }
 
+    // Set directly (no baseline floor) so a vrComfort cap of 0 yields a clean,
+    // diegetic-only look in the headset with no code change.
+    setWarpDistortion(value) {
+        this.warp.distortion = THREE.MathUtils.clamp(value ?? 0, 0, 1);
+    }
+
     /** Render while presenting. Returns true if it drove the XR framebuffer. */
     render({ scene, camera, dt = 0 }) {
         const renderer = this.renderer;

@@ -15,10 +15,17 @@ const DEFAULTS = Object.freeze({
     yawAccel: 1.2, // rad/s^2 about body Y
     rollAccel: 1.8, // rad/s^2 about body Z
 
-    maxLinearSpeed: 2200, // m/s safety clamp
+    maxLinearSpeed: 2200, // m/s safety clamp (PRECISION gear top speed)
     maxAngularSpeed: 1.8, // rad/s per axis safety clamp
 
     accelerationCap: 45, // cap on commanded linear accel magnitude (VR comfort)
+
+    // --- Hyperdrive gear (Phase 08). cmd.hyperdrive is the eased level 0..1
+    // computed in Ship; at level 0 the ship behaves exactly as PRECISION. ---
+    hyperForwardMult: 120, // forwardForce multiplier at full spool
+    hyperAccelCap: 6000, // accelerationCap eases up to this at full spool
+    hyperSafetyClamp: 250000, // top-speed clamp lifts to this guard in hyperdrive
+    hyperAngularScale: 0.5, // angular authority reduced by (1 - this*level)
 
     // Exponential decay rates (per second). Higher = stops faster.
     dampenerLinearRate: 1.4, // inertial dampeners: ease drift toward zero
@@ -32,6 +39,7 @@ const EMPTY_COMMAND = Object.freeze({
     dampeners: false,
     airbrake: false,
     boost: false,
+    hyperdrive: 0, // eased hyperdrive level 0..1 (Ship injects this)
     thrust: 0,
     strafe: 0,
     lift: 0,
@@ -70,16 +78,24 @@ export class ShipPhysics {
         this.lastCommand = cmd;
         const cfg = this.config;
 
+        // Eased hyperdrive level (0 = PRECISION, 1 = full spool). Forward thrust,
+        // accel cap and the top-speed clamp all scale by it so engaging the gear
+        // ramps in smoothly; lateral nudges stay precise.
+        const level = THREE.MathUtils.clamp(cmd.hyperdrive ?? 0, 0, 1);
+
         // --- Linear: thrust (body frame) -> world, capped by VR-comfort cap ---
         if (cmd.active) {
             const throttle = cmd.boost ? cfg.boostMultiplier : 1;
+            const forwardForce = cfg.forwardForce * THREE.MathUtils.lerp(1, cfg.hyperForwardMult, level);
             this._linearAccel.set(
                 cmd.strafe * cfg.strafeForce,
                 cmd.lift * cfg.verticalForce,
-                -cmd.thrust * cfg.forwardForce
+                -cmd.thrust * forwardForce
             ).multiplyScalar(throttle);
 
-            const cap = cfg.accelerationCap;
+            // Ease the comfort cap up with spool so the forward authority is not
+            // throttled back to PRECISION limits the moment hyperdrive engages.
+            const cap = THREE.MathUtils.lerp(cfg.accelerationCap, cfg.hyperAccelCap, level);
             if (this._linearAccel.lengthSq() > cap * cap) this._linearAccel.setLength(cap);
 
             this._linearAccel.applyQuaternion(object3D.quaternion);
@@ -120,18 +136,23 @@ export class ShipPhysics {
             }
         }
 
-        const maxSpeedSq = cfg.maxLinearSpeed * cfg.maxLinearSpeed;
-        if (this.velocity.lengthSq() > maxSpeedSq) this.velocity.setLength(cfg.maxLinearSpeed);
+        // PRECISION keeps the design top-speed clamp; hyperdrive lifts it to a
+        // high safety guard (not a design limit) so speed builds inertially.
+        const clamp = level < 1e-3 ? cfg.maxLinearSpeed : cfg.hyperSafetyClamp;
+        if (this.velocity.lengthSq() > clamp * clamp) this.velocity.setLength(clamp);
 
         object3D.position.addScaledVector(this.velocity, dt);
 
         // --- Angular: body-frame rates, conserved unless damped/braked ---
         if (cmd.active) {
+            // Reduce rotational authority as hyperdrive spools up: spinning hard at
+            // cruise is both uncontrollable and a VR-comfort hazard.
+            const angularScale = 1 - cfg.hyperAngularScale * level;
             this._angularAccel.set(
                 cmd.pitch * cfg.pitchAccel,
                 cmd.yaw * cfg.yawAccel,
                 cmd.roll * cfg.rollAccel
-            );
+            ).multiplyScalar(angularScale);
             this.angularVelocity.addScaledVector(this._angularAccel, dt);
 
             if (cmd.dampeners) {
@@ -170,6 +191,22 @@ export class ShipPhysics {
 
     setAccelerationCap(cap) {
         if (Number.isFinite(cap)) this.config.accelerationCap = cap;
+    }
+
+    // Live-tunable hyperdrive parameters (driven from the F2 config). Anything
+    // omitted/NaN is left at its current value so partial updates are safe.
+    setHyperdriveConfig({ hyperForwardMult, hyperAccelCap, hyperSafetyClamp, hyperAngularScale } = {}) {
+        if (Number.isFinite(hyperForwardMult)) this.config.hyperForwardMult = hyperForwardMult;
+        if (Number.isFinite(hyperAccelCap)) this.config.hyperAccelCap = hyperAccelCap;
+        if (Number.isFinite(hyperSafetyClamp)) this.config.hyperSafetyClamp = hyperSafetyClamp;
+        if (Number.isFinite(hyperAngularScale)) this.config.hyperAngularScale = hyperAngularScale;
+    }
+
+    // Effective forward-thrust multiplier for the last integrated command. Used
+    // by the FX layer to keep speed-lines / warp calibrated to the active gear.
+    getEffectiveThrustMultiplier() {
+        const level = THREE.MathUtils.clamp(this.lastCommand.hyperdrive ?? 0, 0, 1);
+        return THREE.MathUtils.lerp(1, this.config.hyperForwardMult, level);
     }
 
     /** Hard reset of motion state (debug helper). */

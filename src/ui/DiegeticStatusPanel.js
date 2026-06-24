@@ -38,6 +38,7 @@ export class DiegeticStatusPanel {
             speed: 0,
             dampeners: false,
             pilotActive: false,
+            drive: 'PRECISION',
             preset: 'desktop_default',
             universe: 'default',
             nav: '',
@@ -52,6 +53,7 @@ export class DiegeticStatusPanel {
             speed: Math.round(state.speed ?? 0),
             dampeners: Boolean(state.dampeners),
             pilotActive: Boolean(state.pilotActive),
+            drive: state.drive ?? 'PRECISION',
             preset: state.preset ?? 'custom',
             universe: state.universe ?? 'default',
             nav: summarizeNav(state.nav),
@@ -98,7 +100,7 @@ export class DiegeticStatusPanel {
         ctx.fillText(`MODE ${state.displayMode.toUpperCase()} / ${state.playerState.toUpperCase()}`, 48, 150);
         ctx.fillText(`SPEED ${state.speed.toString().padStart(4, ' ')} M/S`, 48, 210);
         ctx.fillText(`PILOT ${state.pilotActive ? 'LINKED' : 'STANDBY'}`, 48, 270);
-        ctx.fillText(`DAMP ${state.dampeners ? 'ON' : 'OFF'}`, 48, 330);
+        ctx.fillText(`DAMP ${state.dampeners ? 'ON' : 'OFF'}   DRIVE ${state.drive}`, 48, 330);
         ctx.fillText(`FX ${state.preset.toUpperCase().slice(0, 18)} / U ${state.universe.toUpperCase().slice(0, 16)}`, 48, 390);
 
         ctx.fillStyle = state.prompt ? '#ffcc75' : 'rgba(155, 220, 255, 0.68)';

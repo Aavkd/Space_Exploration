@@ -31,6 +31,10 @@ const GLASS_MATERIAL_PATTERN = /architectural glass|canopy|windshield|windscreen
 // effects. Hidden while idle; can be re-enabled later as additive thruster FX.
 const FX_SPRITE_MATERIAL_PATTERN = /^fire_mat|^rcs_thruster|hyperdrive_fx/i;
 
+// Phase 08: the hyperdrive FX sprites are driven separately by the eased
+// hyperdrive level, so they are split out from the idle engine/RCS sprites.
+const HYPERDRIVE_FX_MATERIAL_PATTERN = /hyperdrive_fx/i;
+
 // Thin interior divider/door panels share the "Architectural Glass" material, so
 // material-based glass turns them transparent too -- but one sits across the nose
 // and reads as a white rectangle floating in front of the ship. Hidden by mesh
@@ -167,20 +171,28 @@ function applyGlassMaterials(model, { opacity = 0.15 } = {}) {
 }
 
 // Hides flat flame/jet sprite cards (matched by FX material name) that otherwise
-// appear as opaque patches on the hull while idle. Returns the hidden meshes.
+// appear as opaque patches on the hull while idle. Splits the hyperdrive FX
+// cards out from the idle engine/RCS cards so the runtime can drive them by the
+// hyperdrive spool level. Both lists start hidden.
 function hideFxSprites(model) {
-    const hidden = [];
+    const engineSprites = [];
+    const hyperdriveSprites = [];
 
     model.traverse((node) => {
         if (!node.isMesh) return;
         const materials = Array.isArray(node.material) ? node.material : [node.material];
-        if (materials.some((material) => material && FX_SPRITE_MATERIAL_PATTERN.test(material.name || ''))) {
-            node.visible = false;
-            hidden.push(node);
+        const names = materials.map((material) => material?.name || '');
+        if (!names.some((name) => FX_SPRITE_MATERIAL_PATTERN.test(name))) return;
+
+        node.visible = false;
+        if (names.some((name) => HYPERDRIVE_FX_MATERIAL_PATTERN.test(name))) {
+            hyperdriveSprites.push(node);
+        } else {
+            engineSprites.push(node);
         }
     });
 
-    return hidden;
+    return { engineSprites, hyperdriveSprites };
 }
 
 // Hides the stray interior divider/door panels that otherwise show as a white
@@ -249,10 +261,11 @@ export function createGlbShipModel({
                 const hasAuthoredMaterials = (gltf.parser?.json?.materials?.length ?? 0) > 0;
                 let glassMaterials = [];
                 let fxSprites = [];
+                let hyperdriveSprites = [];
                 if (hasAuthoredMaterials) {
                     prepareAuthoredMaterials(model);
                     glassMaterials = applyGlassMaterials(model, { opacity: glassOpacity });
-                    fxSprites = hideFxSprites(model);
+                    ({ engineSprites: fxSprites, hyperdriveSprites } = hideFxSprites(model));
                     hideStrayPanels(model);
                 } else {
                     applyHullMaterial(model, hullMaterial);
@@ -276,6 +289,7 @@ export function createGlbShipModel({
                 root.userData.usesAuthoredMaterials = hasAuthoredMaterials;
                 root.userData.glassMaterialCount = glassMaterials.length;
                 root.userData.hiddenFxSpriteCount = fxSprites.length;
+                root.userData.hyperdriveSpriteCount = hyperdriveSprites.length;
                 root.userData.animationNames = animations.map((clip) => clip.name);
                 root.userData.normalized = normalized;
 
@@ -285,6 +299,7 @@ export function createGlbShipModel({
                     hasAuthoredMaterials,
                     glassMaterials,
                     fxSprites,
+                    hyperdriveSprites,
                     animations,
                     mixer,
                     ...normalized

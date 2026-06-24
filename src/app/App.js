@@ -128,6 +128,13 @@ export class App {
         this.cameraMode = 'player';
         this.mouse = { dx: 0, dy: 0 };
 
+        // Phase 08 extreme-speed cues: base FOV to widen from, and the eased
+        // radial warp distortion (one value; only one render path is live).
+        this._baseCameraFov = this.camera.fov;
+        this._warpDistortion = 0;
+        // Eased speed-FX intensity: full while piloting, subdued on foot / EVA.
+        this._speedFxScale = 1;
+
         // Phase 2 debug helpers (anchor spheres + player scale capsule) are now
         // hidden by default: with bloom they looked like stray bits stuck on the
         // hull. Toggle back on with F3 / the debug hook when aligning anchors.
@@ -207,6 +214,10 @@ export class App {
             this._applyGamepadLook(gamepad, dt);
         }
 
+        // Hyperdrive toggle (r3 on a pad, right face button in VR) reads from
+        // whichever input is actually driving the ship this frame.
+        this._handleHyperdriveButton(controlInput);
+
         // Ship is simulated every frame whether or not anyone is piloting: when
         // pilot mode is off the command is inactive and it coasts on inertia +
         // gravity. So it keeps moving and keeps being bent by attractors.
@@ -232,12 +243,7 @@ export class App {
         this.environment.update(this.ship.position, dt, this.camera.position);
         this.sky.update(dt, this.camera.position);
 
-        // Warp + speed lines react to actual ship speed. The speed-driven warp
-        // factor is then capped by the VR Comfort `warpMax` knob, so dragging
-        // that (or any Warp slider) in F2 always pulls the effect intensity down.
-        const speedFactor = THREE.MathUtils.clamp(this.ship.speed / 600, 0, 1);
-        const warpCeiling = this.postFxConfig.vrComfort?.warpMax ?? 1;
-        this.renderPipeline.setWarpSpeedFactor(Math.min(speedFactor, warpCeiling));
+        this._updateSpeedFx(dt, xrActive);
 
         this._updateTelemetry();
         this.universeNavigation.update({
@@ -295,6 +301,104 @@ export class App {
     _applyGamepadLook(gamepad, dt) {
         if (!gamepad.connected || this.cameraMode !== 'player') return;
         this.playerController.applyGamepadLook(gamepad.axes.rightX, gamepad.axes.rightY, dt);
+    }
+
+    // Edge-triggered hyperdrive toggle from a gamepad / XR controller button.
+    _handleHyperdriveButton(input) {
+        if (!(this.postFxConfig.hyperdrive?.enabled ?? true)) return;
+        if (!input?.connected) return;
+        if (!input.buttons?.r3?.justPressed) return;
+        if (this.shipControls.handleToggleKey('Space') === 'hyperdrive') {
+            this._onHyperdriveToggled(input.source === 'webxr');
+        }
+    }
+
+    // Tactile feedback + state sync on engage/disengage. A punchy pulse on
+    // engage, a softer one on disengage.
+    _onHyperdriveToggled(fromXr = false) {
+        const engaged = this.shipControls.hyperdriveEngaged;
+        const pulse = engaged
+            ? { duration: 160, weak: 0.5, strong: 0.7, strength: 0.6 }
+            : { duration: 90, weak: 0.2, strong: 0.3, strength: 0.3 };
+        if (fromXr) this.xr.pulse({ duration: pulse.duration, strength: pulse.strength });
+        else this.input.gamepad.pulse(pulse);
+        this._syncDebugDomState();
+    }
+
+    // Phase 08: drive warp / speed-lines / FOV / distortion from the active gear.
+    // Replaces the old fixed `speed / 600` warp factor with a regime-scaled
+    // reference that blends from PRECISION to HYPERDRIVE by the spool level.
+    _updateSpeedFx(dt, xrActive) {
+        const speed = this.ship.speed;
+        const level = this.ship.getHyperdriveLevel();
+        const hd = this.postFxConfig.hyperdrive ?? {};
+        const comfort = this.postFxConfig.vrComfort ?? {};
+        const warpCfg = this.postFxConfig.warp ?? {};
+
+        // Speed-FX intensity: full while piloting, subdued when nobody is at the
+        // controls (walking the ship / EVA) so the drift FX read calmer on foot.
+        // Eased so taking / leaving the controls fades rather than pops.
+        const targetFxScale = this.shipControls.pilotActive
+            ? (warpCfg.speedFxScale ?? 1)
+            : (warpCfg.speedFxOnFootScale ?? 0.35);
+        this._speedFxScale += (targetFxScale - this._speedFxScale) * THREE.MathUtils.clamp(dt * 3, 0, 1);
+        const fxScale = this._speedFxScale;
+
+        // Warp speed factor: reference speed blends up with spool so warp is not
+        // pinned during normal PRECISION flight nor stuck low in hyperdrive.
+        const warpRef = THREE.MathUtils.lerp(
+            hd.warpRefPrecision ?? 1500,
+            hd.warpRefHyper ?? 18000,
+            level
+        );
+        const speedFactor = THREE.MathUtils.clamp(speed / Math.max(warpRef, 1), 0, 1) * fxScale;
+        const warpCeiling = comfort.warpMax ?? 1;
+        this.renderPipeline.setWarpSpeedFactor(Math.min(speedFactor, warpCeiling));
+
+        // Extreme-speed cues use absolute m/s thresholds (Racing used km/h).
+        const fovStart = hd.fovStart ?? 8000;
+        const fovMax = hd.fovMax ?? 60000;
+        const fovFactor = THREE.MathUtils.clamp((speed - fovStart) / Math.max(fovMax - fovStart, 1), 0, 1);
+
+        // Radial distortion everywhere, capped per platform and eased.
+        const distCap = xrActive
+            ? (comfort.warpDistortionMaxVR ?? 0.25)
+            : (comfort.warpDistortionMaxDesktop ?? 0.6);
+        const distTarget = fovFactor * distCap * fxScale;
+        const distEase = THREE.MathUtils.clamp(dt * 3, 0, 1);
+        this._warpDistortion += (distTarget - this._warpDistortion) * distEase;
+        this.renderPipeline.setWarpDistortion(this._warpDistortion);
+
+        // FOV widen: desktop / chase cam only. In an XR session the per-eye
+        // projection is device-supplied, so camera.fov has no effect (documented
+        // constraint, not a TODO) — leave it at base.
+        const fovBoostMax = comfort.fovBoostMaxDesktop ?? 40;
+        const targetFov = this._baseCameraFov + (xrActive ? 0 : fovFactor * fovBoostMax * fxScale);
+        const fovEase = THREE.MathUtils.clamp(dt * 3, 0, 1);
+        const nextFov = this.camera.fov + (targetFov - this.camera.fov) * fovEase;
+        if (Math.abs(nextFov - this.camera.fov) > 0.01) {
+            this.camera.fov = nextFov;
+            this.camera.updateProjectionMatrix();
+        }
+
+        // Recalibrate the speed lines for the active gear (thresholds scale by the
+        // effective multiplier^0.7, matching Racing's calibration exponent).
+        const mult = hd.hyperForwardMult ?? 120;
+        const exp = Math.pow(mult, 0.7);
+        this.ship.speedLines.setSpeedThresholds(
+            THREE.MathUtils.lerp(200, 200 * exp, level),
+            THREE.MathUtils.lerp(1800, 1800 * exp, level)
+        );
+        this.ship.speedLines.setIntensity(fxScale);
+    }
+
+    // Human-readable drive state for the telemetry + diegetic HUD.
+    _hyperdriveDriveLabel() {
+        const engaged = this.shipControls.hyperdriveEngaged;
+        const level = this.ship.getHyperdriveLevel();
+        if (!engaged && level < 0.01) return 'PRECISION';
+        if (engaged && level > 0.99) return 'HYPERDRIVE';
+        return `HYPERDRIVE ⟳ ${Math.round(level * 100)}%`;
     }
 
     _handleXrSelect() {
@@ -543,11 +647,14 @@ export class App {
             ? '<span class="on">ON</span>'
             : '<span class="warn">OFF (inertial)</span>';
         const brake = command.airbrake ? '<span class="warn">AIRBRAKE</span>' : '';
+        const driveLabel = this.shipControls.hyperdriveEngaged || this.ship.getHyperdriveLevel() > 0.01
+            ? `<span class="on">${this._hyperdriveDriveLabel()}</span>`
+            : '<span class="off">PRECISION</span>';
         const padId = gamepad.id && gamepad.id.length > 34 ? `${gamepad.id.slice(0, 31)}...` : gamepad.id;
 
         const lines = [
             `<b>VIEW</b> ${mode}    <b>PILOT</b> ${flag(controls.pilotActive)} ${brake}`,
-            `<b>DAMPENERS</b> ${dampLabel}`,
+            `<b>DAMPENERS</b> ${dampLabel}    <b>DRIVE</b> ${driveLabel}`,
             `<b>PAD</b> ${gamepad.connected ? `<span class="on">${padId || 'CONNECTED'}</span>` : '<span class="off">OFF</span>'}`,
             `<b>SPEED</b> ${speed.toFixed(1)} m/s   <b>ANG</b> ${angSpeed.toFixed(1)} deg/s`
         ];
@@ -582,6 +689,7 @@ export class App {
             speed: this.ship.speed,
             dampeners: controls.dampeners,
             pilotActive: controls.pilotActive,
+            drive: this._hyperdriveDriveLabel(),
             preset: this.activePreset,
             universe: this.activeUniversePreset,
             nav: this.universeNavigation.getState(),
@@ -704,8 +812,19 @@ export class App {
                 return;
             }
 
+            // Space toggles hyperdrive (PRECISION <-> HYPERDRIVE gear).
+            if (event.code === 'Space') {
+                event.preventDefault();
+                if (!event.repeat && (this.postFxConfig.hyperdrive?.enabled ?? true)) {
+                    if (this.shipControls.handleToggleKey('Space') === 'hyperdrive') {
+                        this._onHyperdriveToggled();
+                    }
+                }
+                return;
+            }
+
             // Stop arrow keys from scrolling the page while flying/free-looking.
-            if (event.code.startsWith('Arrow') || event.code === 'Space') {
+            if (event.code.startsWith('Arrow')) {
                 event.preventDefault();
             }
 
@@ -774,6 +893,14 @@ export class App {
 
         this._applyUniverseRuntimeConfig({ sceneGlow, starGlow, nebulaGlow, landmarkGlow });
         this.ship.physics.setAccelerationCap(this.postFxConfig.vrComfort?.accelerationCap ?? 45);
+        const hyperdrive = this.postFxConfig.hyperdrive ?? {};
+        this.ship.physics.setHyperdriveConfig({
+            hyperForwardMult: hyperdrive.hyperForwardMult,
+            hyperAccelCap: hyperdrive.accelCap,
+            hyperSafetyClamp: hyperdrive.safetyClamp,
+            hyperAngularScale: hyperdrive.angularScale
+        });
+        this.ship.setHyperdriveSpool(hyperdrive.engageTime ?? 0.9, hyperdrive.disengageTime ?? 0.5);
         this.ship.speedLines.setMaxOpacity(this.postFxConfig.vrComfort?.speedLinesMaxOpacity ?? 0.38);
         this.xr.setControllerSpheresVisible(this.postFxConfig.vrComfort?.controllerSpheresVisible ?? true);
         this.xr.setUserScale(this.displayMode === 'vr' ? (this.postFxConfig.vrComfort?.vrUserScale ?? 1) : 1);
@@ -989,7 +1116,28 @@ export class App {
             },
             isPaused: () => this.paused,
             getWarpSpeedFactor: () => this.renderPipeline.desktop.warpPass.uniforms.speedFactor.value,
-            getSpeedLinesOpacity: () => this.ship.speedLines.object3D.material.opacity,
+            getWarpDistortion: () => this.renderPipeline.desktop.warpPass.uniforms.distortion.value,
+            getCameraFov: () => this.camera.fov,
+            getSpeedLinesOpacity: () => this.ship.speedLines.material.uniforms.uOpacity.value,
+            getSpeedLinesFactor: () => this.ship.speedLines.getSpeedFactor(),
+
+            // --- Phase 08 hyperdrive debug surface ---
+            getHyperdriveState: () => ({
+                engaged: this.shipControls.hyperdriveEngaged,
+                level: this.ship.getHyperdriveLevel(),
+                effectiveMult: this.ship.physics.getEffectiveThrustMultiplier(),
+                label: this._hyperdriveDriveLabel()
+            }),
+            setHyperdriveEngaged: (on) => {
+                this.shipControls.hyperdriveEngaged = Boolean(on);
+                this._syncDebugDomState();
+                return this.shipControls.hyperdriveEngaged;
+            },
+            toggleHyperdrive: () => {
+                this.shipControls.handleToggleKey('Space');
+                this._syncDebugDomState();
+                return this.shipControls.hyperdriveEngaged;
+            },
 
             getShipAnchorNames: () => this.ship.getAnchorNames(),
             getShipAnchorSummary: () => this.ship.getAnchorSummary(),
@@ -1073,6 +1221,8 @@ export class App {
             cameraMode: this.debugCamera.mode,
             pilotActive: this.shipControls.pilotActive,
             dampeners: this.shipControls.dampeners,
+            hyperdriveEngaged: this.shipControls.hyperdriveEngaged,
+            hyperdriveLevel: this.ship.getHyperdriveLevel(),
             xr: this.xr?.getDebugState?.(),
             gamepad: this.input.gamepad.getDebugState(),
             shipAnchors: this.ship.getAnchorNames(),
