@@ -22,6 +22,10 @@ uniform float uDistortion;
 uniform float uDiskRadius;
 uniform bool uIsPulsar;
 uniform float uBloomIntensity;
+uniform float uBeaming;
+uniform float uPhotonGlow;
+uniform float uPhotonWidth;
+uniform float uPhotonRadius;
 
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -123,9 +127,11 @@ void main() {
     vec3 p = vOrigin + dir * tStart;
     vec4 color = vec4(0.0);
     float stepSize = 0.09;
+    float minR = 100.0;
 
     for (int i = 0; i < 240; i++) {
         float r = length(p);
+        minR = min(minR, r);
 
         if (r < 1.0) {
             color.rgb = vec3(0.0);
@@ -142,6 +148,27 @@ void main() {
             float diskR = length(p.xy);
             vec3 emission = mix(uColorInner, uColorOuter, smoothstep(1.5, uDiskRadius, diskR));
             emission *= (1.0 + 3.0 / (diskR * diskR)) * uBloomIntensity;
+
+            // --- Relativistic Doppler beaming ---------------------------------
+            // The disk orbits in the xy-plane, so the tangential (orbital)
+            // velocity is perpendicular to the radial direction; Keplerian-ish
+            // speed climbs toward the centre. The side sweeping toward the camera
+            // is blueshifted and dramatically brightened (~D^3 relativistic
+            // beaming) while the receding side is redshifted and dimmed. This is
+            // the signature Gargantua asymmetry.
+            vec3 orbitVel = normalize(vec3(-p.y, p.x, 0.0));
+            float beta = clamp(0.55 / sqrt(max(diskR, 0.4)), 0.0, 0.8);
+            float los = dot(orbitVel, -dir);             // >0 when approaching
+            float doppler = 1.0 / max(1.0 - beta * los, 0.1);
+            // ~D^2.5 beaming, clamped so the bright limb glows without crushing
+            // all colour out of the disk.
+            float beam = mix(1.0, min(pow(doppler, 2.5), 5.0), uBeaming);
+            // Colour shift: approaching -> bluer/whiter, receding -> deep red.
+            float shiftT = clamp(0.5 + los * beta * 0.7, 0.0, 1.0);
+            vec3 shift = mix(vec3(1.6, 0.5, 0.32), vec3(0.55, 0.78, 1.8), shiftT);
+            emission *= mix(vec3(1.0), shift, uBeaming) * beam;
+            // ------------------------------------------------------------------
+
             float alpha = d * stepSize * 0.6;
             color.rgb += emission * alpha * (1.0 - color.a);
             color.a += alpha;
@@ -158,6 +185,25 @@ void main() {
         if (color.a >= 0.99 || (r > 20.0 && dot(p, dir) > 0.0)) break;
     }
 
+    // --- Gravitationally-lensed photon ring -------------------------------
+    // Light with near-critical impact parameter skims the photon sphere and
+    // piles up just outside the horizon before escaping, drawing the thin
+    // bright Einstein ring that haloes the shadow. Rays that JUST escape keep a
+    // closest approach (minR) hugging the horizon, so we key a blue-white glow
+    // to minR -> 1 that fades outward: a ring tight around the black disk.
+    // This synthesises the lensed halo without a sky texture; Part 7 will swap
+    // it for a real cubemap sample along the bent exit direction (dir).
+    if (color.a < 0.98) {
+        // Near-critical rays pile up at the photon sphere (their closest
+        // approach minR converges on uPhotonRadius) before escaping, so a tight
+        // Gaussian there draws the crisp Einstein ring hugging the shadow.
+        float ring = exp(-pow((minR - uPhotonRadius) / max(uPhotonWidth, 0.03), 2.0));
+        vec3 ringCol = vec3(0.80, 0.90, 1.25);     // hot blue-white photon light
+        float ringA = ring * uPhotonGlow;
+        color.rgb += ringCol * ringA * 2.0 * uBloomIntensity * (1.0 - color.a);
+        color.a = min(1.0, color.a + ringA);
+    }
+
     gl_FragColor = color;
 }
 `;
@@ -169,6 +215,10 @@ export class BlackHole {
         this.diskRadius = options.diskRadius ?? 6;
         this.isPulsar = options.isPulsar ?? false;
         this.bloomIntensity = options.bloomIntensity ?? 1.4;
+        this.beaming = options.beaming ?? 1.0;
+        this.photonGlow = options.photonGlow ?? 0.9;
+        this.photonWidth = options.photonWidth ?? 0.35;
+        this.photonRadius = options.photonRadius ?? 1.6;
         this._elapsedTime = 0;
 
         this.mesh = new THREE.Mesh(
@@ -183,7 +233,11 @@ export class BlackHole {
                     uDistortion: { value: this.distortion },
                     uDiskRadius: { value: this.diskRadius },
                     uIsPulsar: { value: this.isPulsar },
-                    uBloomIntensity: { value: this.bloomIntensity }
+                    uBloomIntensity: { value: this.bloomIntensity },
+                    uBeaming: { value: this.beaming },
+                    uPhotonGlow: { value: this.photonGlow },
+                    uPhotonWidth: { value: this.photonWidth },
+                    uPhotonRadius: { value: this.photonRadius }
                 },
                 transparent: true,
                 side: THREE.BackSide,
@@ -204,5 +258,9 @@ export class BlackHole {
         uniforms.uDiskRadius.value = this.diskRadius;
         uniforms.uIsPulsar.value = this.isPulsar;
         uniforms.uBloomIntensity.value = this.bloomIntensity;
+        uniforms.uBeaming.value = this.beaming;
+        uniforms.uPhotonGlow.value = this.photonGlow;
+        uniforms.uPhotonWidth.value = this.photonWidth;
+        uniforms.uPhotonRadius.value = this.photonRadius;
     }
 }

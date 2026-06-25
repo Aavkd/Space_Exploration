@@ -47,6 +47,10 @@ const universeDefault = {
         bloomIntensity: 1.6,
         distortion: 0.27,
         diskRadius: 6,
+        beaming: 1,
+        photonGlow: 0.9,
+        photonWidth: 0.35,
+        photonRadius: 1.6,
         scale: 115,
         colorInner: '#ffc880',
         colorOuter: '#ff5050'

@@ -47,6 +47,10 @@ export class Landmarks {
             entry.blackHole.bloomIntensity = this.config.blackHoles.bloomIntensity * (entry.isPulsar ? 1.2 : 1);
             entry.blackHole.distortion = this.config.blackHoles.distortion;
             entry.blackHole.diskRadius = this.config.blackHoles.diskRadius;
+            entry.blackHole.beaming = this.config.blackHoles.beaming;
+            entry.blackHole.photonGlow = this.config.blackHoles.photonGlow;
+            entry.blackHole.photonWidth = this.config.blackHoles.photonWidth;
+            entry.blackHole.photonRadius = this.config.blackHoles.photonRadius;
             entry.blackHole.mesh.scale.setScalar(this.config.blackHoles.scale * entry.scaleFactor);
             entry.blackHole.mesh.material.uniforms.uColorInner.value.set(this.config.blackHoles.colorInner);
             entry.blackHole.mesh.material.uniforms.uColorOuter.value.set(this.config.blackHoles.colorOuter);
@@ -125,6 +129,10 @@ export class Landmarks {
             distortion: this.config.blackHoles.distortion,
             diskRadius: this.config.blackHoles.diskRadius,
             bloomIntensity: this.config.blackHoles.bloomIntensity,
+            beaming: this.config.blackHoles.beaming,
+            photonGlow: this.config.blackHoles.photonGlow,
+            photonWidth: this.config.blackHoles.photonWidth,
+            photonRadius: this.config.blackHoles.photonRadius,
             colorInner: isPulsar ? '#cce8ff' : this.config.blackHoles.colorInner,
             colorOuter: isPulsar ? '#9b4dff' : this.config.blackHoles.colorOuter,
             isPulsar,
