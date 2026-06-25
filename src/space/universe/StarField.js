@@ -37,6 +37,7 @@ export class StarField {
             layer.material.uniforms.brightness.value = this.config.stars.brightness * scale;
             layer.material.uniforms.size.value = this.config.stars.size * (name === 'near' ? 1.15 : 1);
             layer.material.uniforms.saturation.value = this.config.stars.saturation;
+            layer.material.uniforms.bloom.value = this.config.stars.bloom ?? 1;
             layer.material.uniforms.regionRadius.value = this.config.global.regionRadius;
         }
     }
@@ -108,6 +109,7 @@ export class StarField {
                 brightness: { value: this.config.stars.brightness },
                 size: { value: this.config.stars.size },
                 saturation: { value: this.config.stars.saturation },
+                bloom: { value: this.config.stars.bloom ?? 1 },
                 regionRadius: { value: this.config.global.regionRadius }
             },
             vertexShader: `
@@ -115,6 +117,7 @@ export class StarField {
                 attribute float brightnessSeed;
                 varying vec3 vColor;
                 varying float vAlpha;
+                varying float vSpike;
                 uniform float time;
                 uniform float size;
                 uniform float brightness;
@@ -125,26 +128,56 @@ export class StarField {
                     vec3 saturated = mix(vec3(dot(color, vec3(0.299, 0.587, 0.114))), color, saturation);
                     vColor = saturated * brightness * brightnessSeed;
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    float twinkle = 0.78 + 0.22 * sin(time * (1.5 + seed * 0.003) + seed);
+                    float dist = max(-mvPosition.z, 1.0);
+
+                    float twinkle = 0.72 + 0.28 * sin(time * (1.5 + seed * 0.003) + seed);
                     float borderFade = 1.0 - smoothstep(regionRadius * 0.86, regionRadius, length(position));
-                    vAlpha = twinkle * max(borderFade, 0.18);
-                    gl_PointSize = size * (260.0 / max(-mvPosition.z, 1.0)) * (0.75 + brightnessSeed * 0.45);
+                    vAlpha = twinkle * max(borderFade, 0.2);
+                    // Only the brightest stars grow diffraction glints.
+                    vSpike = smoothstep(0.95, 1.8, brightnessSeed);
+
+                    // Perspective attenuation calibrated to the region scale (~10^5
+                    // units) instead of the old fixed 260.0 (which assumed a ~10^3
+                    // scene and collapsed every layer to sub-pixel). The clamp keeps a
+                    // visible pixel floor so the distant mid/background layers actually
+                    // render, and a ceiling so close stars don't balloon.
+                    float sizeScale = regionRadius * 0.02;
+                    float px = size * (sizeScale / dist) * (0.5 + brightnessSeed * 0.7);
+                    gl_PointSize = clamp(px, 1.8, 30.0);
                     gl_Position = projectionMatrix * mvPosition;
                 }
             `,
             fragmentShader: `
                 varying vec3 vColor;
                 varying float vAlpha;
+                varying float vSpike;
                 uniform float opacity;
+                uniform float bloom;
 
                 void main() {
                     vec2 uv = gl_PointCoord - 0.5;
-                    float dist = length(uv);
-                    float core = smoothstep(0.18, 0.0, dist);
-                    float halo = smoothstep(0.5, 0.0, dist) * 0.35;
-                    float alpha = (core + halo) * vAlpha * opacity;
-                    if (alpha < 0.002) discard;
-                    gl_FragColor = vec4(vColor, alpha);
+                    float d = length(uv);
+
+                    // Tight core punched into HDR so the bloom pass catches it, wrapped
+                    // in a soft halo for the glow.
+                    float core = pow(smoothstep(0.5, 0.0, d), 2.4);
+                    float halo = smoothstep(0.5, 0.05, d) * 0.4;
+
+                    // Vertical + horizontal diffraction glints on the brightest stars so
+                    // they read as shining rather than as flat dots.
+                    vec2 a = abs(uv);
+                    float spikeH = smoothstep(0.5, 0.0, a.y) * smoothstep(0.5, 0.0, a.x * 7.0);
+                    float spikeV = smoothstep(0.5, 0.0, a.x) * smoothstep(0.5, 0.0, a.y * 7.0);
+                    float spike = max(spikeH, spikeV) * vSpike;
+
+                    float mask = core + halo + spike * 0.5;
+                    float alpha = mask * vAlpha * opacity;
+                    if (alpha < 0.003) discard;
+
+                    // bloom scales how hard the core overshoots into HDR, which is
+                    // what the global bloom pass picks up - higher = more glow spill.
+                    vec3 col = vColor * (1.0 + core * 1.8 * bloom);
+                    gl_FragColor = vec4(col, alpha);
                 }
             `,
             vertexColors: true,

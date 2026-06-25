@@ -207,14 +207,25 @@ export class Universe {
     //
     // What moves: web nodes/voids, galaxy meshes + abstract clones, landmark
     // meshes + abstract clones, nebula/cluster mesh positions (which double as
-    // the abstract position for POI queries).
+    // the abstract position for POI queries), and the local star layers
+    // (near/mid) + their heroLights so they stream past the ship like everything
+    // else instead of staying glued to the camera.
     //
-    // What stays: star-layer Float32Array geometry and heroLights — both are
-    // tied to the star positions that never move, so they stay in sync with the
-    // unshifted geometry automatically.
+    // What stays: the background star layer — it is re-centred on the camera
+    // every frame as a quasi-infinite backdrop, so shifting it would be pointless
+    // (and immediately overwritten). The dome starfield (SkyDeepSpace) is camera
+    // -parented for the same reason and is untouched here.
     rebaseOrigin(offset) {
         for (const node of this.web.nodes) node.position.sub(offset);
         for (const v of this.web.voids) v.position.sub(offset);
+
+        // Cheap whole-layer translation: the Float32Array geometry is in layer-
+        // local space, so offsetting the Points object keeps every star in sync
+        // without touching the buffer. Only near/mid are local; background rides
+        // the camera (see StarField.update).
+        this.starField.layers.near?.position.sub(offset);
+        this.starField.layers.mid?.position.sub(offset);
+        for (const light of this.starField.heroLights) light.position.sub(offset);
 
         for (const galaxy of this.galaxyField.galaxies) {
             galaxy.position.sub(offset);

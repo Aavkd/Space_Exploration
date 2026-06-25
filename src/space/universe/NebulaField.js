@@ -33,14 +33,18 @@ export class NebulaField {
 
     setRuntimeConfig(nebulae) {
         this.config.nebulae = { ...this.config.nebulae, ...nebulae };
+        const bloom = this.config.nebulae.bloom ?? 1;
         for (const nebula of this.nebulae) {
             nebula.material.uniforms.opacity.value = this.config.nebulae.opacity;
             nebula.material.uniforms.brightness.value = this.config.nebulae.brightness;
             nebula.material.uniforms.scale.value = this.config.nebulae.scale;
+            nebula.material.uniforms.bloom.value = bloom;
         }
         for (const cluster of this.clusters) {
             cluster.material.opacity = Math.min(1, this.config.nebulae.opacity * 0.95);
             cluster.material.size = 18 * this.config.nebulae.scale;
+            // Extra emissive push on the per-vertex cluster colours so they bloom.
+            cluster.material.color.setScalar(bloom);
         }
         if (this.dust) {
             this.dust.material.uniforms.opacity.value = this.config.nebulae.opacity * 0.28;
@@ -228,7 +232,8 @@ function createNebulaMaterial(config) {
         uniforms: {
             opacity: { value: config.opacity },
             brightness: { value: config.brightness },
-            scale: { value: config.scale }
+            scale: { value: config.scale },
+            bloom: { value: config.bloom ?? 1 }
         },
         vertexShader: `
             attribute float particleSize;
@@ -247,6 +252,7 @@ function createNebulaMaterial(config) {
         fragmentShader: `
             uniform float opacity;
             uniform float brightness;
+            uniform float bloom;
             varying vec3 vColor;
             varying float vSeed;
             float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -276,7 +282,7 @@ function createNebulaMaterial(config) {
                 float cloud = fbm(uv * 3.4 + vec2(vSeed, vSeed * 0.37));
                 float alpha = (smoothstep(0.16, 0.9, cloud) * (1.0 - smoothstep(0.35, 1.0, radius))) * opacity * 0.2;
                 if (alpha < 0.003) discard;
-                gl_FragColor = vec4(vColor * brightness * (0.65 + cloud * 0.75), alpha);
+                gl_FragColor = vec4(vColor * brightness * bloom * (0.65 + cloud * 0.75), alpha);
             }
         `,
         vertexColors: true,

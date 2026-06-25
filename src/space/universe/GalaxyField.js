@@ -40,12 +40,15 @@ export class GalaxyField {
         this.config.galaxies = { ...this.config.galaxies, ...galaxies };
         const inner = new THREE.Color(this.config.galaxies.colorInner);
         const outer = new THREE.Color(this.config.galaxies.colorOuter);
+        // `bloom` rides on top of brightness as an extra emissive push so the
+        // galaxy colour clears the global bloom threshold and glows.
+        const glow = this.config.galaxies.brightness * (this.config.galaxies.bloom ?? 1);
         for (const galaxy of this.galaxies) {
             galaxy.points.material.opacity = this.config.galaxies.opacity;
             galaxy.points.material.size = this.config.galaxies.pointSize;
-            galaxy.points.material.color.copy(inner).lerp(outer, 0.25).multiplyScalar(this.config.galaxies.brightness);
+            galaxy.points.material.color.copy(inner).lerp(outer, 0.25).multiplyScalar(glow);
             galaxy.sprite.material.opacity = this.config.galaxies.opacity * 0.95;
-            galaxy.sprite.material.color.setScalar(this.config.galaxies.brightness);
+            galaxy.sprite.material.color.setScalar(glow);
         }
     }
 

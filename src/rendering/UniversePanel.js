@@ -8,6 +8,7 @@ const LIVE_KEYS = new Set([
     'colorOuter',
     'temperatureBias',
     'saturation',
+    'bloom',
     'bloomIntensity',
     'distortion',
     'diskRadius',
@@ -209,7 +210,8 @@ export class UniversePanel {
                 ['opacity', 'range', 0, 1, 0.01],
                 ['twinkleSpeed', 'range', 0, 4, 0.01],
                 ['temperatureBias', 'range', 0, 1, 0.01],
-                ['saturation', 'range', 0, 2, 0.01]
+                ['saturation', 'range', 0, 2, 0.01],
+                ['bloom', 'range', 0, 4, 0.05]
             ]));
         } else if (this.activeTab === 'Galaxies') {
             content.appendChild(this._group('Galaxies', 'galaxies', [
@@ -224,6 +226,7 @@ export class UniversePanel {
                 ['brightness', 'range', 0, 3, 0.01],
                 ['rotationSpeed', 'range', 0, 4, 0.01],
                 ['pointSize', 'range', 4, 48, 1],
+                ['bloom', 'range', 0, 4, 0.05],
                 ['colorInner', 'color'],
                 ['colorOuter', 'color']
             ]));
@@ -249,7 +252,8 @@ export class UniversePanel {
                 ['opacity', 'range', 0, 1.5, 0.01],
                 ['brightness', 'range', 0, 6, 0.05],
                 ['scale', 'range', 0.3, 2.5, 0.01],
-                ['driftSpeed', 'range', 0, 4, 0.01]
+                ['driftSpeed', 'range', 0, 4, 0.01],
+                ['bloom', 'range', 0, 4, 0.05]
             ]));
         } else if (this.activeTab === 'Lighting') {
             content.appendChild(this._group('Lighting', 'lighting', [

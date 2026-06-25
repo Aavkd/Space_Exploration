@@ -20,7 +20,8 @@ const universeDefault = {
         opacity: 1,
         twinkleSpeed: 3.35,
         temperatureBias: 0.64,
-        saturation: 0.95
+        saturation: 0.95,
+        bloom: 1.6
     },
     galaxies: {
         enabled: true,
@@ -34,6 +35,7 @@ const universeDefault = {
         brightness: 1,
         rotationSpeed: 1,
         pointSize: 24,
+        bloom: 1.4,
         colorInner: '#88ccff',
         colorOuter: '#c49f17'
     },
@@ -57,7 +59,8 @@ const universeDefault = {
         opacity: 0.25,
         brightness: 5.25,
         scale: 2.14,
-        driftSpeed: 2.7
+        driftSpeed: 2.7,
+        bloom: 1.3
     },
     lighting: {
         intensity: 2.35,
