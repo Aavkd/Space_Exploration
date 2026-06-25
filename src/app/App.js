@@ -29,6 +29,8 @@ import { XRExperience } from '../xr/XRExperience.js';
 import { XRVisualEffects } from '../xr/XRVisualEffects.js';
 import { DiegeticStatusPanel } from '../ui/DiegeticStatusPanel.js';
 import { UniverseNavigation } from '../ui/UniverseNavigation.js';
+import { AudioEngine } from '../audio/AudioEngine.js';
+import { AudioDirector } from '../audio/AudioDirector.js';
 
 // Rebase the world origin when the ship exceeds this distance from (0,0,0).
 // 1 000 units → float32 precision < 0.0002 units, imperceptible on any surface.
@@ -89,6 +91,8 @@ export class App {
         this.ship.setGravityField(this.gravityField);
         this.shipControls = new ShipControls();
         this.scene.add(this.ship.object3D);
+        this.audio = new AudioEngine({ camera: this.camera, ship: this.ship });
+        this.audioDirector = new AudioDirector({ audio: this.audio });
         this.ship.ready
             .then((info) => {
                 if (info) console.info('Ship hull ready', info.size, 'scale', info.appliedScale);
@@ -269,6 +273,8 @@ export class App {
             xrActive,
             shipSpeed: this.ship.speed
         });
+        this.audioDirector.update(dt, this._getAudioState({ xrActive }));
+        this.audio.update(dt);
 
         // One stable render entrypoint. The facade picks desktop EffectComposer
         // or the custom XR post-FX backend (real Bloom + Retro/Pixel + Color
@@ -279,6 +285,10 @@ export class App {
     _handleGamepadButtons(gamepad) {
         if (!gamepad.connected) return;
         const buttons = gamepad.buttons;
+
+        if (Object.values(buttons).some((button) => button.justPressed)) {
+            this._unlockAudioFromGesture();
+        }
 
         if (buttons.triangle.justPressed && this.cameraMode === 'player') {
             const action = this.playerController.interact();
@@ -421,6 +431,7 @@ export class App {
     }
 
     _handleXrSelect() {
+        this._unlockAudioFromGesture();
         if (this.cameraMode !== 'player') return false;
         const action = this.playerController.interact();
         if (action) {
@@ -431,6 +442,7 @@ export class App {
     }
 
     _enterVrMode() {
+        this._unlockAudioFromGesture();
         this.displayMode = 'vr';
         this._exitPointerLock();
         this.postPanel.setVisible(false);
@@ -716,6 +728,50 @@ export class App {
         });
     }
 
+    _getAudioState({ xrActive = false } = {}) {
+        const nearbyPois = this.environment.getPOIs(this.ship.position, 18);
+        const nearestBlackHole = nearbyPois.find((poi) => poi.type === 'blackhole') ?? null;
+        const nearestAnomaly = nearbyPois.find((poi) => poi.type === 'anomaly') ?? null;
+        const nearestNebula = nearbyPois.find((poi) => poi.type === 'nebula' || poi.type === 'cluster') ?? null;
+        const currentNode = this.environment.getCurrentNode(this.ship.position);
+        const controls = this.shipControls.getState();
+        const command = this.ship.commandState ?? {};
+
+        return {
+            displayMode: this.displayMode,
+            playerState: this.playerController.getState(),
+            cameraMode: this.cameraMode,
+            pilotActive: controls.pilotActive,
+            dampeners: controls.dampeners,
+            airbrake: Boolean(command.airbrake),
+            boost: Boolean(command.boost),
+            command: { ...command },
+            speed: this.ship.speed,
+            velocity: this.ship.velocity.toArray(),
+            hyperdriveEngaged: controls.hyperdriveEngaged,
+            hyperdriveLevel: this.ship.getHyperdriveLevel(),
+            currentNode: currentNode
+                ? {
+                    name: currentNode.name,
+                    theme: currentNode.theme,
+                    radius: currentNode.radius
+                }
+                : null,
+            nearbyPois: nearbyPois.map((poi) => ({
+                type: poi.type,
+                name: poi.name,
+                distance: poi.distance,
+                radius: poi.radius,
+                theme: poi.theme
+            })),
+            nearestBlackHole,
+            nearestAnomaly,
+            nearestNebula,
+            universeCounts: this.environment.getCounts(),
+            xrActive
+        };
+    }
+
     _setupEnvironmentLighting() {
         const pmrem = new THREE.PMREMGenerator(this.renderer);
         const environment = pmrem.fromScene(new RoomEnvironment(), 0.04);
@@ -730,6 +786,8 @@ export class App {
     _bindEvents() {
         window.addEventListener('resize', () => this._resize());
         window.addEventListener('keydown', (event) => {
+            this._unlockAudioFromGesture();
+
             if (event.code === 'F2') {
                 event.preventDefault();
                 this.postPanel.toggle();
@@ -800,6 +858,7 @@ export class App {
             if (event.code === 'KeyP') {
                 event.preventDefault();
                 this.ship.replayStartSequence();
+                this.audio.playCue('shipStartup');
                 return;
             }
 
@@ -855,7 +914,9 @@ export class App {
 
         // Pointer lock for first-person mouse look (player mode only). Clicking
         // the canvas grabs the mouse; Esc (browser default) or opening F2 frees it.
+        this.canvas.addEventListener('pointerdown', () => this._unlockAudioFromGesture(), { passive: true });
         this.canvas.addEventListener('click', () => {
+            this._unlockAudioFromGesture();
             if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible) {
                 this.canvas.requestPointerLock?.();
             }
@@ -865,6 +926,12 @@ export class App {
             if (document.pointerLockElement !== this.canvas) return;
             this.playerController.applyMouseLook(event.movementX, event.movementY);
         });
+    }
+
+    _unlockAudioFromGesture() {
+        this.audio?.resumeFromUserGesture()
+            ?.then(() => this._syncDebugDomState())
+            .catch(() => {});
     }
 
     _exitPointerLock() {
@@ -1039,6 +1106,30 @@ export class App {
             getUniverseConfig: () => structuredClone(this.universeConfig),
             applyUniversePreset: (name) => this.applyUniversePreset(name),
             regenerateUniverse: () => this.regenerateUniverse(),
+            getAudioState: () => this.audio.getDebugState({
+                director: this.audioDirector.getDebugState(),
+                state: this._getAudioState({ xrActive: this.xr.isPresenting })
+            }),
+            setAudioEnabled: (enabled) => {
+                const result = this.audio.setEnabled(enabled);
+                this._syncDebugDomState();
+                return result;
+            },
+            setAudioBusGain: (bus, value, rampSeconds = 0.12) => this.audio.setBusGain(bus, value, rampSeconds),
+            playAudioCue: (id, options = {}) => this.audio.playCue(id, options),
+            sayShipAi: (eventId, options = {}) => this.audio.say(eventId, options),
+            stopAllAudio: () => this.audio.stopAllAudio(),
+            audio: {
+                getState: () => this.audio.getDebugState({
+                    director: this.audioDirector.getDebugState(),
+                    state: this._getAudioState({ xrActive: this.xr.isPresenting })
+                }),
+                setEnabled: (enabled) => this.audio.setEnabled(enabled),
+                setBusGain: (bus, value, rampSeconds = 0.12) => this.audio.setBusGain(bus, value, rampSeconds),
+                playCue: (id, options = {}) => this.audio.playCue(id, options),
+                sayShipAi: (eventId, options = {}) => this.audio.say(eventId, options),
+                stopAll: () => this.audio.stopAllAudio()
+            },
             getComfortState: () => ({ ...this.postFxConfig.vrComfort }),
             getDiegeticPanelState: () => this.diegeticPanel.getDebugState(),
             getVrHudState: () => ({
@@ -1242,6 +1333,17 @@ export class App {
             dampeners: this.shipControls.dampeners,
             hyperdriveEngaged: this.shipControls.hyperdriveEngaged,
             hyperdriveLevel: this.ship.getHyperdriveLevel(),
+            audio: this.audio
+                ? {
+                    enabled: this.audio.enabled,
+                    unlocked: this.audio.unlocked,
+                    contextState: this.audio.context.state,
+                    loadedBufferCount: this.audio.buffers.size,
+                    activeLoops: [...this.audio.loops.values()]
+                        .filter((loop) => loop.started || loop.starting || loop.stopping)
+                        .map((loop) => loop.entry.id)
+                }
+                : null,
             xr: this.xr?.getDebugState?.(),
             gamepad: this.input.gamepad.getDebugState(),
             shipAnchors: this.ship.getAnchorNames(),

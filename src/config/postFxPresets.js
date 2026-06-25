@@ -1,44 +1,44 @@
 const desktopDefault = {
     bloom: {
         enabled: true,
-        strength: 1.2,
-        radius: 0.8,
-        threshold: 0.1,
+        strength: 0.28,
+        radius: 0.82,
+        threshold: 0.05,
         // XR-only multipliers so the headset bloom can be nudged relative to
         // desktop without breaking the shared visual language. 1 = parity.
         xrStrengthScale: 1,
         xrRadiusScale: 1
     },
     warp: {
-        enabled: true,
-        debugSpeedFactor: 0,
-        blurStrength: 0.04,
-        blurSamples: 12,
-        aberrationStrength: 0.00005,
+        enabled: false,
+        debugSpeedFactor: 0.77,
+        blurStrength: 0.144,
+        blurSamples: 6,
+        aberrationStrength: 0.00495,
         vignetteStrength: 0.4,
         streakIntensity: 0.015,
-        distortion: 0,
+        distortion: 0.04,
         // Phase 08: overall speed-FX intensity (warp factor, distortion, FOV,
         // speed lines). `speedFxScale` applies while piloting; `speedFxOnFootScale`
         // applies when nobody is at the controls (walking the ship / EVA) so the
         // drift FX read calmer on foot. Eased between the two on take/leave.
-        speedFxScale: 1,
+        speedFxScale: 0.71,
         speedFxOnFootScale: 0.35
     },
     retro: {
         enabled: true,
         pixelSize: 4,
-        colorDepth: 16,
-        scanlineIntensity: 0.15,
+        colorDepth: 21,
+        scanlineIntensity: 0.64,
         scanlineCount: 1.5,
-        saturation: 0.5,
-        contrast: 0.9,
-        noiseIntensity: 0,
+        saturation: 0.59,
+        contrast: 0.76,
+        noiseIntensity: 0.03,
         vignetteStrength: 0.4,
         vignetteIntensity: 0.6,
-        aberration: 0,
-        brightness: -0.02,
-        exposure: 3
+        aberration: 0.0045,
+        brightness: -0.13,
+        exposure: 4
     },
     ascii: {
         enabled: false,
@@ -56,7 +56,7 @@ const desktopDefault = {
         scale: 1
     },
     vrComfort: {
-        bloomMax: 1.6,
+        bloomMax: 0.8,
         warpMax: 1,
         rotationMode: 'snap',
         snapAngleDeg: 30,
@@ -80,7 +80,7 @@ const desktopDefault = {
     // describe the HYPERDRIVE end of the spool and its FX recalibration.
     hyperdrive: {
         enabled: true,
-        hyperForwardMult: 120, // forwardForce multiplier at full spool
+        hyperForwardMult: 155, // forwardForce multiplier at full spool
         accelCap: 6000, // accelerationCap eases up to this at full spool
         safetyClamp: 250000, // top-speed guard when the design clamp lifts
         angularScale: 0.5, // angular authority reduced by (1 - this*level)
@@ -118,10 +118,10 @@ const desktopDefault = {
         landmarkGlow: 1
     },
     ship: {
-        envMapIntensity: 0.85,
-        glassOpacity: 0.15,
-        brightness: 1,
-        bloom: 1
+        envMapIntensity: 0.13,
+        glassOpacity: 0.02,
+        brightness: 2,
+        bloom: 0.2
     }
 };
 

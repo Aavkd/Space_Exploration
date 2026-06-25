@@ -1,32 +1,32 @@
 const universeDefault = {
     global: {
         seed: 'deep-space-vr-foundation',
-        regionRadius: 500000,
-        masterDensity: 1,
-        nodeCount: 18,
-        filamentStrength: 1,
-        voidScatter: 0.06,
-        themeVariety: 1,
+        regionRadius: 670000,
+        masterDensity: 1.88,
+        nodeCount: 31,
+        filamentStrength: 1.74,
+        voidScatter: 0.02,
+        themeVariety: 1.83,
         gravityScale: 1,
-        fogDensity: 0.0000015
+        fogDensity: 0.0000044
     },
     stars: {
         enabled: true,
-        nearCount: 5000,
-        midCount: 25000,
-        bgCount: 60000,
-        brightness: 2.4,
-        size: 8,
+        nearCount: 10400,
+        midCount: 54500,
+        bgCount: 88000,
+        brightness: 6,
+        size: 15.5,
         opacity: 1,
-        twinkleSpeed: 1,
-        temperatureBias: 0.5,
-        saturation: 1.1
+        twinkleSpeed: 3.35,
+        temperatureBias: 0.64,
+        saturation: 0.95
     },
     galaxies: {
         enabled: true,
-        count: 45,
+        count: 60,
         spiralRatio: 0.5,
-        ellipticalRatio: 0.3,
+        ellipticalRatio: 0.57,
         irregularRatio: 0.2,
         sizeMin: 3000,
         sizeMax: 30000,
@@ -35,15 +35,15 @@ const universeDefault = {
         rotationSpeed: 1,
         pointSize: 24,
         colorInner: '#88ccff',
-        colorOuter: '#ff44cc'
+        colorOuter: '#c49f17'
     },
     blackHoles: {
         enabled: true,
-        blackHoleCount: 6,
+        blackHoleCount: 9,
         pulsarCount: 3,
-        anomalyCount: 10,
+        anomalyCount: 14,
         bloomIntensity: 1.6,
-        distortion: 0.18,
+        distortion: 0.27,
         diskRadius: 6,
         scale: 115,
         colorInner: '#ffc880',
@@ -51,20 +51,20 @@ const universeDefault = {
     },
     nebulae: {
         enabled: true,
-        nebulaCount: 14,
-        clusterCount: 20,
+        nebulaCount: 23,
+        clusterCount: 35,
         dust: true,
-        opacity: 0.72,
-        brightness: 2.1,
-        scale: 1.18,
-        driftSpeed: 1
+        opacity: 0.25,
+        brightness: 5.25,
+        scale: 2.14,
+        driftSpeed: 2.7
     },
     lighting: {
-        intensity: 1,
-        range: 120000,
+        intensity: 2.35,
+        range: 175000,
         temperatureInfluence: 1,
-        lerpSpeed: 1.5,
-        ambientLevel: 0.3
+        lerpSpeed: 4.1,
+        ambientLevel: 0.69
     },
     events: {
         eventRate: 0.05,
