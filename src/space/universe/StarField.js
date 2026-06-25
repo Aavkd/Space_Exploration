@@ -1,13 +1,7 @@
 import * as THREE from 'three';
-import { gaussian, randomRange, weightedChoice } from './rng.js';
+import { gaussian, randomRange } from './rng.js';
 import { randomPointInSphere } from './CosmicWeb.js';
-
-const STAR_PALETTE = [
-    { color: '#ffb080', weight: 0.34 },
-    { color: '#fff0c0', weight: 0.38 },
-    { color: '#ffffff', weight: 0.2 },
-    { color: '#aaccff', weight: 0.08 }
-];
+import { blackbody, sampleStarTemperature, sampleLuminosity } from './starColor.js';
 
 export class StarField {
     constructor({ rng, web, config }) {
@@ -73,15 +67,17 @@ export class StarField {
             positions[index + 1] = position.y;
             positions[index + 2] = position.z;
 
-            const entry = weightedChoice(this.rng, this._temperatureWeights());
-            color.set(entry.color);
+            // Temperature drives both hue (blackbody ramp) and luminosity, so
+            // the two stay correlated: hot stars are rare, blue-white, and bright.
+            const tempK = sampleStarTemperature(this.rng, this.config.stars.temperatureBias);
+            blackbody(tempK, color);
             const lift = 1 + this.config.stars.saturation * 0.12;
             colors[index] = Math.min(1, color.r * lift);
             colors[index + 1] = Math.min(1, color.g * lift);
             colors[index + 2] = Math.min(1, color.b * lift);
 
             seeds[i] = this.rng() * 1000;
-            brightnesses[i] = Math.pow(this.rng(), 2.3) * 1.7 + 0.28;
+            brightnesses[i] = sampleLuminosity(this.rng, tempK);
 
             if (name === 'near' && this.heroLights.length < 36 && brightnesses[i] > 1.1) {
                 this.heroLights.push({
@@ -202,13 +198,5 @@ export class StarField {
         if (name === 'near') return sampled.position.clampLength(2000, radius);
         if (sampled.position.length() < 90000) sampled.position.add(new THREE.Vector3(gaussian(this.rng), gaussian(this.rng), gaussian(this.rng)).multiplyScalar(90000));
         return sampled.position.clampLength(20000, radius);
-    }
-
-    _temperatureWeights() {
-        const bias = THREE.MathUtils.clamp(this.config.stars.temperatureBias, 0, 1);
-        return STAR_PALETTE.map((entry, index) => {
-            const cool = index <= 1 ? bias : 1 - bias;
-            return { value: entry, weight: entry.weight * (0.45 + cool) };
-        });
     }
 }
