@@ -1,0 +1,155 @@
+{
+  "llm": {
+    "providers": {
+      "ollama_local": {
+        "enabled": true,
+        "kind": "ollama",
+        "endpoint": "http://host.docker.internal:11434",
+        "model": "qwen3.5:2b",
+        "api_key_env": "",
+        "timeout_seconds": 45,
+        "options": {
+          "transport": "local"
+        }
+      },
+      "private_ollama": {
+        "enabled": false,
+        "kind": "ollama",
+        "endpoint": "http://ollama.internal:11434",
+        "model": "minicpm-v4.5:latest",
+        "api_key_env": "",
+        "timeout_seconds": 45,
+        "options": {
+          "transport": "private-network"
+        }
+      },
+      "openrouter_cloud": {
+        "enabled": false,
+        "kind": "openrouter",
+        "endpoint": "https://openrouter.ai/api/v1",
+        "model": "",
+        "api_key_env": "OPENROUTER_API_KEY",
+        "timeout_seconds": 45,
+        "options": {}
+      },
+      "openai_cloud": {
+        "enabled": false,
+        "kind": "openai",
+        "endpoint": "https://api.openai.com/v1",
+        "model": "",
+        "api_key_env": "OPENAI_API_KEY",
+        "timeout_seconds": 45,
+        "options": {}
+      },
+      "anthropic_cloud": {
+        "enabled": false,
+        "kind": "anthropic",
+        "endpoint": "https://api.anthropic.com",
+        "model": "claude-haiku-4-5-20251001",
+        "api_key_env": "",
+        "timeout_seconds": 45,
+        "options": {}
+      },
+      "gemini_cloud": {
+        "enabled": false,
+        "kind": "gemini",
+        "endpoint": "https://generativelanguage.googleapis.com",
+        "model": "",
+        "api_key_env": "GEMINI_API_KEY",
+        "timeout_seconds": 45,
+        "options": {}
+      }
+    },
+    "default_provider": "ollama_local",
+    "fallback_provider": ""
+  },
+  "stt": {
+    "engines": {
+      "faster-whisper": {
+        "enabled": true,
+        "backend": "faster-whisper",
+        "endpoint": "",
+        "model": "base",
+        "api_key_env": "",
+        "language": "auto",
+        "stream": false,
+        "options": {
+          "device": "auto"
+        }
+      },
+      "openai-stt": {
+        "enabled": true,
+        "backend": "openai",
+        "endpoint": "https://api.openai.com/v1/audio/transcriptions",
+        "model": "",
+        "api_key_env": "OPENAI_API_KEY",
+        "language": "auto",
+        "stream": false,
+        "options": {}
+      }
+    },
+    "default_engine": "faster-whisper"
+  },
+  "tts": {
+    "engines": {
+      "piper": {
+        "enabled": true,
+        "backend": "piper",
+        "endpoint": "",
+        "model": "",
+        "api_key_env": "",
+        "language": "en",
+        "stream": false,
+        "options": {
+          "sample_rate_hz": 22050,
+          "model_path": "voices/piper/en_US-lessac-medium.onnx"
+        }
+      },
+      "coqui-xtts": {
+        "enabled": true,
+        "backend": "coqui-xtts",
+        "endpoint": "",
+        "model": "",
+        "api_key_env": "",
+        "language": "en",
+        "stream": true,
+        "options": {}
+      }
+    },
+    "default_engine": "piper"
+  },
+  "embeddings": {
+    "providers": {
+      "local-embeddings": {
+        "enabled": true,
+        "kind": "hashing",
+        "endpoint": "",
+        "model": "hashing-384",
+        "api_key_env": "",
+        "timeout_seconds": 30,
+        "options": {
+          "dimensions": 384
+        }
+      },
+      "sentence-transformers-local": {
+        "enabled": false,
+        "kind": "sentence-transformers",
+        "endpoint": "",
+        "model": "",
+        "api_key_env": "",
+        "timeout_seconds": 30,
+        "options": {}
+      },
+      "openai-embeddings": {
+        "enabled": false,
+        "kind": "openai",
+        "endpoint": "https://api.openai.com/v1/embeddings",
+        "model": "",
+        "api_key_env": "OPENAI_API_KEY",
+        "timeout_seconds": 30,
+        "options": {}
+      }
+    },
+    "default_provider": "local-embeddings"
+  }
+}

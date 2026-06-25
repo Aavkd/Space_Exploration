@@ -1,0 +1,314 @@
+{
+  "$defs": {
+    "PersonaConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "preferred_language": {
+          "default": "en",
+          "title": "Preferred Language",
+          "type": "string"
+        },
+        "improvisation": {
+          "default": 0.5,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Improvisation",
+          "type": "number"
+        },
+        "prompts": {
+          "$ref": "#/$defs/PersonaPromptConfig"
+        },
+        "style": {
+          "$ref": "#/$defs/PersonaStyleConfig"
+        },
+        "voice": {
+          "$ref": "#/$defs/PersonaVoiceConfig"
+        },
+        "memory": {
+          "$ref": "#/$defs/PersonaMemoryConfig"
+        },
+        "tools": {
+          "$ref": "#/$defs/PersonaToolsConfig"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "PersonaConfig",
+      "type": "object"
+    },
+    "PersonaMemoryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "default": "persona",
+          "enum": [
+            "persona",
+            "shared",
+            "session"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "retention_mode": {
+          "default": "transcript_and_summary",
+          "enum": [
+            "full_transcript",
+            "summary_only",
+            "transcript_and_summary"
+          ],
+          "title": "Retention Mode",
+          "type": "string"
+        },
+        "inject_relevant_memories": {
+          "default": true,
+          "title": "Inject Relevant Memories",
+          "type": "boolean"
+        },
+        "allow_user_preferences": {
+          "default": true,
+          "title": "Allow User Preferences",
+          "type": "boolean"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "title": "PersonaMemoryConfig",
+      "type": "object"
+    },
+    "PersonaPromptConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "default": "",
+          "title": "System",
+          "type": "string"
+        },
+        "role": {
+          "default": "",
+          "title": "Role",
+          "type": "string"
+        },
+        "context": {
+          "default": "",
+          "title": "Context",
+          "type": "string"
+        },
+        "tone_rules": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tone Rules",
+          "type": "array"
+        },
+        "behavior_limits": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Behavior Limits",
+          "type": "array"
+        },
+        "allowed_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Capabilities",
+          "type": "array"
+        },
+        "forbidden_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Capabilities",
+          "type": "array"
+        }
+      },
+      "title": "PersonaPromptConfig",
+      "type": "object"
+    },
+    "PersonaStyleConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "tone": {
+          "default": "",
+          "title": "Tone",
+          "type": "string"
+        },
+        "archetype": {
+          "default": "",
+          "title": "Archetype",
+          "type": "string"
+        },
+        "cadence": {
+          "default": "",
+          "title": "Cadence",
+          "type": "string"
+        },
+        "emotional_register": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Emotional Register",
+          "type": "array"
+        },
+        "vocabulary": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Vocabulary",
+          "type": "array"
+        },
+        "interaction_style": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Interaction Style",
+          "type": "array"
+        }
+      },
+      "title": "PersonaStyleConfig",
+      "type": "object"
+    },
+    "PersonaToolsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "future",
+          "enum": [
+            "disabled",
+            "future",
+            "enabled"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "allowed_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "blocked_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Blocked Tools",
+          "type": "array"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "title": "PersonaToolsConfig",
+      "type": "object"
+    },
+    "PersonaVoiceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "default": "",
+          "title": "Engine",
+          "type": "string"
+        },
+        "fallback_engine": {
+          "default": "",
+          "title": "Fallback Engine",
+          "type": "string"
+        },
+        "voice_id": {
+          "default": "",
+          "title": "Voice Id",
+          "type": "string"
+        },
+        "style": {
+          "default": "",
+          "title": "Style",
+          "type": "string"
+        },
+        "language": {
+          "default": "en",
+          "title": "Language",
+          "type": "string"
+        },
+        "playback_mode": {
+          "default": "stream",
+          "enum": [
+            "stream",
+            "batch"
+          ],
+          "title": "Playback Mode",
+          "type": "string"
+        },
+        "speaking_rate": {
+          "default": 1.0,
+          "maximum": 2.0,
+          "minimum": 0.5,
+          "title": "Speaking Rate",
+          "type": "number"
+        },
+        "pitch": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "title": "Pitch",
+          "type": "number"
+        },
+        "expressive_presets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expressive Presets",
+          "type": "array"
+        }
+      },
+      "title": "PersonaVoiceConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "personas": {
+      "items": {
+        "$ref": "#/$defs/PersonaConfig"
+      },
+      "title": "Personas",
+      "type": "array"
+    },
+    "default_persona_id": {
+      "default": "",
+      "title": "Default Persona Id",
+      "type": "string"
+    }
+  },
+  "title": "PersonasConfig",
+  "type": "object"
+}

@@ -1,0 +1,22 @@
+services:
+  deep-space-voice:
+    build:
+      context: .
+    container_name: deep-space-voice
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DEEP_SPACE_VOICE_ENVIRONMENT: development
+      DEEP_SPACE_VOICE_HOST: 0.0.0.0
+      DEEP_SPACE_VOICE_PORT: "8000"
+      DEEP_SPACE_VOICE_CONFIG_FILE: /app/config/defaults/app.json
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./voices:/app/config/defaults/voices:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

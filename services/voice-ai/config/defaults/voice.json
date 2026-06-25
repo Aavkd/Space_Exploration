@@ -1,0 +1,32 @@
+{
+  "supported_languages": [
+    "fr",
+    "en"
+  ],
+  "wake_word": {
+    "enabled": true,
+    "phrase": "eternity",
+    "sensitivity": 0.58,
+    "provider_engine": "faster-whisper"
+  },
+  "modes": {
+    "available_modes": [
+      "push_to_talk",
+      "voice_activity",
+      "continuous_conversation"
+    ],
+    "default_mode": "push_to_talk",
+    "allow_barge_in": true,
+    "vad_enabled": true,
+    "vad": {
+      "enabled": true,
+      "threshold": 0.018,
+      "min_speech_ms": 220,
+      "min_silence_ms": 700,
+      "fallback_min_bytes": 600
+    },
+    "continuous_requires_wake_word": true,
+    "continuous_idle_timeout_seconds": 45,
+    "auto_listen_after_response": true
+  }
+}

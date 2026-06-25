@@ -1,0 +1,775 @@
+{
+  "$defs": {
+    "ApiConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "base_path": {
+          "default": "/api/v1",
+          "title": "Base Path",
+          "type": "string"
+        },
+        "cors_origins": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cors Origins",
+          "type": "array"
+        }
+      },
+      "title": "ApiConfig",
+      "type": "object"
+    },
+    "EmbeddingsProvidersConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProviderConnectionConfig"
+          },
+          "title": "Providers",
+          "type": "object"
+        },
+        "default_provider": {
+          "default": "",
+          "title": "Default Provider",
+          "type": "string"
+        }
+      },
+      "title": "EmbeddingsProvidersConfig",
+      "type": "object"
+    },
+    "EngineConnectionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "backend": {
+          "minLength": 1,
+          "title": "Backend",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "",
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "model": {
+          "default": "",
+          "title": "Model",
+          "type": "string"
+        },
+        "api_key_env": {
+          "default": "",
+          "title": "Api Key Env",
+          "type": "string"
+        },
+        "language": {
+          "default": "",
+          "title": "Language",
+          "type": "string"
+        },
+        "stream": {
+          "default": false,
+          "title": "Stream",
+          "type": "boolean"
+        },
+        "options": {
+          "title": "Options",
+          "type": "object"
+        }
+      },
+      "required": [
+        "backend"
+      ],
+      "title": "EngineConnectionConfig",
+      "type": "object"
+    },
+    "FeaturesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "prepared_modules": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prepared Modules",
+          "type": "array"
+        }
+      },
+      "title": "FeaturesConfig",
+      "type": "object"
+    },
+    "LlmProvidersConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProviderConnectionConfig"
+          },
+          "title": "Providers",
+          "type": "object"
+        },
+        "default_provider": {
+          "default": "",
+          "title": "Default Provider",
+          "type": "string"
+        },
+        "fallback_provider": {
+          "default": "",
+          "title": "Fallback Provider",
+          "type": "string"
+        }
+      },
+      "title": "LlmProvidersConfig",
+      "type": "object"
+    },
+    "MemoryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "db_path": {
+          "default": "data/memory.db",
+          "title": "Db Path",
+          "type": "string"
+        }
+      },
+      "title": "MemoryConfig",
+      "type": "object"
+    },
+    "PersonaConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "preferred_language": {
+          "default": "en",
+          "title": "Preferred Language",
+          "type": "string"
+        },
+        "improvisation": {
+          "default": 0.5,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Improvisation",
+          "type": "number"
+        },
+        "prompts": {
+          "$ref": "#/$defs/PersonaPromptConfig"
+        },
+        "style": {
+          "$ref": "#/$defs/PersonaStyleConfig"
+        },
+        "voice": {
+          "$ref": "#/$defs/PersonaVoiceConfig"
+        },
+        "memory": {
+          "$ref": "#/$defs/PersonaMemoryConfig"
+        },
+        "tools": {
+          "$ref": "#/$defs/PersonaToolsConfig"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "PersonaConfig",
+      "type": "object"
+    },
+    "PersonaMemoryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "default": "persona",
+          "enum": [
+            "persona",
+            "shared",
+            "session"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "retention_mode": {
+          "default": "transcript_and_summary",
+          "enum": [
+            "full_transcript",
+            "summary_only",
+            "transcript_and_summary"
+          ],
+          "title": "Retention Mode",
+          "type": "string"
+        },
+        "inject_relevant_memories": {
+          "default": true,
+          "title": "Inject Relevant Memories",
+          "type": "boolean"
+        },
+        "allow_user_preferences": {
+          "default": true,
+          "title": "Allow User Preferences",
+          "type": "boolean"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "title": "PersonaMemoryConfig",
+      "type": "object"
+    },
+    "PersonaPromptConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "default": "",
+          "title": "System",
+          "type": "string"
+        },
+        "role": {
+          "default": "",
+          "title": "Role",
+          "type": "string"
+        },
+        "context": {
+          "default": "",
+          "title": "Context",
+          "type": "string"
+        },
+        "tone_rules": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tone Rules",
+          "type": "array"
+        },
+        "behavior_limits": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Behavior Limits",
+          "type": "array"
+        },
+        "allowed_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Capabilities",
+          "type": "array"
+        },
+        "forbidden_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Capabilities",
+          "type": "array"
+        }
+      },
+      "title": "PersonaPromptConfig",
+      "type": "object"
+    },
+    "PersonaStyleConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "tone": {
+          "default": "",
+          "title": "Tone",
+          "type": "string"
+        },
+        "archetype": {
+          "default": "",
+          "title": "Archetype",
+          "type": "string"
+        },
+        "cadence": {
+          "default": "",
+          "title": "Cadence",
+          "type": "string"
+        },
+        "emotional_register": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Emotional Register",
+          "type": "array"
+        },
+        "vocabulary": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Vocabulary",
+          "type": "array"
+        },
+        "interaction_style": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Interaction Style",
+          "type": "array"
+        }
+      },
+      "title": "PersonaStyleConfig",
+      "type": "object"
+    },
+    "PersonaToolsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "future",
+          "enum": [
+            "disabled",
+            "future",
+            "enabled"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "allowed_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "blocked_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Blocked Tools",
+          "type": "array"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "title": "PersonaToolsConfig",
+      "type": "object"
+    },
+    "PersonaVoiceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "default": "",
+          "title": "Engine",
+          "type": "string"
+        },
+        "fallback_engine": {
+          "default": "",
+          "title": "Fallback Engine",
+          "type": "string"
+        },
+        "voice_id": {
+          "default": "",
+          "title": "Voice Id",
+          "type": "string"
+        },
+        "style": {
+          "default": "",
+          "title": "Style",
+          "type": "string"
+        },
+        "language": {
+          "default": "en",
+          "title": "Language",
+          "type": "string"
+        },
+        "playback_mode": {
+          "default": "stream",
+          "enum": [
+            "stream",
+            "batch"
+          ],
+          "title": "Playback Mode",
+          "type": "string"
+        },
+        "speaking_rate": {
+          "default": 1.0,
+          "maximum": 2.0,
+          "minimum": 0.5,
+          "title": "Speaking Rate",
+          "type": "number"
+        },
+        "pitch": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "title": "Pitch",
+          "type": "number"
+        },
+        "expressive_presets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expressive Presets",
+          "type": "array"
+        }
+      },
+      "title": "PersonaVoiceConfig",
+      "type": "object"
+    },
+    "PersonasConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "personas": {
+          "items": {
+            "$ref": "#/$defs/PersonaConfig"
+          },
+          "title": "Personas",
+          "type": "array"
+        },
+        "default_persona_id": {
+          "default": "",
+          "title": "Default Persona Id",
+          "type": "string"
+        }
+      },
+      "title": "PersonasConfig",
+      "type": "object"
+    },
+    "ProviderConnectionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "",
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "model": {
+          "default": "",
+          "title": "Model",
+          "type": "string"
+        },
+        "api_key_env": {
+          "default": "",
+          "title": "Api Key Env",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 30,
+          "maximum": 600,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        },
+        "options": {
+          "title": "Options",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ProviderConnectionConfig",
+      "type": "object"
+    },
+    "ProvidersConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "llm": {
+          "$ref": "#/$defs/LlmProvidersConfig"
+        },
+        "stt": {
+          "$ref": "#/$defs/SttProvidersConfig"
+        },
+        "tts": {
+          "$ref": "#/$defs/TtsProvidersConfig"
+        },
+        "embeddings": {
+          "$ref": "#/$defs/EmbeddingsProvidersConfig"
+        }
+      },
+      "title": "ProvidersConfig",
+      "type": "object"
+    },
+    "RuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "log_level": {
+          "default": "INFO",
+          "title": "Log Level",
+          "type": "string"
+        },
+        "debug_audio_capture": {
+          "default": false,
+          "title": "Debug Audio Capture",
+          "type": "boolean"
+        }
+      },
+      "title": "RuntimeConfig",
+      "type": "object"
+    },
+    "ServiceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "default": "deep-space-voice",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "default": "0.1.0",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "title": "ServiceConfig",
+      "type": "object"
+    },
+    "SttProvidersConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "engines": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EngineConnectionConfig"
+          },
+          "title": "Engines",
+          "type": "object"
+        },
+        "default_engine": {
+          "default": "faster-whisper",
+          "title": "Default Engine",
+          "type": "string"
+        }
+      },
+      "title": "SttProvidersConfig",
+      "type": "object"
+    },
+    "TtsProvidersConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "engines": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EngineConnectionConfig"
+          },
+          "title": "Engines",
+          "type": "object"
+        },
+        "default_engine": {
+          "default": "",
+          "title": "Default Engine",
+          "type": "string"
+        }
+      },
+      "title": "TtsProvidersConfig",
+      "type": "object"
+    },
+    "VadConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "threshold": {
+          "default": 0.018,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Threshold",
+          "type": "number"
+        },
+        "min_speech_ms": {
+          "default": 220,
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Min Speech Ms",
+          "type": "integer"
+        },
+        "min_silence_ms": {
+          "default": 700,
+          "maximum": 30000,
+          "minimum": 0,
+          "title": "Min Silence Ms",
+          "type": "integer"
+        },
+        "fallback_min_bytes": {
+          "default": 600,
+          "maximum": 1000000,
+          "minimum": 1,
+          "title": "Fallback Min Bytes",
+          "type": "integer"
+        }
+      },
+      "title": "VadConfig",
+      "type": "object"
+    },
+    "VoiceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "supported_languages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supported Languages",
+          "type": "array"
+        },
+        "wake_word": {
+          "$ref": "#/$defs/WakeWordConfig"
+        },
+        "modes": {
+          "$ref": "#/$defs/VoiceModesConfig"
+        }
+      },
+      "title": "VoiceConfig",
+      "type": "object"
+    },
+    "VoiceModesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "available_modes": {
+          "items": {
+            "enum": [
+              "push_to_talk",
+              "voice_activity",
+              "continuous_conversation"
+            ],
+            "type": "string"
+          },
+          "title": "Available Modes",
+          "type": "array"
+        },
+        "default_mode": {
+          "default": "push_to_talk",
+          "enum": [
+            "push_to_talk",
+            "voice_activity",
+            "continuous_conversation"
+          ],
+          "title": "Default Mode",
+          "type": "string"
+        },
+        "allow_barge_in": {
+          "default": true,
+          "title": "Allow Barge In",
+          "type": "boolean"
+        },
+        "vad_enabled": {
+          "default": false,
+          "title": "Vad Enabled",
+          "type": "boolean"
+        },
+        "vad": {
+          "$ref": "#/$defs/VadConfig"
+        },
+        "continuous_requires_wake_word": {
+          "default": true,
+          "title": "Continuous Requires Wake Word",
+          "type": "boolean"
+        },
+        "continuous_idle_timeout_seconds": {
+          "default": 45,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Continuous Idle Timeout Seconds",
+          "type": "integer"
+        },
+        "auto_listen_after_response": {
+          "default": true,
+          "title": "Auto Listen After Response",
+          "type": "boolean"
+        }
+      },
+      "title": "VoiceModesConfig",
+      "type": "object"
+    },
+    "WakeWordConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "phrase": {
+          "minLength": 1,
+          "title": "Phrase",
+          "type": "string"
+        },
+        "sensitivity": {
+          "default": 0.5,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Sensitivity",
+          "type": "number"
+        },
+        "provider_engine": {
+          "default": "",
+          "title": "Provider Engine",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phrase"
+      ],
+      "title": "WakeWordConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "service": {
+      "$ref": "#/$defs/ServiceConfig"
+    },
+    "api": {
+      "$ref": "#/$defs/ApiConfig"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeConfig"
+    },
+    "features": {
+      "$ref": "#/$defs/FeaturesConfig"
+    },
+    "memory": {
+      "$ref": "#/$defs/MemoryConfig"
+    },
+    "providers": {
+      "$ref": "#/$defs/ProvidersConfig"
+    },
+    "personas": {
+      "$ref": "#/$defs/PersonasConfig"
+    },
+    "voice": {
+      "$ref": "#/$defs/VoiceConfig"
+    }
+  },
+  "title": "AppConfig",
+  "type": "object"
+}

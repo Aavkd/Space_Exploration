@@ -26,7 +26,7 @@ const AXIS_INDEX = Object.freeze({
 });
 
 const BUTTON_NAMES = Object.freeze(Object.keys(BUTTON_INDEX));
-const DEFAULT_LEFT_DEADZONE = 0.22;
+const DEFAULT_LEFT_DEADZONE = 0.3;
 const DEFAULT_RIGHT_DEADZONE = 0.16;
 const BUTTON_THRESHOLD = 0.5;
 

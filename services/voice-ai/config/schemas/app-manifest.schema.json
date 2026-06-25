@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "ApiConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "base_path": {
+          "default": "/api/v1",
+          "title": "Base Path",
+          "type": "string"
+        },
+        "cors_origins": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cors Origins",
+          "type": "array"
+        }
+      },
+      "title": "ApiConfig",
+      "type": "object"
+    },
+    "FeaturesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "prepared_modules": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prepared Modules",
+          "type": "array"
+        }
+      },
+      "title": "FeaturesConfig",
+      "type": "object"
+    },
+    "MemoryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "db_path": {
+          "default": "data/memory.db",
+          "title": "Db Path",
+          "type": "string"
+        }
+      },
+      "title": "MemoryConfig",
+      "type": "object"
+    },
+    "PresetSourcesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "default": "providers.json",
+          "title": "Providers",
+          "type": "string"
+        },
+        "personas": {
+          "default": "personas.json",
+          "title": "Personas",
+          "type": "string"
+        },
+        "voice": {
+          "default": "voice.json",
+          "title": "Voice",
+          "type": "string"
+        }
+      },
+      "title": "PresetSourcesConfig",
+      "type": "object"
+    },
+    "RuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "log_level": {
+          "default": "INFO",
+          "title": "Log Level",
+          "type": "string"
+        },
+        "debug_audio_capture": {
+          "default": false,
+          "title": "Debug Audio Capture",
+          "type": "boolean"
+        }
+      },
+      "title": "RuntimeConfig",
+      "type": "object"
+    },
+    "ServiceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "default": "deep-space-voice",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "default": "0.1.0",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "title": "ServiceConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "service": {
+      "$ref": "#/$defs/ServiceConfig"
+    },
+    "api": {
+      "$ref": "#/$defs/ApiConfig"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeConfig"
+    },
+    "features": {
+      "$ref": "#/$defs/FeaturesConfig"
+    },
+    "memory": {
+      "$ref": "#/$defs/MemoryConfig"
+    },
+    "preset_sources": {
+      "$ref": "#/$defs/PresetSourcesConfig"
+    }
+  },
+  "title": "AppManifestConfig",
+  "type": "object"
+}

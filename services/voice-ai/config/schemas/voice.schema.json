@@ -1,0 +1,153 @@
+{
+  "$defs": {
+    "VadConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "threshold": {
+          "default": 0.018,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Threshold",
+          "type": "number"
+        },
+        "min_speech_ms": {
+          "default": 220,
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Min Speech Ms",
+          "type": "integer"
+        },
+        "min_silence_ms": {
+          "default": 700,
+          "maximum": 30000,
+          "minimum": 0,
+          "title": "Min Silence Ms",
+          "type": "integer"
+        },
+        "fallback_min_bytes": {
+          "default": 600,
+          "maximum": 1000000,
+          "minimum": 1,
+          "title": "Fallback Min Bytes",
+          "type": "integer"
+        }
+      },
+      "title": "VadConfig",
+      "type": "object"
+    },
+    "VoiceModesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "available_modes": {
+          "items": {
+            "enum": [
+              "push_to_talk",
+              "voice_activity",
+              "continuous_conversation"
+            ],
+            "type": "string"
+          },
+          "title": "Available Modes",
+          "type": "array"
+        },
+        "default_mode": {
+          "default": "push_to_talk",
+          "enum": [
+            "push_to_talk",
+            "voice_activity",
+            "continuous_conversation"
+          ],
+          "title": "Default Mode",
+          "type": "string"
+        },
+        "allow_barge_in": {
+          "default": true,
+          "title": "Allow Barge In",
+          "type": "boolean"
+        },
+        "vad_enabled": {
+          "default": false,
+          "title": "Vad Enabled",
+          "type": "boolean"
+        },
+        "vad": {
+          "$ref": "#/$defs/VadConfig"
+        },
+        "continuous_requires_wake_word": {
+          "default": true,
+          "title": "Continuous Requires Wake Word",
+          "type": "boolean"
+        },
+        "continuous_idle_timeout_seconds": {
+          "default": 45,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Continuous Idle Timeout Seconds",
+          "type": "integer"
+        },
+        "auto_listen_after_response": {
+          "default": true,
+          "title": "Auto Listen After Response",
+          "type": "boolean"
+        }
+      },
+      "title": "VoiceModesConfig",
+      "type": "object"
+    },
+    "WakeWordConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "phrase": {
+          "minLength": 1,
+          "title": "Phrase",
+          "type": "string"
+        },
+        "sensitivity": {
+          "default": 0.5,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Sensitivity",
+          "type": "number"
+        },
+        "provider_engine": {
+          "default": "",
+          "title": "Provider Engine",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phrase"
+      ],
+      "title": "WakeWordConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "supported_languages": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supported Languages",
+      "type": "array"
+    },
+    "wake_word": {
+      "$ref": "#/$defs/WakeWordConfig"
+    },
+    "modes": {
+      "$ref": "#/$defs/VoiceModesConfig"
+    }
+  },
+  "title": "VoiceConfig",
+  "type": "object"
+}

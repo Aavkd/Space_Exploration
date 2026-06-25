@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deep Space Voice Admin</title>
+    <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark"></div>
+          <div>
+            <p class="eyebrow">Deep Space</p>
+            <h1>Voice Admin</h1>
+          </div>
+        </div>
+        <nav class="nav" id="dashboard-nav"></nav>
+        <div class="sidebar-foot">
+          <p>FastAPI service dashboard for configuration, dry-run prep and operational visibility.</p>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="page-eyebrow">Dashboard</p>
+            <h2 id="page-title">Overview</h2>
+          </div>
+          <div class="topbar-actions">
+            <span class="pill" id="service-status">Loading service...</span>
+            <a class="ghost-link" href="/api/v1/health" target="_blank" rel="noreferrer">API health</a>
+          </div>
+        </header>
+
+        <section class="page-intro" id="page-intro"></section>
+        <section class="status-banner" id="status-banner" hidden></section>
+        <section class="page-body" id="page-body"></section>
+      </main>
+    </div>
+
+    <template id="json-editor-template">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow panel-eyebrow"></p>
+            <h3 class="panel-title"></h3>
+          </div>
+          <div class="panel-actions">
+            <button class="secondary-button" data-action="format">Format</button>
+            <button class="secondary-button" data-action="reset">Reset</button>
+            <button class="primary-button" data-action="save">Save</button>
+          </div>
+        </div>
+        <p class="panel-copy"></p>
+        <textarea class="json-editor" spellcheck="false"></textarea>
+        <div class="panel-footer">
+          <span class="helper-text editor-hint"></span>
+          <div class="file-actions"></div>
+        </div>
+      </section>
+    </template>
+
+    <script src="/dashboard/assets/dashboard.js"></script>
+  </body>
+</html>

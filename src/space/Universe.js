@@ -201,6 +201,43 @@ export class Universe {
         ];
     }
 
+    // Floating-origin rebase: called from App when the ship drifts beyond the
+    // precision threshold. Shifts all absolute world-space positions by `offset`
+    // so the ship can be placed at (0,0,0) without changing any relative geometry.
+    //
+    // What moves: web nodes/voids, galaxy meshes + abstract clones, landmark
+    // meshes + abstract clones, nebula/cluster mesh positions (which double as
+    // the abstract position for POI queries).
+    //
+    // What stays: star-layer Float32Array geometry and heroLights — both are
+    // tied to the star positions that never move, so they stay in sync with the
+    // unshifted geometry automatically.
+    rebaseOrigin(offset) {
+        for (const node of this.web.nodes) node.position.sub(offset);
+        for (const v of this.web.voids) v.position.sub(offset);
+
+        for (const galaxy of this.galaxyField.galaxies) {
+            galaxy.position.sub(offset);
+            galaxy.points.position.sub(offset);
+            galaxy.sprite.position.sub(offset);
+        }
+
+        for (const entry of this.landmarks.blackHoles) {
+            entry.position.sub(offset);
+            entry.blackHole.mesh.position.sub(offset);
+            entry.sprite.position.sub(offset);
+        }
+        for (const entry of this.landmarks.anomalies) {
+            entry.position.sub(offset);
+            entry.instance.mesh.position.sub(offset);
+        }
+
+        for (const nebula of this.nebulaField.nebulae) nebula.position.sub(offset);
+        for (const cluster of this.nebulaField.clusters) cluster.position.sub(offset);
+
+        this._rebuildIndex();
+    }
+
     _updateCompatibilityAliases() {
         const firstBlackHole = this.landmarks.blackHoles.find((entry) => !entry.isPulsar) ?? this.landmarks.blackHoles[0];
         const firstAnomaly = this.landmarks.anomalies[0];

@@ -1,0 +1,197 @@
+{
+  "$defs": {
+    "EmbeddingsProvidersConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProviderConnectionConfig"
+          },
+          "title": "Providers",
+          "type": "object"
+        },
+        "default_provider": {
+          "default": "",
+          "title": "Default Provider",
+          "type": "string"
+        }
+      },
+      "title": "EmbeddingsProvidersConfig",
+      "type": "object"
+    },
+    "EngineConnectionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "backend": {
+          "minLength": 1,
+          "title": "Backend",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "",
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "model": {
+          "default": "",
+          "title": "Model",
+          "type": "string"
+        },
+        "api_key_env": {
+          "default": "",
+          "title": "Api Key Env",
+          "type": "string"
+        },
+        "language": {
+          "default": "",
+          "title": "Language",
+          "type": "string"
+        },
+        "stream": {
+          "default": false,
+          "title": "Stream",
+          "type": "boolean"
+        },
+        "options": {
+          "title": "Options",
+          "type": "object"
+        }
+      },
+      "required": [
+        "backend"
+      ],
+      "title": "EngineConnectionConfig",
+      "type": "object"
+    },
+    "LlmProvidersConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProviderConnectionConfig"
+          },
+          "title": "Providers",
+          "type": "object"
+        },
+        "default_provider": {
+          "default": "",
+          "title": "Default Provider",
+          "type": "string"
+        },
+        "fallback_provider": {
+          "default": "",
+          "title": "Fallback Provider",
+          "type": "string"
+        }
+      },
+      "title": "LlmProvidersConfig",
+      "type": "object"
+    },
+    "ProviderConnectionConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "",
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "model": {
+          "default": "",
+          "title": "Model",
+          "type": "string"
+        },
+        "api_key_env": {
+          "default": "",
+          "title": "Api Key Env",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 30,
+          "maximum": 600,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        },
+        "options": {
+          "title": "Options",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ProviderConnectionConfig",
+      "type": "object"
+    },
+    "SttProvidersConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "engines": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EngineConnectionConfig"
+          },
+          "title": "Engines",
+          "type": "object"
+        },
+        "default_engine": {
+          "default": "faster-whisper",
+          "title": "Default Engine",
+          "type": "string"
+        }
+      },
+      "title": "SttProvidersConfig",
+      "type": "object"
+    },
+    "TtsProvidersConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "engines": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EngineConnectionConfig"
+          },
+          "title": "Engines",
+          "type": "object"
+        },
+        "default_engine": {
+          "default": "",
+          "title": "Default Engine",
+          "type": "string"
+        }
+      },
+      "title": "TtsProvidersConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "llm": {
+      "$ref": "#/$defs/LlmProvidersConfig"
+    },
+    "stt": {
+      "$ref": "#/$defs/SttProvidersConfig"
+    },
+    "tts": {
+      "$ref": "#/$defs/TtsProvidersConfig"
+    },
+    "embeddings": {
+      "$ref": "#/$defs/EmbeddingsProvidersConfig"
+    }
+  },
+  "title": "ProvidersConfig",
+  "type": "object"
+}

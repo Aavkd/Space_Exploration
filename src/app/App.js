@@ -30,6 +30,12 @@ import { XRVisualEffects } from '../xr/XRVisualEffects.js';
 import { DiegeticStatusPanel } from '../ui/DiegeticStatusPanel.js';
 import { UniverseNavigation } from '../ui/UniverseNavigation.js';
 
+// Rebase the world origin when the ship exceeds this distance from (0,0,0).
+// 1 000 units → float32 precision < 0.0002 units, imperceptible on any surface.
+// At hyperdrive speed (~1 200 units/frame) the rebase fires every frame, keeping
+// the ship at (0,0,0) during the render call and eliminating IBL shimmer.
+const FLOAT_ORIGIN_THRESHOLD_SQ = 1_000 ** 2;
+
 export class App {
     constructor({ canvas }) {
         this.canvas = canvas;
@@ -226,6 +232,7 @@ export class App {
         if (!this.paused) {
             const command = this.shipControls.getCommand(this.input.keys, controlInput);
             this.ship.update(dt, command, this.gravityField);
+            this._maybeRebaseOrigin();
         }
 
         // Camera: in player mode the rig (ship-local) drives it after the ship
@@ -323,6 +330,18 @@ export class App {
         if (fromXr) this.xr.pulse({ duration: pulse.duration, strength: pulse.strength });
         else this.input.gamepad.pulse(pulse);
         this._syncDebugDomState();
+    }
+
+    // Floating-origin rebase: when the ship strays past the float32 precision
+    // threshold, shift every absolute world-space position by the ship's current
+    // displacement so the ship lands back at (0,0,0). Relative geometry is
+    // unchanged; velocity/angular state are relative and need no adjustment.
+    _maybeRebaseOrigin() {
+        if (this.ship.position.lengthSq() < FLOAT_ORIGIN_THRESHOLD_SQ) return;
+        const offset = this.ship.position.clone();
+        this.ship.object3D.position.set(0, 0, 0);
+        this.environment.rebaseOrigin(offset);
+        this.gravityField.setAttractors(this.environment.getAttractors());
     }
 
     // Phase 08: drive warp / speed-lines / FOV / distortion from the active gear.

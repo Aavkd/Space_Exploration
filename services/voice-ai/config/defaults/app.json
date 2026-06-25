@@ -1,0 +1,38 @@
+{
+  "service": {
+    "name": "deep-space-voice",
+    "version": "0.2.0"
+  },
+  "api": {
+    "base_path": "/api/v1",
+    "cors_origins": [
+      "*"
+    ]
+  },
+  "runtime": {
+    "log_level": "INFO",
+    "debug_audio_capture": false
+  },
+  "features": {
+    "prepared_modules": [
+      "api",
+      "config",
+      "providers",
+      "conversation",
+      "personas",
+      "memory",
+      "audio",
+      "logs",
+      "dashboard"
+    ]
+  },
+  "memory": {
+    "enabled": true,
+    "db_path": "data/memory.db"
+  },
+  "preset_sources": {
+    "providers": "providers.json",
+    "personas": "personas.json",
+    "voice": "voice.json"
+  }
+}
