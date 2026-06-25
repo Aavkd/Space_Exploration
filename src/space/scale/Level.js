@@ -3,7 +3,8 @@ import { Universe } from '../Universe.js';
 import { disposeObject3D } from '../universe/dispose.js';
 import { deriveSeed } from '../universe/rng.js';
 import { SystemContents } from '../universe/SystemContents.js';
-import { SCALE_TIERS, DESCENT, buildGalaxyConfig } from '../../config/scaleTiers.js';
+import { PlanetaryContents } from '../universe/PlanetaryContents.js';
+import { SCALE_TIERS, DESCENT, buildGalaxyConfig, planetHeroRadius } from '../../config/scaleTiers.js';
 
 // One node in the scale stack (docs/universe-scale-architecture.md §6). A level
 // owns a `Universe` as its contents, its own local floating-origin frame, and
@@ -95,6 +96,15 @@ export class Level {
             }));
         }
 
+        // Inside a System: the planets are the descent objects. SystemContents
+        // builds each candidate (seed-derived descriptor + entry shell) since it
+        // owns the live, orbiting planet positions.
+        if (this.tier === SCALE_TIERS.system.tier) {
+            return this.universe.getDescentCandidates?.(shipPosition ?? new THREE.Vector3(), maxRadiusOverride) ?? [];
+        }
+
+        // Planetary is currently a leaf (Tier 4 Surface/EVA is deferred — see
+        // PlanetaryContents). Descend stops here; ascend still works.
         return [];
     }
 
@@ -192,8 +202,56 @@ export function createSystemLevel(candidate) {
     });
 }
 
+// Generate a planet's own level (Tier 3) from a System descent candidate. The
+// planet is rebuilt at a heroic, curved-horizon radius (planetHeroRadius); the
+// theatre's region/exit shells and the orbital spawn standoff scale from it. The
+// ship enters at a scenic standoff so the lit sphere is framed on arrival, then
+// it falls under gravity toward the surface.
+export function createPlanetaryLevel(candidate) {
+    const tierDef = SCALE_TIERS.planetary;
+    const descriptor = candidate.descriptor;
+    const heroRadius = planetHeroRadius(descriptor.kind, descriptor.systemRadius);
+    const regionRadius = THREE.MathUtils.clamp(heroRadius * 3, 120_000, 1_000_000);
+    // Tight exit shell: the planet dominates the theatre, so ascend back to the
+    // System as soon as the ship pulls a couple of radii clear — leaving should
+    // feel quick, not a long climb out (must stay > the spawn standoff for the
+    // hysteresis gap).
+    const exitRadius = heroRadius * 2.2;
+
+    const contents = new PlanetaryContents({
+        seed: candidate.childSeed,
+        descriptor,
+        regionRadius
+    });
+
+    // Spawn where the ship entered: keep the same direction it approached the
+    // planet from in the System frame, dropped just above the (now huge) surface
+    // so arrival is continuous with the approach rather than a teleport to a
+    // canned standoff. Falls back to a scenic angle for scripted/debug descents.
+    const approach = candidate.approachDir && candidate.approachDir.lengthSq() > 1e-6
+        ? candidate.approachDir.clone().normalize()
+        : new THREE.Vector3(0, 0.35, 1).normalize();
+    const standoff = heroRadius * 1.25;
+    const entryPosition = approach.multiplyScalar(standoff);
+
+    return new Level({
+        tier: tierDef.tier,
+        name: candidate.id,
+        universe: contents,
+        seed: candidate.childSeed,
+        unitScale: tierDef.unitScale,
+        exitRadius,
+        entryPosition,
+        breadcrumb: {
+            position: candidate.position.clone(),
+            entryRadius: candidate.entryRadius
+        }
+    });
+}
+
 export function createChildLevel(candidate, baseConfig) {
     if (candidate.kind === 'galaxy') return createGalaxyLevel(candidate, baseConfig);
     if (candidate.kind === 'system') return createSystemLevel(candidate);
+    if (candidate.kind === 'planet') return createPlanetaryLevel(candidate);
     throw new Error(`Unsupported scale descent kind: ${candidate.kind}`);
 }

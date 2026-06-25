@@ -330,7 +330,8 @@ Agreed order (per the design discussion):
    tiers (Universe ↔ Galaxy) to prove the handoff, hysteresis, seed-descent, and
    parent-bake end to end. **Done** — shipped as `ScaleStack` (§14).
 3. **Done — add the System tier** and wire in Part 9 bodies (stars/planets at real radius).
-4. **Add Planetary / Surface tiers** for true close-up scale.
+4. **Done — add the Planetary / Orbit tier** (Tier 3): descend from a System into any planet; heroic-radius sphere with curved horizon, procedural heightfield terrain (terrestrial) or cloud-deck (gas); gravity lands the ship on the surface; approach-direction spawn/exit preserved.
+5. **Add Surface / EVA tier** (Tier 4) for walk/EVA at true 1 m scale.
 5. Layer the visual roadmap parts in as level contents/backdrops.
 
 Prove the **transition handoff on two tiers** before adding more — it is the
@@ -357,15 +358,17 @@ To lock down before implementation:
 
 ## 14 — Implementation Status
 
-> **Current update:** the System tier and roadmap Part 9 vertical slice are now
-> live on top of the earlier Universe ↔ Galaxy foundation. System descent can
-> happen directly from root-Universe stars or from stars inside a Galaxy level.
-> Every non-background local star (`near` + `mid` star layers) is a System
-> descent anchor; camera-locked background stars remain backdrop only.
+> **Current update:** the Planetary / Orbit tier (Tier 3) is now live on top of
+> the Universe ↔ Galaxy ↔ System foundation. Approach any planet in a System at
+> PRECISION speed to descend into its own level, where it is rebuilt at a heroic
+> curved-horizon radius. Terrestrial worlds have a procedural heightfield surface
+> the ship can land on; gas giants are orbit-only (cloud deck, no touchdown).
+> Entry spawns the ship on the same side it approached from; exit re-emerges in
+> the System on the same side the ship flew away toward. The Surface / EVA tier
+> (Tier 4 — walk / EVA at 1 m scale) remains the next additive step.
 
-> **Previously shipped:** the foundational Universe ↔ Galaxy slice (§12 step 2).
-> The same tier-agnostic mechanic now also powers the first System slice; the
-> Planetary / Surface tiers remain additive future work.
+> **Previously shipped:** Universe ↔ Galaxy (§12 step 2), then the System tier
+> and roadmap Part 9 vertical slice (§12 step 3).
 
 ### What's built
 
@@ -380,6 +383,11 @@ To lock down before implementation:
 | Star anchors | `src/space/universe/StarField.js` | Every non-background local star (`near` + `mid`) becomes a System descent anchor; camera-locked background stars remain backdrop only. |
 | POI / navigation balance | `src/space/Universe.js` | Nearest star systems appear in POIs, but stars are capped so nearby structures remain visible. |
 | App integration | `src/app/App.js` | `this.environment` follows the active level; rebase/gravity/nav routed through it; `SCALE` telemetry line; debug hooks. |
+| Planetary content provider | `src/space/universe/PlanetaryContents.js` | Tier 3 level: heroic-radius planet, procedural heightfield (terrestrial) or gas cloud deck, atmosphere, moons, rings, sun disc, backdrop, `collideShip` / `getLandingState`, `gravityReach`. |
+| Planet descent descriptor | `src/space/universe/PlanetBody.js` | `getDescentDescriptor(parentSeed)` — carries kind, palette, rings, systemRadius, landable flag, and childSeed so the Planetary level matches the impostor. |
+| System → planet candidates | `src/space/universe/SystemContents.js` | `getDescentCandidates` returns planet entry shells; entry radius derived from in-system planet radius. |
+| `planetHeroRadius` | `src/config/scaleTiers.js` | Maps in-system planet radius to heroic Planetary-level radius; drives both the mesh and the collision query. |
+| Approach-direction handoff | `src/space/scale/ScaleStack.js` | `approachDir` captured at descent; used by `createPlanetaryLevel` for entry spawn. Ascent re-emerges along the exit direction (ship offset from level centre). |
 
 ### How each §-mechanic landed
 
@@ -408,14 +416,26 @@ To lock down before implementation:
   is continuous), gravity is rebuilt from the entered level's attractors, and the
   swap is hidden behind an eased veil that peaks black at the content swap.
   System descent drops the ship at a scenic standoff from the generated star.
+  Planetary descent spawns the ship on the same side it approached the planet
+  from (`approachDir` captured at the moment of descend); ascent re-emerges in
+  the System on the same side the ship was flying toward at the exit boundary
+  (ship offset from the departed level's centre). Both directions are consistent
+  with the outward velocity that earned the ascent, so no gravity-reversal snap.
 
 ### Decisions locked for this slice (§13)
 
-- **Tiers shipped:** Universe (0), Galaxy (1), and System (2). System descent can
-  happen directly from root Universe stars or from stars inside a Galaxy level.
+- **Tiers shipped:** Universe (0), Galaxy (1), System (2), Planetary (3). System
+  descent can happen directly from root Universe stars or from stars inside a
+  Galaxy level. Planetary descent from any planet inside a System level.
 - **Gate / shells:** `V_in` = spool < 0.2; galaxy `R_in` = `clamp(radius×3, 30k,
-  120k)`, `R_out` = 130k. System `R_in` is intentionally tiny:
-  `clamp(luminosity×45m, 30m, 90m)`, `R_out` = 150k.
+  120k)`, `R_out` = 130k. System `R_in` = `clamp(luminosity×45m, 30m, 90m)`,
+  `R_out` = 150k. Planet `R_in` = `clamp(radius×6, 2.5k, 14k)`, `R_out` =
+  `heroRadius × 2.2` (tight, so ascent feels quick once you pull clear).
+- **Planetary hero radius:** terrestrial `clamp(systemRadius×70, 90k, 240k)`;
+  gas giant `clamp(systemRadius×55, 180k, 420k)`. Stays in the proven ~10⁵
+  band; inside the widened gravity reach so the planet actually pulls the ship down.
+- **Gravity reach:** widened to `regionRadius × 1.15` inside a Planetary level
+  (the default 70k reach is far smaller than the theatre).
 - **Unit meaning:** shipped tiers use `unitScale = 1` (no velocity rescale yet — the path
   exists and is exercised, just with ratio 1).
 - **Backdrop:** bake-once-by-hiding (no refresh); shared sky dome persists.
@@ -427,11 +447,13 @@ To lock down before implementation:
 
 ### Still deferred / known risks
 
-- **Planetary / Surface tiers** and true close-up planetary scale — the §3 note
-  still applies: a System level spans a large range and needs inner tiers for
-  orbit/surface-scale work.
+- **Surface / EVA tier (Tier 4)** — walk and EVA at true 1 m scale after
+  landing. The landing seam (`surfaceRadiusAt`, `getLandingState`) is in place
+  as the architectural hook; `PlanetaryContents.getDescentCandidates` returns `[]`
+  until Tier 4 ships. When it does, it follows the same uniform transition rule
+  as every other pair.
 - **System depth/content** — stars and planets exist, but belts, moons, comets,
-  planet descent, and richer system ecology are still future work.
+  and richer system ecology are still future work (planet descent is now live).
 - **True backdrop bake / IBL** (§7) — currently just hides the parent group.
 - **Async generation** (§10) — Galaxy and System children are generated
   **synchronously** under the veil. Acceptable hitch for now; move off the

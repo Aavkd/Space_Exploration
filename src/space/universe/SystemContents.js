@@ -4,6 +4,13 @@ import { PlanetBody, planetPalette } from './PlanetBody.js';
 import { DebrisField } from './DebrisField.js';
 import { starBodyRadius } from './starColor.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
+import { DESCENT } from '../../config/scaleTiers.js';
+
+const PLANET_ENTRY = Object.freeze({
+    scale: DESCENT.planetEntryRadiusScale,
+    min: DESCENT.planetEntryRadiusMin,
+    max: DESCENT.planetEntryRadiusMax
+});
 
 const EMPTY_COUNTS = Object.freeze({
     stars: 0,
@@ -68,6 +75,37 @@ export class SystemContents {
             .map((poi) => ({ ...poi, distance: shipPosition.distanceTo(poi.position) }))
             .sort((a, b) => a.distance - b.distance)
             .slice(0, limit);
+    }
+
+    // Planets the ship can descend into from this System level (§4.1). Each
+    // carries a seed-derived descriptor so its Planetary level is rebuilt
+    // deterministically and matches the world that was approached (§5). The
+    // entry shell is derived from the in-system planet radius and is small
+    // relative to orbits so precision flight sinks into the specific world the
+    // ship is closing on, not every planet in the system.
+    getDescentCandidates(shipPosition = new THREE.Vector3(), maxRadiusOverride = null) {
+        const candidates = [];
+        for (const planet of this.planets) {
+            const descriptor = planet.getDescentDescriptor(this.seed);
+            const position = planet.getWorldPosition();
+            const entryRadius = THREE.MathUtils.clamp(
+                planet.radius * PLANET_ENTRY.scale,
+                PLANET_ENTRY.min,
+                PLANET_ENTRY.max
+            );
+            const reach = maxRadiusOverride ?? entryRadius;
+            if (shipPosition.distanceTo(position) > reach) continue;
+            candidates.push({
+                id: descriptor.name,
+                kind: 'planet',
+                position,
+                radius: planet.radius,
+                entryRadius,
+                descriptor,
+                childSeed: descriptor.childSeed
+            });
+        }
+        return candidates;
     }
 
     getCounts() {

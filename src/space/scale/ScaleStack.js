@@ -215,6 +215,15 @@ export class ScaleStack {
 
     _performDescend(candidate) {
         const fromScale = this.active.unitScale;
+
+        // Record which side the ship approached the object from (parent frame),
+        // so the child level can spawn the ship on that same side instead of a
+        // canned standoff — entry stays continuous with the approach (§8.5).
+        // Only Planetary uses it today; harmless for the other tiers.
+        if (candidate.position) {
+            candidate.approachDir = this.ship.object3D.position.clone().sub(candidate.position);
+        }
+
         const child = createChildLevel(candidate, this.baseConfig);
 
         // Swap which level the scene renders. The parent stays in memory but out
@@ -244,11 +253,21 @@ export class ScaleStack {
 
         // Restore the ship to where it descended from, in the parent's (frozen)
         // frame, nudged just outside the entry shell so it does not fall straight
-        // back in (§8.5).
+        // back in (§8.5). Leave on the SAME side the ship is exiting toward —
+        // mirroring the approach-direction entry — by taking its current offset
+        // from the departed level's centre as the exit direction. The reparent
+        // carries orientation unchanged, so this direction (and the outward
+        // velocity that earned the ascent) stays consistent across the boundary.
         const breadcrumb = leaving.breadcrumb;
-        const target = breadcrumb
-            ? breadcrumb.position.clone().add(new THREE.Vector3(0, 0, breadcrumb.entryRadius * ASCEND_SHELL_MARGIN))
-            : new THREE.Vector3(0, 0, 0);
+        let target;
+        if (breadcrumb) {
+            const exitDir = this.ship.object3D.position.clone().sub(leaving.origin);
+            if (exitDir.lengthSq() < 1e-6) exitDir.set(0, 0, 1);
+            exitDir.normalize();
+            target = breadcrumb.position.clone().addScaledVector(exitDir, breadcrumb.entryRadius * ASCEND_SHELL_MARGIN);
+        } else {
+            target = new THREE.Vector3(0, 0, 0);
+        }
         this._reparentShip(target, leaving.unitScale, parent.unitScale);
 
         this._resetDescentBlocks();

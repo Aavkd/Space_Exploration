@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { deriveSeed } from './rng.js';
 
 const TERRESTRIAL = [
     ['#406080', '#8fb37a', '#d8c38a'],
@@ -32,6 +33,7 @@ export class PlanetBody {
         this.spinSpeed = spinSpeed;
         this.phase = phase;
         this.hasRings = hasRings;
+        this.palette = palette;
         this.pivot = new THREE.Group();
         this.pivot.name = `Orbit:${name}`;
         this.body = new THREE.Group();
@@ -73,6 +75,23 @@ export class PlanetBody {
             name: this.name,
             position: this.getWorldPosition(),
             mass: this.kind === 'gas' ? 4.5e7 : 1.2e7
+        };
+    }
+
+    // Seed-derived summary the Planetary level is rebuilt from (§5). Carries the
+    // visual identity the player saw in the System (kind, palette, rings) plus
+    // the in-system radius the heroic Planetary radius is derived from, so the
+    // world you approach matches the world you enter. `landable` gates touchdown:
+    // terrestrial worlds have a solid surface; gas giants are a cloud deck only.
+    getDescentDescriptor(parentSeed) {
+        return {
+            name: this.name,
+            kind: this.kind,
+            palette: this.palette,
+            hasRings: this.hasRings,
+            systemRadius: this.radius,
+            landable: this.kind === 'terrestrial',
+            childSeed: deriveSeed(parentSeed, `planet:${this.name}`)
         };
     }
 

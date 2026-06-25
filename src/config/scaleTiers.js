@@ -39,6 +39,19 @@ export const SCALE_TIERS = Object.freeze({
         regionRadius: 115_000,
         exitRadius: 150_000,
         unitScale: 1
+    }),
+    planetary: Object.freeze({
+        tier: 3,
+        name: 'Planetary',
+        // A single planet rendered at a heroic, curved-horizon radius (see
+        // planetHeroRadius) with its moons/rings. regionRadius and exitRadius are
+        // derived per-planet at descent from that radius (createPlanetaryLevel);
+        // these are fallbacks. The hero radius stays inside the proven ~10^5
+        // working band so float + depth precision are never stressed, and inside
+        // gravity reach so the planet actually pulls the ship down (§6, §8).
+        regionRadius: 160_000,
+        exitRadius: 210_000,
+        unitScale: 1
     })
 });
 
@@ -57,8 +70,30 @@ export const DESCENT = Object.freeze({
     // nearby star without every star grabbing the ship at cruise speed.
     systemEntryRadiusMin: 30,
     systemEntryRadiusMax: 90,
-    systemEntryRadiusScale: 45
+    systemEntryRadiusScale: 45,
+    // Planet entry shells inside a System level. Derived from the in-system
+    // planet radius (small spheres, ~700-4700 units) so precision flight can
+    // sink into a specific world the ship is closing on without every planet in
+    // the system grabbing it at orbital cruise speed.
+    planetEntryRadiusMin: 2_500,
+    planetEntryRadiusMax: 14_000,
+    planetEntryRadiusScale: 6
 });
+
+// Map a planet's small in-system radius (the sphere you SEE while flying the
+// System level, ~700-4700 units) onto the heroic radius it is REBUILT at inside
+// its own Planetary level (the sphere you LAND on). The hero radius is large
+// enough that the horizon curves believably from low altitude (the #1 "feels
+// huge" cue, §6) yet stays inside the proven ~10^5 working band and inside the
+// gravity field's reach, so precision holds and the planet pulls the ship down.
+export function planetHeroRadius(kind, systemRadius = 1200) {
+    if (kind === 'gas') return clamp(systemRadius * 55, 180_000, 420_000);
+    return clamp(systemRadius * 70, 90_000, 240_000);
+}
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
 
 // Build a full universe config for a galaxy level, seeded from the descended
 // galaxy so the level we ENTER is reproducible from the impostor we SAW (§5).

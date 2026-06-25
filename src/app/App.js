@@ -264,6 +264,10 @@ export class App {
             this.debrisHazardState = this.environment.getHazardState?.(this.ship.position, this.ship.velocity) ?? this._emptyDebrisHazard();
             this.ship.update(dt, command, this.gravityField, this.debrisHazardState.acceleration);
             this._maybeRebaseOrigin();
+            // Planetary tier only: resolve ship-vs-surface contact after physics
+            // so gravity rests the hull on the terrain (touchdown) while outward
+            // thrust still lifts off. No-op on every other level (optional method).
+            this.environment.collideShip?.(this.ship, dt);
         }
 
         // Camera: in player mode the rig (ship-local) drives it after the ship
@@ -397,6 +401,10 @@ export class App {
     _onActiveLevelChange(level) {
         this.environment = level.universe;
         if (this.universeNavigation) this.universeNavigation.universe = level.universe;
+        // Widen the gravity field's reach to the active level's request (a
+        // planetary theatre is far larger than the default 70k field), so the
+        // planet at its centre still pulls the ship in from the orbital standoff.
+        this.gravityField.maxDistance = level.universe.gravityReach ?? 70000;
         this.gravityField.setAttractors(level.universe.getAttractors());
         this._applyUniverseRuntimeConfig();
         this._syncDebugDomState();
@@ -786,6 +794,22 @@ export class App {
             ? `<span class="warn">${scale.transition.toUpperCase()}…</span>`
             : `<span class="on">${scale.levelName}</span>`;
         lines.push(`<b>SCALE</b> ${scaleLabel} (tier ${scale.tier})`);
+
+        // Planetary tier: surface altitude + landing readout.
+        const landing = this.environment.getLandingState?.(this.ship.position);
+        if (landing) {
+            if (landing.landed) {
+                lines.push('<b>SURFACE</b> <span class="on">LANDED</span>');
+            } else if (landing.contact && !landing.canLand) {
+                lines.push('<b>SURFACE</b> <span class="warn">CLOUD DECK</span> (no touchdown)');
+            } else {
+                const altText = landing.altitude >= 1000
+                    ? `${(landing.altitude / 1000).toFixed(1)} km`
+                    : `${Math.max(0, landing.altitude).toFixed(0)} m`;
+                const tag = landing.canLand ? '' : ' (gas — no touchdown)';
+                lines.push(`<b>ALT</b> ${altText}${tag}`);
+            }
+        }
 
         this.telemetryNode.innerHTML = lines.join('\n');
 
