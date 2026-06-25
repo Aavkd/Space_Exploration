@@ -253,16 +253,23 @@ function enforceMinDistance(position, minDistance, rng) {
 function galaxyPalette(type, rng, galaxiesConfig) {
     const inner = new THREE.Color(galaxiesConfig.colorInner);
     const outer = new THREE.Color(galaxiesConfig.colorOuter);
-    const hueShift = randomRange(rng, -0.08, 0.08);
-    inner.offsetHSL(hueShift, randomRange(rng, -0.06, 0.08), randomRange(rng, -0.03, 0.08));
-    outer.offsetHSL(hueShift + randomRange(rng, -0.04, 0.04), randomRange(rng, -0.04, 0.1), randomRange(rng, -0.05, 0.08));
+    // Widen the per-galaxy hue/saturation spread so galaxies read as
+    // chromatically distinct rather than all "bluish core, gold rim" (audit 6d).
+    const hueShift = randomRange(rng, -0.22, 0.22);
+    inner.offsetHSL(hueShift, randomRange(rng, -0.1, 0.2), randomRange(rng, -0.05, 0.1));
+    outer.offsetHSL(hueShift + randomRange(rng, -0.1, 0.1), randomRange(rng, -0.08, 0.22), randomRange(rng, -0.08, 0.1));
 
+    // Lean hard into type-based tinting so type is legible from colour alone:
+    // old red/amber ellipticals, teal/pink starburst irregulars, blue/gold spirals.
     if (type === 'elliptical') {
-        inner.lerp(new THREE.Color('#ffd8a0'), 0.28);
-        outer.lerp(new THREE.Color('#d8b46f'), 0.22);
+        inner.lerp(new THREE.Color('#ffcf94'), 0.5);
+        outer.lerp(new THREE.Color('#c8702f'), 0.46);
     } else if (type === 'irregular') {
-        inner.lerp(new THREE.Color('#a8ffe8'), 0.22);
-        outer.lerp(new THREE.Color('#ff7bc8'), 0.26);
+        inner.lerp(new THREE.Color('#7bffe0'), 0.44);
+        outer.lerp(new THREE.Color('#ff5fb0'), 0.48);
+    } else {
+        inner.lerp(new THREE.Color('#9fd8ff'), 0.22);
+        outer.lerp(new THREE.Color('#ffcf6b'), 0.26);
     }
 
     return {

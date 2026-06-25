@@ -77,13 +77,27 @@ export function buildGalaxyConfig(baseConfig, { seed, descriptor = null }) {
     config.global.filamentStrength = 1.1;
     config.global.voidScatter = 0.05;
 
+    // Tune the dominant visual mass (the ~90k stars, plus nebulae/HII) to the
+    // galaxy's type so an old red elliptical does not share a young blue
+    // starfield with a spiral (audit 6b). The seed-carried palette still drives
+    // the interior structure; this varies the population on top of it.
+    const profile = galaxyTypeProfile(descriptor?.type ?? 'spiral');
+
     Object.assign(config.stars, {
         nearCount: 9_800,
         midCount: 32_000,
         bgCount: 48_000,
-        brightness: Math.max(config.stars.brightness * 0.5, 2.6),
-        size: config.stars.size * 0.9,
-        bloom: Math.min(config.stars.bloom ?? 1, 0.58)
+        // Stars are concentrated into the galaxy disk/arms/bulge (galaxyShape), so
+        // the per-star brightness that suited the sparse universe now overlaps
+        // under additive blending and clips to white — worst in an elliptical's
+        // tight bulge. Dim and de-bloom (per-type) so the palette tint survives
+        // instead of blowing out.
+        brightness: Math.max(config.stars.brightness * 0.42 * profile.brightness, 1.5),
+        size: config.stars.size * 0.82,
+        bloom: Math.min(config.stars.bloom ?? 1, 0.36),
+        // Higher bias = redder/older field, lower = bluer/younger (starColor.js).
+        temperatureBias: profile.temperatureBias,
+        saturation: clamp01to2(config.stars.saturation * profile.saturation)
     });
 
     Object.assign(config.galaxies, {
@@ -102,9 +116,9 @@ export function buildGalaxyConfig(baseConfig, { seed, descriptor = null }) {
     });
 
     Object.assign(config.nebulae, {
-        nebulaCount: 14,
-        clusterCount: 24,
-        opacity: config.nebulae.opacity * 0.68,
+        nebulaCount: profile.nebulaCount,
+        clusterCount: profile.clusterCount,
+        opacity: config.nebulae.opacity * profile.nebulaOpacity,
         brightness: config.nebulae.brightness * 0.48,
         bloom: Math.min(config.nebulae.bloom ?? 1, 0.52)
     });
@@ -115,20 +129,74 @@ export function buildGalaxyConfig(baseConfig, { seed, descriptor = null }) {
         anomalyCount: 8
     });
 
+    // The interior field (arms, disk, dust, core) is the element that actually
+    // carries type + palette, so lift it from a faint haze to the defining
+    // feature of the level (audit 6c) — and let HII/gas counts follow type
+    // (audit 6b: gas-rich irregulars glow, gas-poor ellipticals stay sparse).
     config.galaxyInterior = {
         enabled: true,
         descriptor,
         regionRadius: SCALE_TIERS.galaxy.regionRadius,
-        opacity: 0.26,
-        brightness: 0.78,
-        bloom: 0.42,
-        gasOpacity: 0.22,
-        gasBrightness: 0.72,
-        gasBloom: 0.28,
-        particleCount: 9200,
-        gasCount: 1250,
-        hiiCount: 150
+        opacity: 0.52,
+        brightness: 1.18,
+        bloom: 0.5,
+        gasOpacity: 0.4 * profile.gasScale,
+        gasBrightness: 1.0,
+        gasBloom: 0.34,
+        particleScale: 1.5,
+        particleCount: 11000,
+        gasCount: Math.round(1250 * profile.gasScale),
+        hiiCount: profile.hiiCount
     };
 
     return config;
+}
+
+// Clamp a saturation multiplier result into a sane visible band.
+function clamp01to2(value) {
+    return Math.min(1.7, Math.max(0.45, value));
+}
+
+// Per-type tuning of the population that dominates a galaxy interior's look.
+// elliptical -> old, red, gas-poor; irregular -> young, blue, gas-rich and
+// clumpy; spiral -> mixed population with star-forming arms.
+function galaxyTypeProfile(type) {
+    switch (type) {
+        case 'elliptical':
+            return {
+                temperatureBias: 0.86,
+                saturation: 0.82,
+                // Dense compact bulge: dim hard so the overlap reads as a warm
+                // glow rather than a blown-out white core.
+                brightness: 0.58,
+                nebulaCount: 5,
+                clusterCount: 12,
+                nebulaOpacity: 0.42,
+                gasScale: 0.45,
+                hiiCount: 26
+            };
+        case 'irregular':
+            return {
+                temperatureBias: 0.34,
+                saturation: 1.22,
+                brightness: 1.0,
+                nebulaCount: 22,
+                clusterCount: 30,
+                nebulaOpacity: 0.9,
+                gasScale: 1.45,
+                hiiCount: 320
+            };
+        case 'spiral':
+        default:
+            return {
+                temperatureBias: 0.6,
+                saturation: 1.0,
+                brightness: 1.0,
+                nebulaCount: 16,
+                clusterCount: 26,
+                nebulaOpacity: 0.68,
+                gasScale: 1.0,
+                hiiCount: 180
+            };
+    }
 }

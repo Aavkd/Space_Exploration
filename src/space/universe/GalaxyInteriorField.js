@@ -1,12 +1,16 @@
 import * as THREE from 'three';
 import { createSeededRandom, gaussian, randomRange } from './rng.js';
 import { getImpostorTexture } from './impostors.js';
+import { sampleGalaxyDiskPoint } from './galaxyShape.js';
 
 export class GalaxyInteriorField {
     constructor({ config }) {
         this.config = config;
         this.interior = config.galaxyInterior ?? {};
         this.descriptor = this.interior.descriptor ?? fallbackDescriptor(config);
+        // Multiplier on particle footprint so the structure reads as the defining
+        // feature of the level rather than a faint haze (audit 6c).
+        this.particleScale = this.interior.particleScale ?? 1;
         this.rng = createSeededRandom(`${this.descriptor.seed}:interior`);
         this.group = new THREE.Group();
         this.group.name = 'GalaxyInteriorField';
@@ -102,7 +106,7 @@ export class GalaxyInteriorField {
             colors[index] = color.r;
             colors[index + 1] = color.g;
             colors[index + 2] = color.b;
-            sizes[i] = randomRange(this.rng, 12, 42) * THREE.MathUtils.lerp(1.15, 0.55, radial);
+            sizes[i] = randomRange(this.rng, 12, 42) * THREE.MathUtils.lerp(1.15, 0.55, radial) * this.particleScale;
         }
 
         const geometry = new THREE.BufferGeometry();
@@ -121,8 +125,12 @@ export class GalaxyInteriorField {
         const positions = new Float32Array(count * 3);
         const colors = new Float32Array(count * 3);
         const sizes = new Float32Array(count);
-        const cool = new THREE.Color(this.descriptor.palette.inner).lerp(new THREE.Color('#3fd6ff'), 0.35);
-        const warm = new THREE.Color(this.descriptor.palette.outer).lerp(new THREE.Color('#ff6f9f'), 0.28);
+        // Gas uses the galaxy's own inner/outer palette so the clouds you fly
+        // into match the impostor colour you saw from outside (same palette the
+        // disk and the parent-level sprite use), instead of being recoloured
+        // toward a fixed cyan/pink that read as a different galaxy.
+        const cool = new THREE.Color(this.descriptor.palette.inner);
+        const warm = new THREE.Color(this.descriptor.palette.outer);
         const color = new THREE.Color();
 
         for (let i = 0; i < count; i++) {
@@ -174,7 +182,7 @@ export class GalaxyInteriorField {
             colors[index] = color.r;
             colors[index + 1] = color.g;
             colors[index + 2] = color.b;
-            sizes[i] = randomRange(this.rng, 18, 56);
+            sizes[i] = randomRange(this.rng, 18, 56) * this.particleScale;
         }
 
         const geometry = new THREE.BufferGeometry();
@@ -209,38 +217,7 @@ export class GalaxyInteriorField {
     }
 
     _sampleDiskPoint(regionRadius, preferArms) {
-        if (this.descriptor.type === 'elliptical') {
-            return new THREE.Vector3(
-                gaussian(this.rng) * regionRadius * 0.28,
-                gaussian(this.rng) * regionRadius * 0.06,
-                gaussian(this.rng) * regionRadius * 0.22
-            );
-        }
-
-        if (this.descriptor.type === 'irregular') {
-            const clump = new THREE.Vector3(
-                gaussian(this.rng) * regionRadius * 0.22,
-                gaussian(this.rng) * regionRadius * 0.08,
-                gaussian(this.rng) * regionRadius * 0.22
-            );
-            clump.x += randomRange(this.rng, -regionRadius * 0.3, regionRadius * 0.3);
-            clump.z += randomRange(this.rng, -regionRadius * 0.3, regionRadius * 0.3);
-            return clump;
-        }
-
-        const radial = preferArms
-            ? THREE.MathUtils.lerp(0.18, 0.92, Math.pow(this.rng(), 0.72))
-            : Math.pow(this.rng(), 0.64) * 0.96;
-        const armCount = Math.max(2, this.descriptor.armCount || 4);
-        const arm = Math.floor(this.rng() * armCount);
-        const angle = radial * 7.4 + arm * Math.PI * 2 / armCount + (this.descriptor.dustPhase ?? 0) * 0.12;
-        const scatter = THREE.MathUtils.lerp(0.012, preferArms ? 0.035 : 0.07, radial) * regionRadius;
-        const r = radial * regionRadius;
-        return new THREE.Vector3(
-            Math.cos(angle) * r + gaussian(this.rng) * scatter,
-            gaussian(this.rng) * THREE.MathUtils.lerp(450, 3300, radial),
-            Math.sin(angle) * r + gaussian(this.rng) * scatter
-        );
+        return sampleGalaxyDiskPoint(this.rng, regionRadius, this.descriptor, preferArms);
     }
 }
 

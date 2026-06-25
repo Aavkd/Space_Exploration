@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { StarBody } from './StarBody.js';
 import { PlanetBody, planetPalette } from './PlanetBody.js';
+import { starBodyRadius } from './starColor.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 
 const EMPTY_COUNTS = Object.freeze({
@@ -111,11 +112,10 @@ export class SystemContents {
     _create() {
         const color = this.anchor.color?.clone?.() ?? new THREE.Color('#ffd89a');
         const luminosity = this.anchor.luminosity ?? 1;
-        const starRadius = THREE.MathUtils.clamp(
-            randomRange(this._rng, 6200, 9000) + luminosity * 2500,
-            5600,
-            14500
-        );
+        // Derived from the same luminosity the parent impostor used for its
+        // `systemRadius`, so the star you saw and the star you entered agree in
+        // size (scale-architecture §5; see starColor.starBodyRadius).
+        const starRadius = starBodyRadius(luminosity);
         this.star = new StarBody({
             name: this.anchor.name,
             radius: starRadius,

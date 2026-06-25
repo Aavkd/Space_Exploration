@@ -99,4 +99,36 @@ export function sampleLuminosity(rng, tempK) {
     return base * scatter;
 }
 
+// --- Star radius (scale-architecture §5 determinism) ----------------------
+//
+// The size a star reads as from afar (its point/impostor "systemRadius") and the
+// size you actually arrive at when you descend into its System level must be
+// derived from the *same* seed-shared attribute — luminosity — so the object
+// does not appear to change size on entry. `starBodyRadius` is the canonical
+// "true" radius the System tier renders directly; `starImpostorRadius` is a
+// fixed fraction of it, so the seen and entered sizes stay proportional even
+// though the System tier is rendered at a compressed diorama scale.
+
+const STAR_BODY_RADIUS_MIN = 5600;
+const STAR_BODY_RADIUS_MAX = 14500;
+
+/** Canonical System-tier render radius for a star, monotonic in luminosity. */
+export function starBodyRadius(luminosity = 1) {
+    return THREE.MathUtils.clamp(
+        STAR_BODY_RADIUS_MIN + Math.max(0, luminosity) * 3400,
+        STAR_BODY_RADIUS_MIN,
+        STAR_BODY_RADIUS_MAX
+    );
+}
+
+// Impostor/POI radius as a fraction of the true body radius (~811..2100 over the
+// luminosity range), preserving the prior visual scale of star points while
+// keeping it proportional to the body you enter.
+export const IMPOSTOR_RADIUS_RATIO = 0.145;
+
+/** Point/impostor radius for a star, proportional to its true body radius. */
+export function starImpostorRadius(luminosity = 1) {
+    return starBodyRadius(luminosity) * IMPOSTOR_RADIUS_RATIO;
+}
+
 export { TEMP_MIN, TEMP_MAX };

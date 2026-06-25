@@ -1,7 +1,16 @@
 import * as THREE from 'three';
 import { gaussian, randomRange } from './rng.js';
 import { randomPointInSphere } from './CosmicWeb.js';
-import { blackbody, sampleStarTemperature, sampleLuminosity } from './starColor.js';
+import { blackbody, sampleStarTemperature, sampleLuminosity, starImpostorRadius } from './starColor.js';
+import { sampleGalaxyDiskPoint } from './galaxyShape.js';
+
+// Inside a galaxy, how far each rendered star's colour is pulled from its raw
+// blackbody tint toward the galaxy's own inner/outer palette, so the dominant
+// star mass reads in the galaxy's colours and matches the impostor you flew in
+// from. Temperature still sets the base tint and the luminosity/size; this only
+// shifts hue. The untinted blackbody colour is kept for system entry + lighting.
+const GALAXY_STAR_TINT = 0.64;
+const _starTint = new THREE.Color();
 
 export class StarField {
     constructor({ rng, web, config }) {
@@ -13,6 +22,13 @@ export class StarField {
         this.layers = {};
         this.heroLights = [];
         this.systemAnchors = [];
+        // Inside a galaxy level the config carries the parent galaxy's descriptor.
+        // When present, the near/mid stars trace that galaxy's disk + arms instead
+        // of the generic cosmic-web scatter, so the resolved stars populate the
+        // same arms and clouds the interior haze draws.
+        this._galaxyDescriptor = config.global?.parentGalaxy ?? null;
+        this._galaxyInner = this._galaxyDescriptor ? new THREE.Color(this._galaxyDescriptor.palette.inner) : null;
+        this._galaxyOuter = this._galaxyDescriptor ? new THREE.Color(this._galaxyDescriptor.palette.outer) : null;
         this._create();
         this.setRuntimeConfig(config.stars);
     }
@@ -43,40 +59,64 @@ export class StarField {
         };
     }
 
+    // Nearest approachable star systems to `position` (issue #1). This runs every
+    // frame (Universe.getPOIs + scale-stack descent checks) over up to tens of
+    // thousands of anchors, so the hot loop is allocation-free and works in
+    // squared distance: each anchor's world position is computed component-wise
+    // (no Vector3 clone), and the POI object — with its Vector3/Color clones — is
+    // only built for stars that pass the shortlist/exclusion gate. The single
+    // sqrt is deferred to the small returned set.
     getSystemPOIs({ position = null, maxDistance = Infinity, limit = Infinity, excludeWithin = [] } = {}) {
         const results = [];
         const boundedNearest = Boolean(position) && Number.isFinite(limit);
+        const maxDistanceSq = maxDistance === Infinity ? Infinity : maxDistance * maxDistance;
+        const hasExclusions = excludeWithin.length > 0;
+
         for (const star of this.systemAnchors) {
-            const worldPosition = this._systemAnchorPosition(star);
-            if (excludeWithin.some((shell) => worldPosition.distanceTo(shell.position) < shell.entryRadius)) continue;
-            const distance = position ? position.distanceTo(worldPosition) : 0;
-            if (distance > maxDistance) continue;
+            // Every local star layer shares the same rebase offset, so the world
+            // position is just the layer offset added to the stored local point.
+            const offset = this.layers[star.layerName]?.position;
+            const wx = star.localPosition.x + (offset ? offset.x : 0);
+            const wy = star.localPosition.y + (offset ? offset.y : 0);
+            const wz = star.localPosition.z + (offset ? offset.z : 0);
 
-            const poi = {
-                type: 'star',
-                name: star.name,
-                position: worldPosition,
-                radius: star.systemRadius,
-                color: star.color.clone(),
-                temperatureK: star.temperatureK,
-                luminosity: star.intensity,
-                distance
-            };
+            let distanceSq = 0;
+            if (position) {
+                const dx = wx - position.x;
+                const dy = wy - position.y;
+                const dz = wz - position.z;
+                distanceSq = dx * dx + dy * dy + dz * dz;
+                if (distanceSq > maxDistanceSq) continue;
+            }
 
-            if (!boundedNearest) {
-                results.push(poi);
+            // Squared-distance shortlist gate: skip before allocating anything if
+            // this star can't beat the current worst kept candidate.
+            if (boundedNearest && results.length >= limit && distanceSq >= results[results.length - 1]._distanceSq) {
                 continue;
             }
 
-            if (results.length < limit || distance < results[results.length - 1].distance) {
-                results.push(poi);
-                results.sort((a, b) => a.distance - b.distance);
+            if (hasExclusions && this._withinAnyShell(wx, wy, wz, excludeWithin)) continue;
+
+            const poi = this._makeSystemPOI(star, wx, wy, wz, distanceSq);
+
+            if (boundedNearest) {
+                let index = results.length;
+                while (index > 0 && results[index - 1]._distanceSq > distanceSq) index--;
+                results.splice(index, 0, poi);
                 if (results.length > limit) results.length = limit;
+            } else {
+                results.push(poi);
             }
         }
 
-        if (position && !boundedNearest) results.sort((a, b) => a.distance - b.distance);
-        return results.slice(0, limit);
+        if (position && !boundedNearest) results.sort((a, b) => a._distanceSq - b._distanceSq);
+
+        const bounded = Number.isFinite(limit) ? results.slice(0, limit) : results;
+        for (const poi of bounded) {
+            poi.distance = Math.sqrt(poi._distanceSq);
+            delete poi._distanceSq;
+        }
+        return bounded;
     }
 
     getHeroLightPOIs() {
@@ -108,9 +148,22 @@ export class StarField {
 
         for (let i = 0; i < count; i++) {
             const index = i * 3;
-            const position = webBiased
-                ? this._webStarPosition(name, radius)
-                : randomPointInSphere(this.rng, radius).setLength(randomRange(this.rng, radius * 0.72, radius));
+            let position;
+            if (webBiased && this._galaxyDescriptor) {
+                // Near stars cluster into the arms; mid stars fill the broad disk.
+                // Both span the full galaxy region so they coincide with the
+                // interior structure rather than the smaller per-layer sphere.
+                position = sampleGalaxyDiskPoint(
+                    this.rng,
+                    this.config.global.regionRadius,
+                    this._galaxyDescriptor,
+                    name === 'near'
+                );
+            } else if (webBiased) {
+                position = this._webStarPosition(name, radius);
+            } else {
+                position = randomPointInSphere(this.rng, radius).setLength(randomRange(this.rng, radius * 0.72, radius));
+            }
 
             positions[index] = position.x;
             positions[index + 1] = position.y;
@@ -121,9 +174,21 @@ export class StarField {
             const tempK = sampleStarTemperature(this.rng, this.config.stars.temperatureBias);
             blackbody(tempK, color);
             const lift = 1 + this.config.stars.saturation * 0.12;
-            colors[index] = Math.min(1, color.r * lift);
-            colors[index + 1] = Math.min(1, color.g * lift);
-            colors[index + 2] = Math.min(1, color.b * lift);
+            // Render colour: in a galaxy, pull the blackbody tint toward the
+            // galaxy palette (inner at the core, outer at the rim) so the field
+            // carries the galaxy's colour. `color` itself stays the raw blackbody
+            // tint used below for system anchors / hero lights.
+            let cr = color.r, cg = color.g, cb = color.b;
+            if (this._galaxyInner) {
+                const radial = Math.min(1, Math.hypot(position.x, position.z) / Math.max(this.config.global.regionRadius, 1));
+                _starTint.copy(this._galaxyInner).lerp(this._galaxyOuter, radial);
+                cr = THREE.MathUtils.lerp(cr, _starTint.r, GALAXY_STAR_TINT);
+                cg = THREE.MathUtils.lerp(cg, _starTint.g, GALAXY_STAR_TINT);
+                cb = THREE.MathUtils.lerp(cb, _starTint.b, GALAXY_STAR_TINT);
+            }
+            colors[index] = Math.min(1, cr * lift);
+            colors[index + 1] = Math.min(1, cg * lift);
+            colors[index + 2] = Math.min(1, cb * lift);
 
             seeds[i] = this.rng() * 1000;
             brightnesses[i] = sampleLuminosity(this.rng, tempK);
@@ -136,7 +201,9 @@ export class StarField {
                     color: color.clone(),
                     temperatureK: tempK,
                     intensity: brightnesses[i],
-                    systemRadius: THREE.MathUtils.lerp(900, 1900, Math.min(1, brightnesses[i] / 2.6)),
+                    // Proportional to the true body radius the System tier renders,
+                    // so the seen size agrees with the entered size (§5).
+                    systemRadius: starImpostorRadius(brightnesses[i]),
                     mass: 1.0e6,
                     isHeroLight: true
                 });
@@ -151,7 +218,7 @@ export class StarField {
                     color: color.clone(),
                     temperatureK: tempK,
                     intensity: brightnesses[i],
-                    systemRadius: THREE.MathUtils.lerp(850, 2100, Math.min(1, brightnesses[i] / 2.6))
+                    systemRadius: starImpostorRadius(brightnesses[i])
                 });
             }
         }
@@ -266,8 +333,26 @@ export class StarField {
         return sampled.position.clampLength(20000, radius);
     }
 
-    _systemAnchorPosition(star) {
-        const layer = this.layers[star.layerName];
-        return star.localPosition.clone().add(layer?.position ?? new THREE.Vector3());
+    _makeSystemPOI(star, wx, wy, wz, distanceSq) {
+        return {
+            type: 'star',
+            name: star.name,
+            position: new THREE.Vector3(wx, wy, wz),
+            radius: star.systemRadius,
+            color: star.color.clone(),
+            temperatureK: star.temperatureK,
+            luminosity: star.intensity,
+            _distanceSq: distanceSq
+        };
+    }
+
+    _withinAnyShell(wx, wy, wz, shells) {
+        for (const shell of shells) {
+            const dx = wx - shell.position.x;
+            const dy = wy - shell.position.y;
+            const dz = wz - shell.position.z;
+            if (dx * dx + dy * dy + dz * dz < shell.entryRadius * shell.entryRadius) return true;
+        }
+        return false;
     }
 }

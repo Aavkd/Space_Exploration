@@ -142,6 +142,14 @@ export function createGalaxyLevel(candidate, baseConfig) {
     const tierDef = SCALE_TIERS.galaxy;
     const config = buildGalaxyConfig(baseConfig, { seed: candidate.childSeed, descriptor: candidate.descriptor });
     const universe = new Universe({ config, seed: candidate.childSeed });
+    // Scenic standoff instead of spawning blind at the galaxy core (audit 6a).
+    // The interior disk lies in the XZ plane (its normal is +Y), so lift the ship
+    // above the plane and pull it back along +Z: from here the spiral arms /
+    // elliptical bulge are framed in view on arrival rather than swallowed by the
+    // uniform haze at (0,0,0). ~0.67 x regionRadius out, comfortably inside the
+    // 130k exit shell so it does not immediately ascend.
+    const regionRadius = tierDef.regionRadius;
+    const entryPosition = new THREE.Vector3(0, regionRadius * 0.42, regionRadius * 0.52);
     return new Level({
         tier: tierDef.tier,
         name: candidate.id,
@@ -149,6 +157,7 @@ export function createGalaxyLevel(candidate, baseConfig) {
         seed: candidate.childSeed,
         unitScale: tierDef.unitScale,
         exitRadius: tierDef.exitRadius,
+        entryPosition,
         breadcrumb: {
             position: candidate.position.clone(),
             entryRadius: candidate.entryRadius
