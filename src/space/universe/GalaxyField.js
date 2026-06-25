@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { gaussian, randomRange, weightedChoice } from './rng.js';
+import { createSeededRandom, deriveSeed, gaussian, randomRange, weightedChoice } from './rng.js';
 import { getImpostorTexture } from './impostors.js';
 
 const TYPE_WEIGHTS = {
@@ -7,6 +7,8 @@ const TYPE_WEIGHTS = {
     elliptical: 'ellipticalRatio',
     irregular: 'irregularRatio'
 };
+
+const DETAIL_LIMIT = 5;
 
 export class GalaxyField {
     constructor({ rng, web, config }) {
@@ -21,16 +23,22 @@ export class GalaxyField {
     }
 
     update(shipPosition, dt) {
-        const detailed = this.galaxies
+        const entries = this.galaxies
             .map((galaxy) => ({ galaxy, distance: shipPosition.distanceTo(galaxy.position) }))
             .sort((a, b) => a.distance - b.distance)
-            .slice(0, 5)
-            .map((entry) => entry.galaxy);
+        const detailed = new Set(entries.slice(0, DETAIL_LIMIT).map((entry) => entry.galaxy));
 
-        for (const galaxy of this.galaxies) {
-            const showDetail = detailed.includes(galaxy) && shipPosition.distanceTo(galaxy.position) < 150000;
-            galaxy.points.visible = showDetail;
-            galaxy.sprite.visible = !showDetail;
+        for (const { galaxy, distance } of entries) {
+            const outer = THREE.MathUtils.clamp(galaxy.radius * 9.5, 120000, 360000);
+            const inner = THREE.MathUtils.clamp(galaxy.radius * 2.15, 32000, 105000);
+            const detailFade = detailed.has(galaxy) ? 1 - THREE.MathUtils.smoothstep(distance, inner, outer) : 0;
+            const spriteFade = THREE.MathUtils.clamp(1 - detailFade * 0.82, 0.16, 1);
+
+            galaxy.points.visible = detailFade > 0.01;
+            galaxy.sprite.visible = spriteFade > 0.01;
+            galaxy.lod.detailFade = detailFade;
+            galaxy.lod.spriteFade = spriteFade;
+            this._applyGalaxyMaterial(galaxy);
             galaxy.points.rotation.z += dt * 0.006 * galaxy.spin * this.config.galaxies.rotationSpeed;
             galaxy.sprite.material.rotation += dt * 0.002 * galaxy.spin * this.config.galaxies.rotationSpeed;
         }
@@ -38,63 +46,72 @@ export class GalaxyField {
 
     setRuntimeConfig(galaxies) {
         this.config.galaxies = { ...this.config.galaxies, ...galaxies };
-        const inner = new THREE.Color(this.config.galaxies.colorInner);
-        const outer = new THREE.Color(this.config.galaxies.colorOuter);
-        // `bloom` rides on top of brightness as an extra emissive push so the
-        // galaxy colour clears the global bloom threshold and glows.
-        const glow = this.config.galaxies.brightness * (this.config.galaxies.bloom ?? 1);
         for (const galaxy of this.galaxies) {
-            galaxy.points.material.opacity = this.config.galaxies.opacity;
-            galaxy.points.material.size = this.config.galaxies.pointSize;
-            galaxy.points.material.color.copy(inner).lerp(outer, 0.25).multiplyScalar(glow);
-            galaxy.sprite.material.opacity = this.config.galaxies.opacity * 0.95;
-            galaxy.sprite.material.color.setScalar(glow);
+            this._applyGalaxyMaterial(galaxy);
         }
     }
 
     getPOIs() {
-        return this.galaxies.map((galaxy, index) => ({
+        if (this.config.galaxies.backdropOnly) return [];
+        return this.galaxies.map((galaxy) => ({
             type: 'galaxy',
-            name: `${capitalize(galaxy.type)} galaxy ${index + 1}`,
+            name: galaxy.descriptor.id,
             position: galaxy.position,
             mass: 2.4e8,
             radius: galaxy.radius,
-            node: galaxy.node?.name
+            node: galaxy.node?.name,
+            density: galaxy.density,
+            descriptor: { ...galaxy.descriptor }
         }));
     }
 
     _create() {
         if (!this.config.galaxies.enabled) return;
         const count = Math.max(0, Math.floor(this.config.galaxies.count * this.config.global.masterDensity));
-        const spawnGuarantee = Math.min(2, count);
+        const spawnGuarantee = Math.min(this.config.galaxies.spawnGuarantee ?? 2, count);
         for (let i = 0; i < count; i++) {
             const type = this._type();
             const sample = i < spawnGuarantee
-                ? this.web.sample(this.rng, { nodeBias: 1, filamentBias: 0, voidScatter: 0, spread: 0.22 })
-                : this.web.sample(this.rng, { nodeBias: 0.55, filamentBias: 0.4, voidScatter: this.config.global.voidScatter });
-            const radius = randomRange(this.rng, this.config.galaxies.sizeMin, this.config.galaxies.sizeMax);
-            const galaxy = this._createGalaxy({ type, position: sample.position, radius, node: sample.node });
+                ? this.web.sample(this.rng, { nodeBias: 1, filamentBias: 0, voidScatter: 0, spread: 0.22, densityAttempts: 6, densityPower: 1.5 })
+                : this.web.sample(this.rng, { nodeBias: 0.55, filamentBias: 0.4, voidScatter: this.config.global.voidScatter, densityAttempts: 5, densityPower: 1.35 });
+            const densityScale = fieldScale(sample.field, 0.78, 1.34);
+            const radius = randomRange(this.rng, this.config.galaxies.sizeMin, this.config.galaxies.sizeMax) * densityScale;
+            const descriptor = this._createDescriptor({ index: i, type, radius, density: sample.field?.density ?? 0 });
+            const position = enforceMinDistance(sample.position, this.config.galaxies.minDistanceFromOrigin ?? 0, this.rng);
+            const galaxy = this._createGalaxy({ descriptor, position, node: sample.node });
             this.galaxies.push(galaxy);
             this.group.add(galaxy.points, galaxy.sprite);
         }
     }
 
-    _createGalaxy({ type, position, radius, node }) {
+    _createGalaxy({ descriptor, position, node }) {
+        const { type, radius, density } = descriptor;
         const particleCount = Math.floor(THREE.MathUtils.clamp(radius / 4, 1200, 7000));
         const positions = new Float32Array(particleCount * 3);
         const colors = new Float32Array(particleCount * 3);
-        const inner = new THREE.Color(this.config.galaxies.colorInner);
-        const outer = new THREE.Color(this.config.galaxies.colorOuter);
+        const inner = new THREE.Color(descriptor.palette.inner);
+        const outer = new THREE.Color(descriptor.palette.outer);
+        const hii = new THREE.Color('#ff85c8');
         const color = new THREE.Color();
 
         for (let i = 0; i < particleCount; i++) {
             const index = i * 3;
-            const p = this._galaxyPoint(type, radius);
+            const p = this._galaxyPoint(type, radius, descriptor);
             positions[index] = p.x;
             positions[index + 1] = p.y;
             positions[index + 2] = p.z;
 
-            color.copy(inner).lerp(outer, Math.min(1, p.length() / radius));
+            const radial = Math.min(1, p.length() / Math.max(radius, 1));
+            color.copy(inner).lerp(outer, radial);
+            if (type === 'spiral') {
+                const angle = Math.atan2(p.z, p.x);
+                const armBand = Math.sin(angle * descriptor.armCount - radial * 8.5 + descriptor.dustPhase);
+                const dust = THREE.MathUtils.smoothstep(0.52, 0.96, armBand * 0.5 + 0.5);
+                color.multiplyScalar(THREE.MathUtils.lerp(1, 0.42, dust * (0.35 + radial * 0.35)));
+                if (radial > 0.22 && radial < 0.92 && armBand > 0.58 && this.rng() < 0.035) {
+                    color.lerp(hii, 0.72).multiplyScalar(1.35);
+                }
+            }
             colors[index] = color.r;
             colors[index + 1] = color.g;
             colors[index + 2] = color.b;
@@ -108,20 +125,23 @@ export class GalaxyField {
             color: 0xffffff,
             vertexColors: true,
             transparent: true,
-            opacity: this.config.galaxies.opacity,
+            opacity: 0,
             blending: THREE.AdditiveBlending,
             depthWrite: false
         }));
         points.position.copy(position);
-        points.rotation.set(randomRange(this.rng, -0.8, 0.8), randomRange(this.rng, 0, Math.PI), randomRange(this.rng, 0, Math.PI));
+        points.rotation.set(descriptor.tilt.x, descriptor.tilt.y, descriptor.tilt.z);
 
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
             map: getImpostorTexture(type, {
-                inner: this.config.galaxies.colorInner,
-                outer: this.config.galaxies.colorOuter
+                inner: descriptor.palette.inner,
+                outer: descriptor.palette.outer,
+                variant: descriptor.seed,
+                armCount: descriptor.armCount,
+                dustPhase: descriptor.dustPhase
             }),
             transparent: true,
-            opacity: this.config.galaxies.opacity,
+            opacity: 0,
             blending: THREE.AdditiveBlending,
             depthWrite: false
         }));
@@ -129,10 +149,58 @@ export class GalaxyField {
         sprite.position.copy(position);
         sprite.scale.set(radius * 2.6, radius * 1.55, 1);
 
-        return { type, position: position.clone(), radius, node, points, sprite, spin: randomRange(this.rng, 0.45, 1.4) };
+        return {
+            type,
+            position: position.clone(),
+            radius,
+            node,
+            density,
+            descriptor,
+            points,
+            sprite,
+            spin: descriptor.spin,
+            lod: { detailFade: 0, spriteFade: 1 }
+        };
     }
 
-    _galaxyPoint(type, radius) {
+    _createDescriptor({ index, type, radius, density }) {
+        const seed = deriveSeed(this.config.global.seed, `galaxy:${index}:${type}`);
+        const rng = createSeededRandom(seed);
+        const palette = galaxyPalette(type, rng, this.config.galaxies);
+        return {
+            id: `${capitalize(type)} galaxy ${index + 1}`,
+            type,
+            seed,
+            radius,
+            density,
+            palette,
+            spin: randomRange(rng, 0.45, 1.4),
+            armCount: type === 'spiral' ? Math.floor(randomRange(rng, 3, 7)) : 0,
+            dustPhase: randomRange(rng, 0, Math.PI * 2),
+            hiiSeed: deriveSeed(seed, 'hii'),
+            tilt: {
+                x: randomRange(rng, -0.8, 0.8),
+                y: randomRange(rng, 0, Math.PI),
+                z: randomRange(rng, 0, Math.PI)
+            }
+        };
+    }
+
+    _applyGalaxyMaterial(galaxy) {
+        const glow = Math.min(
+            this.config.galaxies.brightness * (this.config.galaxies.bloom ?? 1),
+            this.config.galaxies.maxGlow ?? 1.85
+        );
+        const inner = new THREE.Color(galaxy.descriptor.palette.inner);
+        const outer = new THREE.Color(galaxy.descriptor.palette.outer);
+        galaxy.points.material.opacity = this.config.galaxies.opacity * galaxy.lod.detailFade * 0.72;
+        galaxy.points.material.size = this.config.galaxies.pointSize;
+        galaxy.points.material.color.copy(inner).lerp(outer, 0.25).multiplyScalar(glow * 0.76);
+        galaxy.sprite.material.opacity = this.config.galaxies.opacity * galaxy.lod.spriteFade * 0.88;
+        galaxy.sprite.material.color.copy(inner).lerp(outer, 0.38).multiplyScalar(glow);
+    }
+
+    _galaxyPoint(type, radius, descriptor) {
         if (type === 'elliptical') {
             return new THREE.Vector3(gaussian(this.rng) * radius * 0.36, gaussian(this.rng) * radius * 0.2, gaussian(this.rng) * radius * 0.36);
         }
@@ -142,8 +210,9 @@ export class GalaxyField {
         }
 
         const r = Math.pow(this.rng(), 0.55) * radius;
-        const arm = Math.floor(this.rng() * 5);
-        const angle = r * 0.0024 + arm * Math.PI * 0.4;
+        const armCount = Math.max(2, descriptor.armCount || 5);
+        const arm = Math.floor(this.rng() * armCount);
+        const angle = r * 0.0024 + arm * Math.PI * 2 / armCount + descriptor.dustPhase * 0.12;
         const scatter = (1 - r / radius) * radius * 0.06 + radius * 0.018;
         return new THREE.Vector3(
             Math.cos(angle) * r + gaussian(this.rng) * scatter,
@@ -162,4 +231,42 @@ export class GalaxyField {
 
 function capitalize(text) {
     return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function fieldScale(field, min, max) {
+    const density = field?.density ?? 0.6;
+    const t = THREE.MathUtils.clamp((density - 0.15) / 1.75, 0, 1);
+    return THREE.MathUtils.lerp(min, max, t);
+}
+
+function enforceMinDistance(position, minDistance, rng) {
+    const result = position.clone();
+    if (minDistance <= 0 || result.length() >= minDistance) return result;
+    if (result.lengthSq() < 1) {
+        result.set(gaussian(rng), gaussian(rng) * 0.45, gaussian(rng)).normalize();
+    } else {
+        result.normalize();
+    }
+    return result.multiplyScalar(randomRange(rng, minDistance, minDistance * 1.28));
+}
+
+function galaxyPalette(type, rng, galaxiesConfig) {
+    const inner = new THREE.Color(galaxiesConfig.colorInner);
+    const outer = new THREE.Color(galaxiesConfig.colorOuter);
+    const hueShift = randomRange(rng, -0.08, 0.08);
+    inner.offsetHSL(hueShift, randomRange(rng, -0.06, 0.08), randomRange(rng, -0.03, 0.08));
+    outer.offsetHSL(hueShift + randomRange(rng, -0.04, 0.04), randomRange(rng, -0.04, 0.1), randomRange(rng, -0.05, 0.08));
+
+    if (type === 'elliptical') {
+        inner.lerp(new THREE.Color('#ffd8a0'), 0.28);
+        outer.lerp(new THREE.Color('#d8b46f'), 0.22);
+    } else if (type === 'irregular') {
+        inner.lerp(new THREE.Color('#a8ffe8'), 0.22);
+        outer.lerp(new THREE.Color('#ff7bc8'), 0.26);
+    }
+
+    return {
+        inner: `#${inner.getHexString()}`,
+        outer: `#${outer.getHexString()}`
+    };
 }

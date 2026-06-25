@@ -1,9 +1,16 @@
 # Universe Scale Architecture — Nested Scale Levels
 
-> **Status: PROPOSAL / FOUNDATIONAL SPEC.** This document defines how the
+> **Status: FOUNDATION + SYSTEM TIER PARTIALLY IMPLEMENTED.** This document defines how the
 > project will handle the enormous range of scales between a 1.65 m player and a
 > ~700,000 km star, so that planets and stars feel *properly huge* when
 > approached while traversal stays smooth.
+>
+> The **first two slices are built and verified** — a `ScaleStack` level manager
+> with the uniform transition rule and reparent/rescale handoff, proving
+> **Universe ↔ Galaxy** and **Universe/Galaxy → System** descent end to end
+> (§12 steps 2–3). See
+> [§14 — Implementation Status](#14--implementation-status) for exactly what
+> shipped, which files, and what is still deferred.
 >
 > It supersedes the earlier "continuous multi-band camera" framing discussed in
 > the scale Q&A. The approach here is **nested coordinate frames with discrete
@@ -35,6 +42,7 @@
 11. [Relationship to the Visual Roadmap](#11--relationship-to-the-visual-roadmap)
 12. [Sequencing](#12--sequencing)
 13. [Open Decisions](#13--open-decisions)
+14. [Implementation Status](#14--implementation-status)
 
 ---
 
@@ -318,10 +326,10 @@ Agreed order (per the design discussion):
 1. **Grow & enrich the top-level Universe first** — larger region, richer cosmic
    web / large-scale structure. Get a convincing *map* before building dives into
    it.
-2. **Build the `LevelManager` + the uniform transition rule** (§4) with just two
+2. **Done — build the `LevelManager` + the uniform transition rule** (§4) with just two
    tiers (Universe ↔ Galaxy) to prove the handoff, hysteresis, seed-descent, and
-   parent-bake end to end.
-3. **Add the System tier** and wire in Part 9 bodies (stars/planets at real radius).
+   parent-bake end to end. **Done** — shipped as `ScaleStack` (§14).
+3. **Done — add the System tier** and wire in Part 9 bodies (stars/planets at real radius).
 4. **Add Planetary / Surface tiers** for true close-up scale.
 5. Layer the visual roadmap parts in as level contents/backdrops.
 
@@ -334,7 +342,7 @@ riskiest mechanic and everything else repeats it.
 
 To lock down before implementation:
 
-- **Number of tiers to ship first** (recommend Universe ↔ Galaxy ↔ System).
+- **Number of tiers shipped first:** Universe ↔ Galaxy ↔ System.
 - **Per-tier `R_in` / `R_out` / `V_in`** values and how they relate to the
   hyperdrive gear thresholds.
 - **Per-level unit meaning / render scale**, and therefore the velocity-rescale
@@ -344,3 +352,95 @@ To lock down before implementation:
   inter-body gaps compressed by what factor).
 - **Persistence** — are visited levels cached, or always regenerated from seed
   (seed-only is simplest and the §5 contract makes it free)?
+
+---
+
+## 14 — Implementation Status
+
+> **Current update:** the System tier and roadmap Part 9 vertical slice are now
+> live on top of the earlier Universe ↔ Galaxy foundation. System descent can
+> happen directly from root-Universe stars or from stars inside a Galaxy level.
+> Every non-background local star (`near` + `mid` star layers) is a System
+> descent anchor; camera-locked background stars remain backdrop only.
+
+> **Previously shipped:** the foundational Universe ↔ Galaxy slice (§12 step 2).
+> The same tier-agnostic mechanic now also powers the first System slice; the
+> Planetary / Surface tiers remain additive future work.
+
+### What's built
+
+| Piece | Where | Notes |
+|---|---|---|
+| Level manager / scale stack | `src/space/scale/ScaleStack.js` | Owns the active level chain; runs the transition state machine + veil blend. |
+| Per-level wrapper | `src/space/scale/Level.js` | Wraps a `Universe` as a level's contents; tracks the level centre + descent breadcrumb; exposes descent candidates. |
+| Tier config | `src/config/scaleTiers.js` | Shell radii, speed gate, and the seeded galaxy-level config builder. |
+| System content provider | `src/space/universe/SystemContents.js` | Renders a generated star system and implements the same surface as `Universe`: `update`, `getPOIs`, `getAttractors`, `rebaseOrigin`. |
+| Approachable star body | `src/space/universe/StarBody.js` | Animated star sphere with corona, surface granulation, flares, hero light, POI, and attractor. |
+| Planet bodies | `src/space/universe/PlanetBody.js` | Terrestrial worlds, gas giants, rings, orbit pivots, POIs, and attractors. |
+| Star anchors | `src/space/universe/StarField.js` | Every non-background local star (`near` + `mid`) becomes a System descent anchor; camera-locked background stars remain backdrop only. |
+| POI / navigation balance | `src/space/Universe.js` | Nearest star systems appear in POIs, but stars are capped so nearby structures remain visible. |
+| App integration | `src/app/App.js` | `this.environment` follows the active level; rebase/gravity/nav routed through it; `SCALE` telemetry line; debug hooks. |
+
+### How each §-mechanic landed
+
+- **§4.1 Proximity shell + speed gate (descend).** Descend fires when the ship is
+  inside an object's entry shell *and* `hyperdriveLevel < 0.2` (PRECISION).
+  Candidate shells the ship starts inside are blocked until individually exited,
+  preventing spawn-time capture while still allowing newly approached stars
+  inside overlapping galaxy shells to trigger.
+- **§4.2 Hysteresis (ascend).** Ascend fires when the ship passes the level's exit
+  shell (`R_out` = 130 km for Galaxy, 150 km for System). On ascent the ship is dropped
+  `1.25 × R_in` outside the entry shell so it does not immediately re-descend.
+- **§4.4 / §7 Parent bake (first cut).** On descend the parent level's group is
+  removed from the scene (a cheap dormant backdrop) while the shared `SkyDeepSpace`
+  dome stays as the universal sky. The parent's **frame is frozen** (it is not
+  rebased while dormant) so the stored breadcrumb restores the ship to where it
+  descended from on ascent. *Not yet a real cubemap/IBL bake (§7).*
+- **§5 Seed-descent contract.** Each galaxy carries `deriveSeed(parentSeed,
+  'galaxy:<name>')`; each approachable star carries
+  `deriveSeed(parentSeed, 'system:<starName>')`. Galaxy and System levels are
+  generated from those seeds, so re-entry is deterministic.
+- **§6 Per-level origin.** Floating-origin rebase runs in the **active level's
+  frame only** (`ScaleStack.rebaseOrigin`); the level centre is shifted in lockstep
+  so the exit-shell test stays correct with the ship pinned near (0,0,0).
+- **§8 Reparent / rescale handoff.** On transition the ship is repositioned, its
+  velocity is carried across (rescaled by the unit ratio — currently 1, so motion
+  is continuous), gravity is rebuilt from the entered level's attractors, and the
+  swap is hidden behind an eased veil that peaks black at the content swap.
+  System descent drops the ship at a scenic standoff from the generated star.
+
+### Decisions locked for this slice (§13)
+
+- **Tiers shipped:** Universe (0), Galaxy (1), and System (2). System descent can
+  happen directly from root Universe stars or from stars inside a Galaxy level.
+- **Gate / shells:** `V_in` = spool < 0.2; galaxy `R_in` = `clamp(radius×3, 30k,
+  120k)`, `R_out` = 130k. System `R_in` is intentionally tiny:
+  `clamp(luminosity×45m, 30m, 90m)`, `R_out` = 150k.
+- **Unit meaning:** shipped tiers use `unitScale = 1` (no velocity rescale yet — the path
+  exists and is exercised, just with ratio 1).
+- **Backdrop:** bake-once-by-hiding (no refresh); shared sky dome persists.
+- **Persistence:** seed-only — descended levels are disposed on ascent and
+  regenerated from seed on re-entry.
+- **HUD / POIs:** `Universe.getPOIs()` includes nearest star systems but caps them
+  so nearby structures (nodes, galaxies, landmarks, nebulae) remain visible in
+  navigation.
+
+### Still deferred / known risks
+
+- **Planetary / Surface tiers** and true close-up planetary scale — the §3 note
+  still applies: a System level spans a large range and needs inner tiers for
+  orbit/surface-scale work.
+- **System depth/content** — stars and planets exist, but belts, moons, comets,
+  planet descent, and richer system ecology are still future work.
+- **True backdrop bake / IBL** (§7) — currently just hides the parent group.
+- **Async generation** (§10) — Galaxy and System children are generated
+  **synchronously** under the veil. Acceptable hitch for now; move off the
+  critical path later.
+- **VR-comfort blend** — the veil is a desktop DOM overlay; the in-headset vignette
+  cover is not wired.
+
+### Debug surface
+
+`window.__deepSpaceDebug.{getScaleState, descendNearest, ascendLevel,
+resetToRootLevel}`; the telemetry HUD shows a `SCALE <level> (tier N)` line, and
+the same state is mirrored into `#deep-space-debug-state` for headless checks.

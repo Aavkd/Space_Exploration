@@ -3,7 +3,7 @@ import * as THREE from 'three';
 const textureCache = new Map();
 
 export function getImpostorTexture(type = 'glow', palette = {}) {
-    const key = `${type}:${palette.inner ?? ''}:${palette.outer ?? ''}`;
+    const key = `${type}:${palette.inner ?? ''}:${palette.outer ?? ''}:${palette.variant ?? palette.seed ?? ''}:${palette.armCount ?? ''}:${palette.dustPhase ?? ''}`;
     if (textureCache.has(key)) return textureCache.get(key);
 
     const canvas = document.createElement('canvas');
@@ -15,8 +15,8 @@ export function getImpostorTexture(type = 'glow', palette = {}) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (type === 'spiral') drawSpiral(ctx, inner, outer);
-    else if (type === 'elliptical') drawElliptical(ctx, inner, outer);
+    if (type === 'spiral') drawSpiral(ctx, inner, outer, palette, key);
+    else if (type === 'elliptical') drawElliptical(ctx, inner, outer, palette, key);
     else if (type === 'irregular') drawIrregular(ctx, inner, outer, key);
     else if (type === 'blackhole') drawBlackHole(ctx, inner, outer);
     else drawGlow(ctx, inner, outer);
@@ -43,33 +43,75 @@ function drawGlow(ctx, inner, outer) {
     ctx.fillRect(0, 0, 256, 256);
 }
 
-function drawElliptical(ctx, inner, outer) {
+function drawElliptical(ctx, inner, outer, palette, seedText) {
+    const rng = seeded(seedText);
     ctx.save();
     ctx.translate(128, 128);
-    ctx.scale(1.55, 0.72);
+    ctx.rotate((rng() - 0.5) * 0.35);
+    ctx.scale(1.35 + rng() * 0.45, 0.62 + rng() * 0.28);
     drawGlow(ctx, inner, outer);
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.globalAlpha = 0.1 + rng() * 0.08;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 94, 13 + rng() * 12, (rng() - 0.5) * 0.35, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 }
 
-function drawSpiral(ctx, inner, outer) {
+function drawSpiral(ctx, inner, outer, palette, seedText) {
+    const rng = seeded(seedText);
+    const arms = Math.max(2, Math.floor(palette.armCount ?? (3 + Math.floor(rng() * 4))));
+    const dustPhase = palette.dustPhase ?? rng() * Math.PI * 2;
     drawGlow(ctx, inner, outer);
     ctx.save();
     ctx.translate(128, 128);
     ctx.strokeStyle = outer;
-    ctx.globalAlpha = 0.55;
-    ctx.lineWidth = 9;
-    for (let arm = 0; arm < 4; arm++) {
+    ctx.globalAlpha = 0.44 + rng() * 0.22;
+    ctx.lineWidth = 7 + rng() * 5;
+    for (let arm = 0; arm < arms; arm++) {
         ctx.beginPath();
         for (let i = 0; i < 88; i++) {
             const t = i / 87;
-            const a = t * 5.4 + arm * Math.PI * 0.5;
+            const a = t * (4.5 + rng() * 1.7) + arm * Math.PI * 2 / arms + dustPhase * 0.08;
             const r = 10 + t * 102;
             const x = Math.cos(a) * r;
-            const y = Math.sin(a) * r * 0.55;
+            const y = Math.sin(a) * r * (0.42 + rng() * 0.24);
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         }
         ctx.stroke();
+    }
+
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.strokeStyle = '#000';
+    ctx.globalAlpha = 0.22;
+    ctx.lineWidth = 4;
+    for (let arm = 0; arm < arms; arm++) {
+        ctx.beginPath();
+        for (let i = 0; i < 72; i++) {
+            const t = i / 71;
+            const a = t * 5.1 + arm * Math.PI * 2 / arms + dustPhase + 0.23;
+            const r = 18 + t * 94;
+            const x = Math.cos(a) * r;
+            const y = Math.sin(a) * r * 0.48;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = '#ff8ac8';
+    for (let i = 0; i < 22; i++) {
+        const arm = Math.floor(rng() * arms);
+        const t = 0.24 + rng() * 0.7;
+        const a = t * 5.2 + arm * Math.PI * 2 / arms + dustPhase * 0.12 + (rng() - 0.5) * 0.42;
+        const r = 18 + t * 90;
+        ctx.globalAlpha = 0.08 + rng() * 0.16;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * r, Math.sin(a) * r * 0.5, 1.5 + rng() * 3.5, 0, Math.PI * 2);
+        ctx.fill();
     }
     ctx.restore();
 }

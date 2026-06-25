@@ -2,12 +2,13 @@
 
 > **Status: PROPOSAL / BACKLOG.** This document captures concrete, code-grounded
 > opportunities to push the procedural universe (Phase 07) from "very good" to
-> "breathtaking and physically believable." Nothing here is implemented yet — it
-> is a prioritized design backlog written against the current code in
+> "breathtaking and physically believable." Most of this remains a prioritized
+> design backlog, with shipped slices called out inline, written against the current code in
 > `src/space/universe/`, `src/space/BlackHole.js`, and `src/rendering/`.
 >
-> Each part references the exact files/lines it touches, states the visual
-> payoff, the rough effort, and — critically — the **VR cost**, because the
+> Each part references the exact files/lines it touches (or the files now used by
+> an implemented slice), states the visual payoff, the rough effort, and —
+> critically — the **VR cost**, because the
 > renderer runs in stereo (`src/rendering/XRPostFxPipeline.js`) and every
 > fragment-heavy effect costs ~2× in a headset.
 >
@@ -265,31 +266,43 @@ or fold into existing chain), config in `src/config/postFxPresets.js`.
 
 ## Part 9 — Approachable Bodies: Stars, Planets & Systems
 
+> **Status: FIRST SYSTEM SLICE IMPLEMENTED.** The System tier exists and is wired
+> into the scale stack. Every non-background local star in `StarField.js` (`near`
+> and `mid` layers, in both root Universe and Galaxy levels) is an approachable
+> System anchor. Entering a star at PRECISION speed creates `SystemContents` with
+> an animated `StarBody`, generated `PlanetBody` worlds/gas giants/rings, POIs,
+> gravity attractors, floating-origin support, and seed-only deterministic
+> regeneration. Background stars remain camera-locked backdrop and are not
+> approach targets.
+
 **Problem.** Stars are points (`StarField.js`) and the only bodies you can fly
 *to* are black holes, pulsars, and anomalies (`src/space/universe/Landmarks.js`).
 The universe is breathtaking at distance but has nothing to arrive at — every
 journey ends at a billboard.
 
 **Proposal.**
-- **Stars as real spheres** when approached: corona, surface granulation
-  (animated 3D noise), prominences/flares, limb darkening. A `CosmicWeb` node
-  promotes from a point to an actual sun within range.
-- **Planets & systems**: gas giants with banded atmospheres, ringed planets,
-  terrestrial worlds. Motivates the hierarchy in [Part 18](#part-18--hierarchical-structure--vista-direction).
+- **Implemented first slice — stars as real spheres** when approached: corona, surface granulation
+  (animated 3D noise), flares, limb darkening. A local star point descends into a
+  generated `System` level within a deliberately tiny entry shell
+  (`clamp(luminosity×45m, 30m, 90m)`).
+- **Implemented first slice — planets & systems**: gas giants with banded atmospheres, ringed planets,
+  terrestrial worlds. The first slice is procedural and deterministic from the
+  star seed.
 - Reuse the LOD swap pattern from `GalaxyField.js:30` (point/impostor → sphere)
   so distant systems stay cheap.
 
-**Touches.** New `src/space/universe/StarBody.js` / `PlanetBody.js`, wired into
-`Landmarks.js` and the POI/attractor lists in `Universe.js`.
+**Touches.** Implemented as `src/space/universe/StarBody.js`,
+`PlanetBody.js`, and `SystemContents.js`, wired through `StarField.js`,
+`Level.js`, `ScaleStack.js`, `scaleTiers.js`, and `Universe.js` POI/attractor
+flows.
 
 **Payoff.** Very High — closes the biggest content gap.
 **Effort.** High. **VR cost.** Low–Medium (LOD-gated; only nearest few are spheres).
 
-> ⚠️ **Depends on** the nested scale-level framework in
-> [universe-scale-architecture.md](universe-scale-architecture.md). Real-radius
-> stars/planets only become a `System`-tier reality once levels exist — these
-> bodies are **System-level contents**, not objects dropped into the current
-> 670 km region. Do not build this before the level framework.
+> **Dependency satisfied for the first slice:** the nested scale-level
+> framework now includes System descent. Remaining Part 9 work is richer system
+> content: moons, belts, comets, better atmospheres, planet/orbit descent, and
+> eventual Planetary / Surface tiers.
 
 ---
 
@@ -541,14 +554,16 @@ foundations they need.
 11. **Part 18 — Hierarchical structure & vista direction.** Architectural; unlocks Part 9.
 12. **Scale-level framework** —
     [universe-scale-architecture.md](universe-scale-architecture.md). Grow/enrich
-    the top-level Universe, then build `LevelManager` + the transition rule on two
-    tiers (Universe ↔ Galaxy). **Hard prerequisite for Wave 4's bodies (Parts 9–11).**
+    the top-level Universe, then build `LevelManager` + the transition rule.
+    **Universe ↔ Galaxy and System descent are now live; this remains the
+    prerequisite track for Parts 10–11 and deeper tiers.**
 
 **Wave 4 — Content & the uniquely-VR moments** *(rides on the Wave 3 scale framework)*
 
 13. **Part 3 — Volumetric nebulae.** Highest visual payoff; needs the VR LOD work.
 14. **Part 10 — Inside-the-nebula fog.** The signature VR moment; builds on Part 3 + scale levels.
-15. **Part 9 — Approachable stars/planets/systems.** System-tier contents; needs Part 18 + scale framework.
+15. **Part 9 — Approachable stars/planets/systems (first slice shipped).** System-tier
+    contents are live; richer system ecology and Planetary/Surface tiers remain.
 16. **Part 11 — Asteroid fields & rings.** System/Planetary-tier contents; pairs with Part 9.
 
 **Wave 5 — Polish & life**

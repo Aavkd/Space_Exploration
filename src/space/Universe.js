@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { UNIVERSE_CONFIG, cloneUniverseConfig } from '../config/universePresets.js';
 import { CosmicWeb } from './universe/CosmicWeb.js';
 import { GalaxyField } from './universe/GalaxyField.js';
+import { GalaxyInteriorField } from './universe/GalaxyInteriorField.js';
 import { Landmarks } from './universe/Landmarks.js';
 import { NebulaField } from './universe/NebulaField.js';
 import { SpatialIndex } from './universe/SpatialIndex.js';
@@ -35,6 +36,7 @@ export class Universe {
 
     update(shipPosition, dt, cameraPosition = shipPosition) {
         this.starField?.update(dt, cameraPosition);
+        this.galaxyInterior?.update(dt);
         this.galaxyField?.update(shipPosition, dt);
         this.landmarks?.update(shipPosition, dt);
         this.nebulaField?.update(dt);
@@ -47,6 +49,7 @@ export class Universe {
         const next = cloneUniverseConfig(this.config);
         mergeConfig(next, config);
         this.config = next;
+        this.baseConfig = cloneUniverseConfig(this.config);
         this.runtimeConfig = flattenRuntimeConfig(this.config);
 
         disposeObject3D(this.group);
@@ -67,6 +70,9 @@ export class Universe {
             web: this.web,
             config: this.config
         });
+        this.galaxyInterior = this.config.galaxyInterior?.enabled
+            ? new GalaxyInteriorField({ config: this.config })
+            : null;
         this.landmarks = new Landmarks({
             rng: createSeededRandom(deriveSeed(seed, 'landmarks')),
             web: this.web,
@@ -85,6 +91,7 @@ export class Universe {
 
         this.group.add(
             this.starField.group,
+            ...(this.galaxyInterior ? [this.galaxyInterior.group] : []),
             this.nebulaField.group,
             this.galaxyField.group,
             this.landmarks.group,
@@ -120,6 +127,7 @@ export class Universe {
 
         this.starField?.setRuntimeConfig(this.config.stars);
         this.galaxyField?.setRuntimeConfig(this.config.galaxies);
+        this.galaxyInterior?.setRuntimeConfig(this.config.galaxyInterior);
         this.landmarks?.setRuntimeConfig(this.config.blackHoles);
         this.nebulaField?.setRuntimeConfig(this.config.nebulae);
         this.lighting?.setRuntimeConfig(this.config.lighting);
@@ -140,14 +148,24 @@ export class Universe {
             theme: node.theme,
             isSpawn: node.isSpawn
         }));
-        const pois = [
+        const structures = [
             ...nodes,
             ...this.galaxyField.getPOIs(),
             ...this.landmarks.getPOIs(),
             ...this.nebulaField.getPOIs()
-        ];
-        return pois
+        ]
             .map((poi) => ({ ...poi, distance: shipPosition.distanceTo(poi.position) }))
+            .sort((a, b) => a.distance - b.distance);
+
+        const starLimit = Math.max(1, Math.min(4, Math.floor(limit * 0.35)));
+        const stars = this.starField.getSystemPOIs({
+            position: shipPosition,
+            limit: starLimit,
+            maxDistance: this.config.global.regionRadius
+        });
+
+        const structureLimit = Math.max(1, limit - stars.length);
+        return [...structures.slice(0, structureLimit), ...stars]
             .sort((a, b) => a.distance - b.distance)
             .slice(0, limit);
     }
@@ -216,8 +234,7 @@ export class Universe {
     // (and immediately overwritten). The dome starfield (SkyDeepSpace) is camera
     // -parented for the same reason and is untouched here.
     rebaseOrigin(offset) {
-        for (const node of this.web.nodes) node.position.sub(offset);
-        for (const v of this.web.voids) v.position.sub(offset);
+        this.web.rebaseOrigin(offset);
 
         // Cheap whole-layer translation: the Float32Array geometry is in layer-
         // local space, so offsetting the Points object keeps every star in sync
@@ -226,6 +243,7 @@ export class Universe {
         this.starField.layers.near?.position.sub(offset);
         this.starField.layers.mid?.position.sub(offset);
         for (const light of this.starField.heroLights) light.position.sub(offset);
+        this.galaxyInterior?.rebaseOrigin(offset);
 
         for (const galaxy of this.galaxyField.galaxies) {
             galaxy.position.sub(offset);

@@ -13,7 +13,10 @@ import {
     cloneUniverseConfig,
     resolveUniversePresetName
 } from '../config/universePresets.js';
+import { SCALE_TIERS } from '../config/scaleTiers.js';
 import { Universe } from '../space/Universe.js';
+import { ScaleStack } from '../space/scale/ScaleStack.js';
+import { createRootLevel } from '../space/scale/Level.js';
 import { GravityField } from '../space/GravityField.js';
 import { Ship } from '../ship/Ship.js';
 import { ShipControls } from '../ship/ShipControls.js';
@@ -91,6 +94,21 @@ export class App {
         this.ship.setGravityField(this.gravityField);
         this.shipControls = new ShipControls();
         this.scene.add(this.ship.object3D);
+
+        // Nested scale levels (docs/universe-scale-architecture.md). The current
+        // Universe becomes the tier-0 level; the stack owns descent into galaxy
+        // levels and the reparent/rescale handoff. `this.environment` always
+        // points at the *active* level's universe so the rest of App keeps using
+        // it unchanged; transitions repoint it via _onActiveLevelChange.
+        this.scaleStack = new ScaleStack({
+            scene: this.scene,
+            rootLevel: createRootLevel(this.environment),
+            baseConfig: this.universeConfig,
+            ship: this.ship,
+            gravityField: this.gravityField,
+            onActiveChange: (level) => this._onActiveLevelChange(level)
+        });
+
         this.audio = new AudioEngine({ camera: this.camera, ship: this.ship });
         this.audioDirector = new AudioDirector({ audio: this.audio });
         this.ship.ready
@@ -251,7 +269,15 @@ export class App {
         }
 
         this.playerRig.update(dt);
-        this.environment.update(this.ship.position, dt, this.camera.position);
+        // Updates the active level and evaluates the descend/ascend transition
+        // rule (entry shell + PRECISION speed gate to sink in, exit shell to
+        // climb back out), running the reparent/rescale handoff under a veil.
+        this.scaleStack.update({
+            shipPosition: this.ship.position,
+            dt,
+            cameraPosition: this.camera.position,
+            hyperdriveLevel: this.ship.getHyperdriveLevel()
+        });
         this.sky.update(dt, this.camera.position);
 
         this._updateSpeedFx(dt, xrActive);
@@ -350,8 +376,21 @@ export class App {
         if (this.ship.position.lengthSq() < FLOAT_ORIGIN_THRESHOLD_SQ) return;
         const offset = this.ship.position.clone();
         this.ship.object3D.position.set(0, 0, 0);
-        this.environment.rebaseOrigin(offset);
+        // Rebase runs in the active level's frame only (dormant ancestors keep
+        // their frozen frame so an ascent can restore the ship there).
+        this.scaleStack.rebaseOrigin(offset);
         this.gravityField.setAttractors(this.environment.getAttractors());
+    }
+
+    // Called by the scale stack whenever the active level changes (descend /
+    // ascend / reset). Repoints every system that reads the live universe at the
+    // newly active level and rebuilds gravity from its attractors.
+    _onActiveLevelChange(level) {
+        this.environment = level.universe;
+        if (this.universeNavigation) this.universeNavigation.universe = level.universe;
+        this.gravityField.setAttractors(level.universe.getAttractors());
+        this._applyUniverseRuntimeConfig();
+        this._syncDebugDomState();
     }
 
     // Phase 08: drive warp / speed-lines / FOV / distortion from the active gear.
@@ -486,6 +525,10 @@ export class App {
     }
 
     regenerateUniverse() {
+        // Collapse back to the root level before regenerating: the universe panel
+        // edits the tier-0 config, and any descended galaxy levels are stale once
+        // the root seed/config changes.
+        this.scaleStack?.resetToRoot();
         this.environment.regenerate(this.universeConfig);
         this.gravityField.setAttractors(this.environment.getAttractors());
         this._applyUniverseRuntimeConfig();
@@ -700,6 +743,12 @@ export class App {
         if (currentNode) {
             lines.push(`<b>SECTOR</b> ${currentNode.name} / ${currentNode.theme}`);
         }
+
+        const scale = this.scaleStack.getState(this.ship.position);
+        const scaleLabel = scale.transition
+            ? `<span class="warn">${scale.transition.toUpperCase()}…</span>`
+            : `<span class="on">${scale.levelName}</span>`;
+        lines.push(`<b>SCALE</b> ${scaleLabel} (tier ${scale.tier})`);
 
         this.telemetryNode.innerHTML = lines.join('\n');
 
@@ -1006,25 +1055,54 @@ export class App {
         nebulaGlow = 1,
         landmarkGlow = 1
     } = {}) {
+        const inGalaxyTier = this.scaleStack?.active?.tier === SCALE_TIERS.galaxy.tier;
+        const activeConfig = inGalaxyTier
+            ? (this.environment?.baseConfig ?? this.environment?.config ?? this.universeConfig)
+            : this.universeConfig;
+        const galaxyStarScale = inGalaxyTier ? 0.35 : 1;
+        const galaxyBloomScale = inGalaxyTier ? 0.34 : 1;
+        const galaxyBackdropScale = inGalaxyTier ? 0.42 : 1;
+
         this.gravityField.setGravityScale(this.universeConfig.global.gravityScale ?? 1);
-        if (this.scene.fog) this.scene.fog.density = this.universeConfig.global.fogDensity;
-        this.camera.far = Math.max(DEEP_SPACE_PRESET.cameraFar, this.universeConfig.global.regionRadius * 2.4);
+        if (this.scene.fog) this.scene.fog.density = activeConfig.global.fogDensity ?? this.universeConfig.global.fogDensity;
+        this.camera.far = Math.max(DEEP_SPACE_PRESET.cameraFar, activeConfig.global.regionRadius * 2.4);
         this.camera.updateProjectionMatrix();
         this.environment.setRuntimeConfig({
             global: {
                 gravityScale: this.universeConfig.global.gravityScale,
-                fogDensity: this.universeConfig.global.fogDensity
+                fogDensity: activeConfig.global.fogDensity ?? this.universeConfig.global.fogDensity
             },
             stars: {
-                ...this.universeConfig.stars,
-                brightness: this.universeConfig.stars.brightness * sceneGlow * starGlow
+                ...activeConfig.stars,
+                opacity: this.universeConfig.stars.opacity * (inGalaxyTier ? 0.86 : 1),
+                brightness: activeConfig.stars.brightness * sceneGlow * starGlow * galaxyStarScale,
+                bloom: (activeConfig.stars.bloom ?? 1) * galaxyBloomScale
             },
-            galaxies: this.universeConfig.galaxies,
+            galaxies: {
+                ...activeConfig.galaxies,
+                opacity: activeConfig.galaxies.opacity * galaxyBackdropScale,
+                brightness: activeConfig.galaxies.brightness * galaxyBackdropScale,
+                bloom: (activeConfig.galaxies.bloom ?? 1) * galaxyBloomScale,
+                maxGlow: inGalaxyTier ? 1.05 : activeConfig.galaxies.maxGlow
+            },
             blackHoles: this.universeConfig.blackHoles,
             nebulae: {
-                ...this.universeConfig.nebulae,
-                brightness: this.universeConfig.nebulae.brightness * sceneGlow * nebulaGlow
+                ...activeConfig.nebulae,
+                opacity: this.universeConfig.nebulae.opacity * (inGalaxyTier ? 0.48 : 1),
+                brightness: activeConfig.nebulae.brightness * sceneGlow * nebulaGlow * (inGalaxyTier ? 0.36 : 1),
+                bloom: (activeConfig.nebulae.bloom ?? 1) * (inGalaxyTier ? 0.42 : 1)
             },
+            galaxyInterior: inGalaxyTier && activeConfig.galaxyInterior
+                ? {
+                    ...activeConfig.galaxyInterior,
+                    opacity: (activeConfig.galaxyInterior.opacity ?? 0.26) * 0.92,
+                    brightness: (activeConfig.galaxyInterior.brightness ?? 0.78) * 0.9,
+                    bloom: (activeConfig.galaxyInterior.bloom ?? 0.42) * 0.82,
+                    gasOpacity: (activeConfig.galaxyInterior.gasOpacity ?? 0.22) * 1.05,
+                    gasBrightness: (activeConfig.galaxyInterior.gasBrightness ?? 0.72) * 0.95,
+                    gasBloom: (activeConfig.galaxyInterior.gasBloom ?? 0.28) * 0.88
+                }
+                : activeConfig.galaxyInterior,
             lighting: this.universeConfig.lighting,
             events: this.universeConfig.events
         });
@@ -1104,6 +1182,13 @@ export class App {
             getActivePreset: () => this.activePreset,
             getUniverseState: () => this.environment.getDebugState(this.ship.position),
             getUniverseConfig: () => structuredClone(this.universeConfig),
+
+            // --- Nested scale levels (Universe <-> Galaxy) debug surface ---
+            getScaleState: () => this.scaleStack.getState(this.ship.position),
+            // Descend into the nearest galaxy regardless of distance / speed gate.
+            descendNearest: () => this.scaleStack.forceDescend(this.ship.position),
+            ascendLevel: () => this.scaleStack.forceAscend(),
+            resetToRootLevel: () => this.scaleStack.resetToRoot(),
             applyUniversePreset: (name) => this.applyUniversePreset(name),
             regenerateUniverse: () => this.regenerateUniverse(),
             getAudioState: () => this.audio.getDebugState({
@@ -1329,6 +1414,7 @@ export class App {
             activePreset: this.activePreset,
             vrHudVisible: this.vrHudVisible,
             cameraMode: this.debugCamera.mode,
+            scale: this.scaleStack?.getState(this.ship.position) ?? null,
             pilotActive: this.shipControls.pilotActive,
             dampeners: this.shipControls.dampeners,
             hyperdriveEngaged: this.shipControls.hyperdriveEngaged,

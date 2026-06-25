@@ -12,6 +12,7 @@ export class StarField {
         this.group.name = 'UniverseStars';
         this.layers = {};
         this.heroLights = [];
+        this.systemAnchors = [];
         this._create();
         this.setRuntimeConfig(config.stars);
     }
@@ -40,6 +41,54 @@ export class StarField {
         return {
             stars: Object.values(this.layers).reduce((sum, layer) => sum + layer.geometry.attributes.position.count, 0)
         };
+    }
+
+    getSystemPOIs({ position = null, maxDistance = Infinity, limit = Infinity, excludeWithin = [] } = {}) {
+        const results = [];
+        const boundedNearest = Boolean(position) && Number.isFinite(limit);
+        for (const star of this.systemAnchors) {
+            const worldPosition = this._systemAnchorPosition(star);
+            if (excludeWithin.some((shell) => worldPosition.distanceTo(shell.position) < shell.entryRadius)) continue;
+            const distance = position ? position.distanceTo(worldPosition) : 0;
+            if (distance > maxDistance) continue;
+
+            const poi = {
+                type: 'star',
+                name: star.name,
+                position: worldPosition,
+                radius: star.systemRadius,
+                color: star.color.clone(),
+                temperatureK: star.temperatureK,
+                luminosity: star.intensity,
+                distance
+            };
+
+            if (!boundedNearest) {
+                results.push(poi);
+                continue;
+            }
+
+            if (results.length < limit || distance < results[results.length - 1].distance) {
+                results.push(poi);
+                results.sort((a, b) => a.distance - b.distance);
+                if (results.length > limit) results.length = limit;
+            }
+        }
+
+        if (position && !boundedNearest) results.sort((a, b) => a.distance - b.distance);
+        return results.slice(0, limit);
+    }
+
+    getHeroLightPOIs() {
+        return this.heroLights.map((star, index) => ({
+            type: 'star',
+            name: `Star system ${index + 1}`,
+            position: star.position,
+            radius: star.systemRadius,
+            color: star.color.clone(),
+            temperatureK: star.temperatureK,
+            luminosity: star.intensity
+        }));
     }
 
     _create() {
@@ -85,9 +134,24 @@ export class StarField {
                     name: `Hero star ${this.heroLights.length + 1}`,
                     position: position.clone(),
                     color: color.clone(),
+                    temperatureK: tempK,
                     intensity: brightnesses[i],
+                    systemRadius: THREE.MathUtils.lerp(900, 1900, Math.min(1, brightnesses[i] / 2.6)),
                     mass: 1.0e6,
                     isHeroLight: true
+                });
+            }
+
+            if (name !== 'background') {
+                this.systemAnchors.push({
+                    type: 'star',
+                    name: `${name === 'near' ? 'Near' : 'Mid'} star ${this.systemAnchors.length + 1}`,
+                    layerName: name,
+                    localPosition: position.clone(),
+                    color: color.clone(),
+                    temperatureK: tempK,
+                    intensity: brightnesses[i],
+                    systemRadius: THREE.MathUtils.lerp(850, 2100, Math.min(1, brightnesses[i] / 2.6))
                 });
             }
         }
@@ -193,10 +257,17 @@ export class StarField {
             nodeBias: name === 'near' ? 0.82 : 0.58,
             filamentBias: name === 'near' ? 0.12 : 0.36,
             voidScatter: name === 'near' ? 0.03 : this.config.global.voidScatter,
-            spread: name === 'near' ? 0.36 : 0.8
+            spread: name === 'near' ? 0.36 : 0.8,
+            densityAttempts: name === 'near' ? 5 : 4,
+            densityPower: name === 'near' ? 1.45 : 1.2
         });
         if (name === 'near') return sampled.position.clampLength(2000, radius);
         if (sampled.position.length() < 90000) sampled.position.add(new THREE.Vector3(gaussian(this.rng), gaussian(this.rng), gaussian(this.rng)).multiplyScalar(90000));
         return sampled.position.clampLength(20000, radius);
+    }
+
+    _systemAnchorPosition(star) {
+        const layer = this.layers[star.layerName];
+        return star.localPosition.clone().add(layer?.position ?? new THREE.Vector3());
     }
 }

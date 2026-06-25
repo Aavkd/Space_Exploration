@@ -58,13 +58,15 @@ export class NebulaField {
                 type: 'nebula',
                 name: `Nebula ${index + 1}`,
                 position: nebula.position,
-                radius: nebula.userData.radius
+                radius: nebula.userData.radius,
+                density: nebula.userData.density
             })),
             ...this.clusters.map((cluster, index) => ({
                 type: 'cluster',
                 name: `Star cluster ${index + 1}`,
                 position: cluster.position,
-                radius: cluster.userData.radius
+                radius: cluster.userData.radius,
+                density: cluster.userData.density
             }))
         ];
     }
@@ -73,16 +75,18 @@ export class NebulaField {
         if (!this.config.nebulae.enabled) return;
         for (let i = 0; i < this.config.nebulae.nebulaCount; i++) {
             const sample = i === 0
-                ? this.web.sample(this.rng, { nodeBias: 1, filamentBias: 0, voidScatter: 0, spread: 0.16 })
-                : this.web.sample(this.rng, { nodeBias: 0.7, filamentBias: 0.2, voidScatter: 0.05, spread: 0.52 });
-            const nebula = this._createNebula(sample.position, randomRange(this.rng, 15000, 60000), i);
+                ? this.web.sample(this.rng, { nodeBias: 1, filamentBias: 0, voidScatter: 0, spread: 0.16, densityAttempts: 6, densityPower: 1.55 })
+                : this.web.sample(this.rng, { nodeBias: 0.7, filamentBias: 0.2, voidScatter: 0.05, spread: 0.52, densityAttempts: 5, densityPower: 1.4 });
+            const densityScale = fieldScale(sample.field, 0.72, 1.38);
+            const nebula = this._createNebula(sample.position, randomRange(this.rng, 15000, 60000) * densityScale, i, sample.field);
             this.nebulae.push(nebula);
             this.group.add(nebula);
         }
 
         for (let i = 0; i < this.config.nebulae.clusterCount; i++) {
-            const sample = this.web.sample(this.rng, { nodeBias: 0.78, filamentBias: 0.16, voidScatter: 0.04, spread: 0.35 });
-            const cluster = this._createCluster(sample.position, randomRange(this.rng, 1400, 8000), i);
+            const sample = this.web.sample(this.rng, { nodeBias: 0.78, filamentBias: 0.16, voidScatter: 0.04, spread: 0.35, densityAttempts: 5, densityPower: 1.45 });
+            const densityScale = fieldScale(sample.field, 0.7, 1.32);
+            const cluster = this._createCluster(sample.position, randomRange(this.rng, 1400, 8000) * densityScale, i, sample.field);
             this.clusters.push(cluster);
             this.group.add(cluster);
         }
@@ -93,8 +97,9 @@ export class NebulaField {
         }
     }
 
-    _createNebula(position, radius, index) {
-        const count = Math.floor(THREE.MathUtils.clamp(radius / 35, 520, 1600));
+    _createNebula(position, radius, index, field) {
+        const densityScale = fieldScale(field, 0.85, 1.25);
+        const count = Math.floor(THREE.MathUtils.clamp(radius / 35 * densityScale, 520, 1900));
         const positions = new Float32Array(count * 3);
         const colors = new Float32Array(count * 3);
         const sizes = new Float32Array(count);
@@ -127,11 +132,12 @@ export class NebulaField {
         nebula.position.copy(position);
         nebula.name = 'ProceduralNebula';
         nebula.userData.radius = radius;
+        nebula.userData.density = field?.density ?? 0;
         return nebula;
     }
 
-    _createCluster(position, radius, index) {
-        const count = Math.floor(randomRange(this.rng, 160, 620));
+    _createCluster(position, radius, index, field) {
+        const count = Math.floor(randomRange(this.rng, 160, 620) * fieldScale(field, 0.82, 1.28));
         const positions = new Float32Array(count * 3);
         const colors = new Float32Array(count * 3);
         const cool = new THREE.Color(index % 2 ? '#fff0c0' : '#aaccff');
@@ -164,6 +170,7 @@ export class NebulaField {
         cluster.position.copy(position);
         cluster.name = 'StarCluster';
         cluster.userData.radius = radius;
+        cluster.userData.density = field?.density ?? 0;
         return cluster;
     }
 
@@ -225,6 +232,12 @@ export class NebulaField {
             depthWrite: false
         }));
     }
+}
+
+function fieldScale(field, min, max) {
+    const density = field?.density ?? 0.6;
+    const t = THREE.MathUtils.clamp((density - 0.15) / 1.75, 0, 1);
+    return THREE.MathUtils.lerp(min, max, t);
 }
 
 function createNebulaMaterial(config) {
