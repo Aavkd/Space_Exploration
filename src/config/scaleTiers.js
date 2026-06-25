@@ -91,6 +91,62 @@ export function planetHeroRadius(kind, systemRadius = 1200) {
     return clamp(systemRadius * 70, 90_000, 240_000);
 }
 
+// --- Tier 3 rework / Tier 4: true-radius quadtree planet ------------------
+// (docs/surface-eva-tier.md §3.1, §4). Landable terrestrial worlds are rebuilt
+// at a TRUE radius — a few × 10^6 m — large enough that the horizon sits at a
+// realistic distance and curvature reads correctly from altitude, while the
+// ground is locally flat underfoot. This is far beyond float32 vertex/matrix
+// precision, so it is rendered with camera-relative tile origins + float64 CPU
+// state + the log depth buffer (§4). The value need not be astronomically real,
+// only CONSISTENT (deterministic re-entry).
+//
+// Mapped off the same in-system radius the hero sphere used, scaled up by ~1e3
+// from the heroic ~10^5 band into the true ~10^6 band. Clamped so a tiny moon
+// and a super-earth both land in a sane, renderable range.
+export function planetTrueRadius(kind, systemRadius = 1200) {
+    // Gas giants keep the hero sphere (orbit-only); this is terrestrial-only,
+    // but answer sanely if ever asked for a gas radius.
+    if (kind === 'gas') return clamp(systemRadius * 5_200, 12_000_000, 36_000_000);
+    return clamp(systemRadius * 4_200, 3_000_000, 9_500_000);
+}
+
+// Feature flag: route landable terrestrial worlds through the true-radius
+// quadtree planet (QuadPlanetContents) instead of the legacy hero sphere
+// (PlanetaryContents). Kept as a single switch so the shipped hero-sphere path
+// can be restored instantly if the quadtree regresses (docs/surface-eva-tier.md
+// §11 risk: true-radius precision is make-or-break).
+export const USE_QUAD_PLANET = true;
+
+// Continuous-LOD quadtree tuning (docs/surface-eva-tier.md §3.3, §5). A tile is
+// subdivided while its on-sphere edge length, divided by the camera's distance
+// to it, exceeds `errorThreshold` (a screen-space-error proxy) — so only quads
+// near the ground-track reach deep LOD and the far hemisphere stays coarse.
+export const QUAD_PLANET = Object.freeze({
+    // Verts per tile edge (grid is tileRes × tileRes quads → (tileRes+1)^2 verts).
+    tileRes: 16,
+    // Subdivide when (tileEdgeMetres / distanceToCamera) > this. Larger = coarser.
+    errorThreshold: 1.1,
+    // Hard cap on recursion depth. At R≈6.4e6 m, depth 16 → ~190 m tiles, whose
+    // vertices sit within ±100 m of the tile centre — comfortably inside float32
+    // precision once the tile is placed camera-relative (§4).
+    maxDepth: 16,
+    // Skirt drop as a fraction of a tile's edge length: border verts are pulled
+    // radially inward to hide cracks between adjacent LOD levels (§3.3). Cheap
+    // first cut; geomorph/edge-stitch is deferred (§14).
+    skirtFraction: 0.5,
+    // Coarse terrain shape, re-expressed at true radius (shared with the hero
+    // sphere's basis so orbit shape == surface shape, §2). relief = max mountain
+    // height as a fraction of radius; seaLevel = fbm threshold below which the
+    // surface is flat ocean; baseFreq = continent-scale noise frequency.
+    relief: 0.018,
+    seaLevel: 0.5,
+    baseFreq: 2.2,
+    // Camera-far multiple of the true radius, so the whole limb + a standoff are
+    // inside the frustum. The log depth buffer keeps the 0.1 m near plane usable
+    // alongside this (§4).
+    cameraFarScale: 4.0
+});
+
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }

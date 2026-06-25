@@ -331,7 +331,7 @@ Agreed order (per the design discussion):
    parent-bake end to end. **Done** — shipped as `ScaleStack` (§14).
 3. **Done — add the System tier** and wire in Part 9 bodies (stars/planets at real radius).
 4. **Done — add the Planetary / Orbit tier** (Tier 3): descend from a System into any planet; heroic-radius sphere with curved horizon, procedural heightfield terrain (terrestrial) or cloud-deck (gas); gravity lands the ship on the surface; approach-direction spawn/exit preserved.
-5. **Add Surface / EVA tier** (Tier 4) for walk/EVA at true 1 m scale.
+5. **Specced — planet surface: streaming flight + EVA.** Decisions locked in [surface-eva-tier.md](surface-eva-tier.md). **Note:** for landable terrestrial worlds this *replaces* the hero-sphere Planetary content (Tier 3) with a **continuous-LOD quadtree planet at true radius** — you fly seamlessly from orbit to surface (LOD resolving = the transition, **no veil**), terrain **streams under the ground-track** so you can fly anywhere over the planet, and EVA becomes an **on-foot control mode** rather than a stack descent. Gas giants keep the hero-sphere cloud deck. Requires true-radius precision (camera-relative tiles) + now-mandatory async generation — see that doc.
 5. Layer the visual roadmap parts in as level contents/backdrops.
 
 Prove the **transition handoff on two tiers** before adding more — it is the
@@ -447,11 +447,16 @@ To lock down before implementation:
 
 ### Still deferred / known risks
 
-- **Surface / EVA tier (Tier 4)** — walk and EVA at true 1 m scale after
-  landing. The landing seam (`surfaceRadiusAt`, `getLandingState`) is in place
-  as the architectural hook; `PlanetaryContents.getDescentCandidates` returns `[]`
-  until Tier 4 ships. When it does, it follows the same uniform transition rule
-  as every other pair.
+- **Planet surface — streaming flight + EVA** — **Decisions locked; build spec at
+  [surface-eva-tier.md](surface-eva-tier.md).** For landable terrestrial worlds the
+  hero-sphere Planetary content is **replaced** by a **continuous-LOD quadtree planet
+  at true radius**: fly seamlessly orbit→surface (no veil — LOD *is* the transition),
+  terrain streams under the ship's ground-track so you can fly the whole planet at low
+  altitude, then walk on it at true 1 m scale (EVA as an on-foot control mode). The
+  shared height basis (`surfaceRadiusAt`, `_fbm`/`_noiseSeed`/`_noiseOffset`) becomes
+  the quadtree's coarse term so orbit shape == surface shape. Gas giants keep the
+  hero sphere (cloud deck, orbit-only). Pulls true-radius precision (camera-relative
+  tiles) and async tile streaming (§10) into scope.
 - **System depth/content** — stars and planets exist, but belts, moons, comets,
   and richer system ecology are still future work (planet descent is now live).
 - **True backdrop bake / IBL** (§7) — currently just hides the parent group.

@@ -410,6 +410,17 @@ export class App {
         this._syncDebugDomState();
     }
 
+    // Debug: jump the ship to a given altitude over a quadtree planet, then rebase
+    // so it sits back near the scene origin (the §4 working state). No-op on
+    // levels without a quadtree planet.
+    _teleportShipAltitude(metres = 1000) {
+        const state = this.environment.teleportShipAltitude?.(this.ship, metres);
+        if (!state) return null;
+        this._maybeRebaseOrigin();
+        this._syncDebugDomState();
+        return state;
+    }
+
     // Phase 08: drive warp / speed-lines / FOV / distortion from the active gear.
     // Replaces the old fixed `speed / 600` warp factor with a regime-scaled
     // reference that blends from PRECISION to HYPERDRIVE by the spool level.
@@ -1144,7 +1155,15 @@ export class App {
 
         this.gravityField.setGravityScale(this.universeConfig.global.gravityScale ?? 1);
         if (this.scene.fog) this.scene.fog.density = activeConfig.global.fogDensity ?? this.universeConfig.global.fogDensity;
-        this.camera.far = Math.max(DEEP_SPACE_PRESET.cameraFar, activeConfig.global.regionRadius * 2.4);
+        // A true-radius quadtree planet (Tier 3 rework) needs a far plane sized to
+        // its radius, far beyond the universe region; the log depth buffer keeps
+        // the 0.1 m near plane usable alongside it (§4). Other levels fall back to
+        // the region-derived far.
+        const envFar = this.environment?.cameraFar;
+        this.camera.far = Math.max(
+            DEEP_SPACE_PRESET.cameraFar,
+            envFar ?? activeConfig.global.regionRadius * 2.4
+        );
         this.camera.updateProjectionMatrix();
         this.environment.setRuntimeConfig({
             global: {
@@ -1292,6 +1311,18 @@ export class App {
             descendNearest: () => this.scaleStack.forceDescend(this.ship.position),
             ascendLevel: () => this.scaleStack.forceAscend(),
             resetToRootLevel: () => this.scaleStack.resetToRoot(),
+
+            // --- True-radius quadtree planet (Tier 3 rework) debug surface ---
+            // (docs/surface-eva-tier.md §13). No-ops on non-quadtree levels.
+            getPlanetState: () => this.environment.getPlanetState?.(this.ship.position) ?? null,
+            // Run the §4 flat-horizon jitter test at the given altitudes (metres).
+            // Default samples ground level and high altitude; returns per-altitude
+            // camera-relative vs naive-absolute residual error in metres.
+            runPlanetJitterTest: (altitudes) =>
+                this.environment.runJitterTest?.(altitudes ? { altitudes } : undefined) ?? null,
+            // Jump the ship to a given altitude over the sub-ship point for fast
+            // LOD / precision verification on a quadtree planet.
+            teleportAltitude: (metres) => this._teleportShipAltitude(metres),
             applyUniversePreset: (name) => this.applyUniversePreset(name),
             regenerateUniverse: () => this.regenerateUniverse(),
             getAudioState: () => this.audio.getDebugState({
@@ -1518,6 +1549,9 @@ export class App {
             vrHudVisible: this.vrHudVisible,
             cameraMode: this.debugCamera.mode,
             scale: this.scaleStack?.getState(this.ship.position) ?? null,
+            // Mirror the true-radius quadtree planet's live state (tile count, max
+            // LOD, altitude, centre magnitude) for headless §4 precision checks.
+            planet: this.environment?.getPlanetState?.(this.ship.position) ?? null,
             pilotActive: this.shipControls.pilotActive,
             dampeners: this.shipControls.dampeners,
             hyperdriveEngaged: this.shipControls.hyperdriveEngaged,

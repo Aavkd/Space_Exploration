@@ -4,7 +4,8 @@ import { disposeObject3D } from '../universe/dispose.js';
 import { deriveSeed } from '../universe/rng.js';
 import { SystemContents } from '../universe/SystemContents.js';
 import { PlanetaryContents } from '../universe/PlanetaryContents.js';
-import { SCALE_TIERS, DESCENT, buildGalaxyConfig, planetHeroRadius } from '../../config/scaleTiers.js';
+import { QuadPlanetContents } from '../universe/QuadPlanetContents.js';
+import { SCALE_TIERS, DESCENT, buildGalaxyConfig, planetHeroRadius, planetTrueRadius, USE_QUAD_PLANET } from '../../config/scaleTiers.js';
 
 // One node in the scale stack (docs/universe-scale-architecture.md §6). A level
 // owns a `Universe` as its contents, its own local floating-origin frame, and
@@ -208,8 +209,15 @@ export function createSystemLevel(candidate) {
 // ship enters at a scenic standoff so the lit sphere is framed on arrival, then
 // it falls under gravity toward the surface.
 export function createPlanetaryLevel(candidate) {
-    const tierDef = SCALE_TIERS.planetary;
     const descriptor = candidate.descriptor;
+    // Landable terrestrial worlds are rebuilt at TRUE radius by the continuous-LOD
+    // quadtree planet (docs/surface-eva-tier.md §3); gas giants and (flag off) the
+    // legacy path keep the heroic-radius hero sphere.
+    if (USE_QUAD_PLANET && descriptor.landable && descriptor.kind === 'terrestrial') {
+        return createQuadPlanetLevel(candidate);
+    }
+
+    const tierDef = SCALE_TIERS.planetary;
     const heroRadius = planetHeroRadius(descriptor.kind, descriptor.systemRadius);
     const regionRadius = THREE.MathUtils.clamp(heroRadius * 3, 120_000, 1_000_000);
     // Tight exit shell: the planet dominates the theatre, so ascend back to the
@@ -233,6 +241,48 @@ export function createPlanetaryLevel(candidate) {
         : new THREE.Vector3(0, 0.35, 1).normalize();
     const standoff = heroRadius * 1.25;
     const entryPosition = approach.multiplyScalar(standoff);
+
+    return new Level({
+        tier: tierDef.tier,
+        name: candidate.id,
+        universe: contents,
+        seed: candidate.childSeed,
+        unitScale: tierDef.unitScale,
+        exitRadius,
+        entryPosition,
+        breadcrumb: {
+            position: candidate.position.clone(),
+            entryRadius: candidate.entryRadius
+        }
+    });
+}
+
+// Generate a landable terrestrial planet's own level at TRUE radius
+// (docs/surface-eva-tier.md §3, §4). Same approach-direction entry as the hero
+// path, but the standoff/region/exit shells scale off the true radius (a few ×
+// 10^6 m). Precision is held by camera-relative tile origins + float64 state
+// inside QuadPlanetContents, so the huge working range is safe (§4).
+export function createQuadPlanetLevel(candidate) {
+    const tierDef = SCALE_TIERS.planetary;
+    const descriptor = candidate.descriptor;
+    const trueRadius = planetTrueRadius(descriptor.kind, descriptor.systemRadius);
+    const regionRadius = trueRadius * 1.8;
+    // Tight exit shell so leaving feels quick once the ship pulls clear, but
+    // comfortably outside the spawn standoff for the hysteresis gap.
+    const exitRadius = trueRadius * 1.55;
+
+    const contents = new QuadPlanetContents({
+        seed: candidate.childSeed,
+        descriptor,
+        regionRadius
+    });
+
+    const approach = candidate.approachDir && candidate.approachDir.lengthSq() > 1e-6
+        ? candidate.approachDir.clone().normalize()
+        : new THREE.Vector3(0, 0.35, 1).normalize();
+    // Spawn in low orbit: a fraction of the radius above the surface, so the LOD
+    // is already resolving terrain on arrival and gravity draws the ship down.
+    const entryPosition = approach.multiplyScalar(trueRadius * 1.18);
 
     return new Level({
         tier: tierDef.tier,
