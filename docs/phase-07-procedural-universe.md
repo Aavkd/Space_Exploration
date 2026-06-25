@@ -506,8 +506,8 @@ Barre d'onglets en haut ; un seul groupe visible à la fois :
 - Déplacer ces réglages (et les **brancher réellement** — `galaxyDensity` /
   `blackHoleChance` / `anomalyChance` sont aujourd'hui **des sliders morts**) dans
   `UNIVERSE_CONFIG` + le panneau F10.
-- F2 ne garde que : Bloom, Warp, Retro/Pixel, ASCII, Halftone, VR Comfort, XR
-  Post FX, Ship. Mettre à jour `App._applyRuntimeConfig` pour séparer le tuning
+- F2 ne garde que : Bloom, Warp, Relativistic Stars, Retro/Pixel, ASCII,
+  Halftone, VR Comfort, XR Post FX, Ship. Mettre à jour `App._applyRuntimeConfig` pour séparer le tuning
   univers (vers `Universe`) du post-FX (vers `RenderPipeline`).
 - Le titre F2 (`POST FX / F2`) reste ; le F10 affiche `UNIVERS / F10`.
 

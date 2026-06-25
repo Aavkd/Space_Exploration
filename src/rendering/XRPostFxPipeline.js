@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AutoExposureController } from './AutoExposureController.js';
 
 /**
  * Custom WebXR post-FX pipeline (Phase 06).
@@ -51,9 +52,12 @@ export class XRPostFxPipeline {
         this.bloomB = null;
 
         this.bloom = { enabled: true, strength: 1.2, radius: 0.8, threshold: 0.1 };
+        this.autoExposure = new AutoExposureController({ renderer });
+        this.retroExposureBase = 3;
         this.warp = {
             enabled: true,
             speedFactor: 0,
+            debugOverrideEnabled: false,
             debugSpeedFactor: 0,
             blurStrength: 0.04,
             aberrationStrength: 0.00005,
@@ -94,6 +98,7 @@ export class XRPostFxPipeline {
 
         const warp = config.warp ?? {};
         this.warp.enabled = warp.enabled !== false;
+        this.warp.debugOverrideEnabled = Boolean(warp.debugOverrideEnabled);
         this.warp.debugSpeedFactor = warp.debugSpeedFactor ?? 0;
         this.warp.blurStrength = warp.blurStrength ?? 0.04;
         this.warp.aberrationStrength = warp.aberrationStrength ?? 0.00005;
@@ -115,7 +120,10 @@ export class XRPostFxPipeline {
         u.uVignetteIntensity.value = retro.vignetteIntensity ?? 0.6;
         u.uAberration.value = retro.aberration ?? 0;
         u.uBrightness.value = retro.brightness ?? -0.02;
-        u.uExposure.value = retro.exposure ?? 3;
+        this.retroExposureBase = retro.exposure ?? 3;
+        u.uExposure.value = this.retroExposureBase * this.autoExposure.getExposureScale();
+
+        this.autoExposure.applyConfig(config.autoExposure);
 
         const xr = config.xrPostFx ?? {};
         this.setBackendConfig({
@@ -128,7 +136,8 @@ export class XRPostFxPipeline {
     }
 
     setWarpSpeedFactor(value) {
-        const floored = Math.max(value ?? 0, this.warp.debugSpeedFactor);
+        const debugFloor = this.warp.debugOverrideEnabled ? this.warp.debugSpeedFactor : 0;
+        const floored = Math.max(value ?? 0, debugFloor);
         this.warp.speedFactor = THREE.MathUtils.clamp(floored, 0, 1);
     }
 
@@ -170,6 +179,7 @@ export class XRPostFxPipeline {
             failHardOnError: this.failHardOnError,
             renderTargetSize: this._size.toArray(),
             bloom: { ...this.bloom },
+            autoExposure: this.autoExposure.getDebugState(this.retroExposureBase),
             warpSpeedFactor: this.warp.speedFactor,
             lastFrameMs: Number(this.lastFrameMs.toFixed(2)),
             lastError: this.lastError ? String(this.lastError.message || this.lastError) : null,
@@ -179,6 +189,7 @@ export class XRPostFxPipeline {
 
     dispose() {
         this._disposeTargets();
+        this.autoExposure.dispose();
         this._quad.dispose();
         this.brightMaterial.dispose();
         this.blurMaterial.dispose();
@@ -203,13 +214,16 @@ export class XRPostFxPipeline {
             renderer.setRenderTarget(this.sceneRT);
             renderer.render(scene, camera);
 
-            // 2) Bloom: bright-pass + separable blur, all per-eye clamped.
+            // 2) Meter scene luminance and ease a shared exposure multiplier.
+            this.autoExposure.updateFromTexture(this.sceneRT.texture, dt, { vr: true });
+
+            // 3) Bloom: bright-pass + separable blur, all per-eye clamped.
             let bloomTexture = null;
             if (this.bloom.enabled && this.bloom.strength > 0.0001) {
                 bloomTexture = this._renderBloom(camera);
             }
 
-            // 3) Composite (scene + bloom + warp + retro) into the output target.
+            // 4) Composite (scene + bloom + warp + retro) into the output target.
             this._setCompositeUniforms(bloomTexture, dt);
             renderer.setRenderTarget(outputTarget);
             renderer.render(this._compositeScene, camera);
@@ -280,6 +294,7 @@ export class XRPostFxPipeline {
         // wide halo stays as hot as the desktop UnrealBloom sum-of-mips.
         u.uBloomGain.value = 1.0 + (this._bloomIterations ?? 3) * 0.7;
         u.uTime.value += dt;
+        u.uExposure.value = this.retroExposureBase * this.autoExposure.getExposureScale();
 
         u.uWarpEnabled.value = this.warp.enabled ? 1 : 0;
         u.uWarpSpeed.value = this.warp.speedFactor;

@@ -19,6 +19,7 @@ const LIVE_KEYS = new Set([
     'scale',
     'rotationSpeed',
     'driftSpeed',
+    'hazardIntensity',
     'twinkleSpeed',
     'intensity',
     'range',
@@ -169,7 +170,7 @@ export class UniversePanel {
     }
 
     _render() {
-        const tabs = ['Global', 'Stars', 'Galaxies', 'Black holes', 'Nebulae', 'Lighting', 'Events', 'Tools'];
+        const tabs = ['Global', 'Stars', 'Galaxies', 'Black holes', 'Nebulae', 'Debris', 'Lighting', 'Events', 'Tools'];
         const tabNode = this.element.querySelector('[data-tabs]');
         tabNode.innerHTML = '';
         for (const tab of tabs) {
@@ -262,6 +263,17 @@ export class UniversePanel {
                 ['scale', 'range', 0.3, 2.5, 0.01],
                 ['driftSpeed', 'range', 0, 4, 0.01],
                 ['bloom', 'range', 0, 4, 0.05]
+            ]));
+        } else if (this.activeTab === 'Debris') {
+            content.appendChild(this._group('Asteroid Fields / Belts / Rings', 'debris', [
+                ['enabled', 'checkbox'],
+                ['systemBelts', 'checkbox'],
+                ['beltCount', 'range', 0, 4, 1],
+                ['density', 'range', 0.1, 2, 0.05],
+                ['opacity', 'range', 0, 1, 0.01],
+                ['brightness', 'range', 0, 2.5, 0.01],
+                ['driftSpeed', 'range', 0, 3, 0.01],
+                ['hazardIntensity', 'range', 0, 8, 0.05]
             ]));
         } else if (this.activeTab === 'Lighting') {
             content.appendChild(this._group('Lighting', 'lighting', [
@@ -422,6 +434,7 @@ export class UniversePanel {
             `stars ${counts.stars ?? 0} | galaxies ${counts.galaxies ?? 0}`,
             `black holes ${counts.blackHoles ?? 0} | pulsars ${counts.pulsars ?? 0} | anomalies ${counts.anomalies ?? 0}`,
             `nebulae ${counts.nebulae ?? 0} | clusters ${counts.clusters ?? 0}`,
+            `belts ${counts.debrisFields ?? 0} | asteroids ${counts.asteroids ?? 0} | rings ${counts.ringParticles ?? 0}`,
             `nodes ${counts.nodes ?? 0} | filaments ${counts.filaments ?? 0}`
         ].join('\n');
     }

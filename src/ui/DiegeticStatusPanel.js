@@ -42,6 +42,7 @@ export class DiegeticStatusPanel {
             preset: 'desktop_default',
             universe: 'default',
             nav: '',
+            hazard: null,
             prompt: null
         });
     }
@@ -57,6 +58,7 @@ export class DiegeticStatusPanel {
             preset: state.preset ?? 'custom',
             universe: state.universe ?? 'default',
             nav: summarizeNav(state.nav),
+            hazard: summarizeHazard(state.hazard),
             prompt: state.prompt ?? ''
         };
 
@@ -103,10 +105,10 @@ export class DiegeticStatusPanel {
         ctx.fillText(`DAMP ${state.dampeners ? 'ON' : 'OFF'}   DRIVE ${state.drive}`, 48, 330);
         ctx.fillText(`FX ${state.preset.toUpperCase().slice(0, 18)} / U ${state.universe.toUpperCase().slice(0, 16)}`, 48, 390);
 
-        ctx.fillStyle = state.prompt ? '#ffcc75' : 'rgba(155, 220, 255, 0.68)';
+        ctx.fillStyle = state.prompt || state.hazard ? '#ffcc75' : 'rgba(155, 220, 255, 0.68)';
         ctx.font = '700 28px Consolas, monospace';
         ctx.fillText(state.nav || 'NAV NO TARGET', 48, 430);
-        ctx.fillText(state.prompt ? trimPrompt(state.prompt) : 'NO LOCAL ACTION', 48, 474);
+        ctx.fillText(state.hazard || (state.prompt ? trimPrompt(state.prompt) : 'NO LOCAL ACTION'), 48, 474);
 
         this.texture.needsUpdate = true;
     }
@@ -141,4 +143,10 @@ function summarizeNav(nav) {
         ? `${(marker.distance / 1000).toFixed(1)}K`
         : `${marker.distance.toFixed(0)}M`;
     return `NAV ${marker.name.toUpperCase().slice(0, 19)} ${distance}`;
+}
+
+function summarizeHazard(hazard) {
+    if (!hazard?.active) return '';
+    const intensity = Math.round((hazard.intensity ?? 0) * 100);
+    return `DEBRIS TURBULENCE ${intensity}%`.slice(0, 34);
 }

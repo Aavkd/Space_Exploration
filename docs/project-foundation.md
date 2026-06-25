@@ -70,12 +70,20 @@ The F2 panel is now the post-FX / comfort / ship development tool. It owns:
 
 - Bloom
 - Warp
+- Relativistic Stars
 - Retro / Pixel
 - ASCII
 - Halftone
 - VR Comfort
 - XR Post FX
 - Ship
+
+Warp is speed-driven by default. `Warp > debugSpeedFactor` only forces a fixed
+warp amount when `Warp > debugOverrideEnabled` is checked; otherwise the warp
+factor comes from ship speed and hyperdrive spool. `Relativistic Stars` controls
+the star-field aberration/Doppler shader: `enabled`, `intensity`, and `maxBeta`
+scale the live hyperdrive-driven effect, while `debugOverrideEnabled` +
+`debugBeta` force a visible beta for tuning.
 
 The F10 panel owns the procedural universe. It exposes:
 

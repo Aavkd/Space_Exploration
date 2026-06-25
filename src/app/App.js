@@ -86,6 +86,12 @@ export class App {
         // attractor positions + masses, the field turns them into acceleration.
         this.gravityField = new GravityField();
         this.gravityField.setAttractors(this.environment.getAttractors());
+        this.debrisHazardState = {
+            active: false,
+            intensity: 0,
+            distance: Infinity,
+            acceleration: new THREE.Vector3()
+        };
 
         // 'glb' swaps in the imported Star Citizen hull; 'procedural' keeps the
         // original blockout from ShipModel.js available for later reuse.
@@ -162,6 +168,8 @@ export class App {
         this._warpDistortion = 0;
         // Eased speed-FX intensity: full while piloting, subdued on foot / EVA.
         this._speedFxScale = 1;
+        this._relativisticBeta = 0;
+        this._relativisticDirection = new THREE.Vector3(0, 0, -1);
 
         // Phase 2 debug helpers (anchor spheres + player scale capsule) are now
         // hidden by default: with bloom they looked like stray bits stuck on the
@@ -253,7 +261,8 @@ export class App {
         // through the debug hooks is deterministic; rendering keeps running.
         if (!this.paused) {
             const command = this.shipControls.getCommand(this.input.keys, controlInput);
-            this.ship.update(dt, command, this.gravityField);
+            this.debrisHazardState = this.environment.getHazardState?.(this.ship.position, this.ship.velocity) ?? this._emptyDebrisHazard();
+            this.ship.update(dt, command, this.gravityField, this.debrisHazardState.acceleration);
             this._maybeRebaseOrigin();
         }
 
@@ -402,6 +411,7 @@ export class App {
         const hd = this.postFxConfig.hyperdrive ?? {};
         const comfort = this.postFxConfig.vrComfort ?? {};
         const warpCfg = this.postFxConfig.warp ?? {};
+        const relativisticCfg = this.postFxConfig.relativisticStars ?? {};
 
         // Speed-FX intensity: full while piloting, subdued when nobody is at the
         // controls (walking the ship / EVA) so the drift FX read calmer on foot.
@@ -427,6 +437,27 @@ export class App {
         const fovStart = hd.fovStart ?? 8000;
         const fovMax = hd.fovMax ?? 60000;
         const fovFactor = THREE.MathUtils.clamp((speed - fovStart) / Math.max(fovMax - fovStart, 1), 0, 1);
+
+        // Part 12: feed the star-field shader a perceptual relativistic beta
+        // keyed to the same normalized hyperdrive speed source as warp.
+        const spoolFactor = THREE.MathUtils.smoothstep(level, 0.05, 1);
+        const maxBeta = THREE.MathUtils.clamp(relativisticCfg.maxBeta ?? 0.82, 0, 0.95);
+        const intensity = Math.max(0, relativisticCfg.intensity ?? 1);
+        const drivenBeta = (relativisticCfg.enabled ?? true)
+            ? THREE.MathUtils.clamp(speedFactor * spoolFactor * intensity * maxBeta, 0, maxBeta)
+            : 0;
+        const targetBeta = relativisticCfg.debugOverrideEnabled
+            ? THREE.MathUtils.clamp(relativisticCfg.debugBeta ?? 0, 0, maxBeta)
+            : drivenBeta;
+        this._relativisticBeta += (targetBeta - this._relativisticBeta) * THREE.MathUtils.clamp(dt * 2.6, 0, 1);
+        if (this.ship.velocity.lengthSq() > 1e-4) {
+            this._relativisticDirection.copy(this.ship.velocity).normalize();
+        }
+        this.environment.setRelativisticState?.({
+            beta: this._relativisticBeta,
+            direction: this._relativisticDirection,
+            observerPosition: this.camera.position
+        });
 
         // Radial distortion everywhere, capped per platform and eased.
         const distCap = xrActive
@@ -739,6 +770,12 @@ export class App {
             );
         }
 
+        if (this.debrisHazardState?.active) {
+            lines.push(
+                `<b>DEBRIS</b> ${this.debrisHazardState.name} ${(this.debrisHazardState.intensity * 100).toFixed(0)}% turbulence`
+            );
+        }
+
         const currentNode = this.environment.getCurrentNode(this.ship.position);
         if (currentNode) {
             lines.push(`<b>SECTOR</b> ${currentNode.name} / ${currentNode.theme}`);
@@ -773,8 +810,20 @@ export class App {
             preset: this.activePreset,
             universe: this.activeUniversePreset,
             nav: this.universeNavigation.getState(),
+            hazard: this.debrisHazardState,
             prompt: this.cameraMode === 'player' ? this.playerController.getPrompt() : null
         });
+    }
+
+    _emptyDebrisHazard() {
+        return {
+            active: false,
+            type: null,
+            name: null,
+            intensity: 0,
+            distance: Infinity,
+            acceleration: new THREE.Vector3()
+        };
     }
 
     _getAudioState({ xrActive = false } = {}) {
@@ -782,6 +831,7 @@ export class App {
         const nearestBlackHole = nearbyPois.find((poi) => poi.type === 'blackhole') ?? null;
         const nearestAnomaly = nearbyPois.find((poi) => poi.type === 'anomaly') ?? null;
         const nearestNebula = nearbyPois.find((poi) => poi.type === 'nebula' || poi.type === 'cluster') ?? null;
+        const nearestDebris = nearbyPois.find((poi) => poi.type === 'asteroid belt') ?? null;
         const currentNode = this.environment.getCurrentNode(this.ship.position);
         const controls = this.shipControls.getState();
         const command = this.ship.commandState ?? {};
@@ -816,6 +866,8 @@ export class App {
             nearestBlackHole,
             nearestAnomaly,
             nearestNebula,
+            nearestDebris,
+            debrisHazard: this.debrisHazardState,
             universeCounts: this.environment.getCounts(),
             xrActive
         };
@@ -1008,6 +1060,9 @@ export class App {
     }
 
     _applyRuntimeConfig() {
+        // Keep Three's material tone mapping at the F2 baseline. The adaptive
+        // multiplier is applied inside the desktop/XR post-FX pipelines so both
+        // paths share the same eased eye-adaptation behavior.
         this.renderer.toneMappingExposure = this.postFxConfig.retro.exposure;
         this.ship.setEnvMapIntensity(this.postFxConfig.ship?.envMapIntensity ?? 0.85);
         this.ship.setGlassOpacity(this.postFxConfig.ship?.glassOpacity ?? 0.15);
@@ -1092,6 +1147,13 @@ export class App {
                 brightness: activeConfig.nebulae.brightness * sceneGlow * nebulaGlow * (inGalaxyTier ? 0.36 : 1),
                 bloom: (activeConfig.nebulae.bloom ?? 1) * (inGalaxyTier ? 0.42 : 1)
             },
+            debris: {
+                ...(activeConfig.debris ?? this.universeConfig.debris),
+                opacity: this.universeConfig.debris.opacity,
+                brightness: this.universeConfig.debris.brightness * sceneGlow,
+                driftSpeed: this.universeConfig.debris.driftSpeed,
+                hazardIntensity: this.universeConfig.debris.hazardIntensity
+            },
             galaxyInterior: inGalaxyTier && activeConfig.galaxyInterior
                 ? {
                     ...activeConfig.galaxyInterior,
@@ -1150,6 +1212,8 @@ export class App {
                 bloomStrength: this.renderPipeline.desktop.bloomPass.strength,
                 warp: this.postFxConfig.warp.enabled,
                 retro: this.postFxConfig.retro.enabled,
+                autoExposure: this.postFxConfig.autoExposure?.enabled,
+                autoExposureState: this.renderPipeline.getState().desktop?.autoExposure,
                 ascii: this.postFxConfig.ascii.enabled,
                 halftone: this.postFxConfig.halftone.enabled,
                 xrPostFx: this.postFxConfig.xrPostFx?.enabled,
@@ -1182,6 +1246,21 @@ export class App {
             getActivePreset: () => this.activePreset,
             getUniverseState: () => this.environment.getDebugState(this.ship.position),
             getUniverseConfig: () => structuredClone(this.universeConfig),
+            getDebrisState: () => ({
+                hazard: {
+                    ...this.debrisHazardState,
+                    acceleration: this.debrisHazardState?.acceleration?.toArray?.() ?? [0, 0, 0]
+                },
+                counts: this.environment.getCounts(),
+                pois: this.environment.getPOIs(this.ship.position, 18)
+                    .filter((poi) => poi.type === 'asteroid belt')
+                    .map((poi) => ({
+                        type: poi.type,
+                        name: poi.name,
+                        distance: poi.distance,
+                        radius: poi.radius
+                    }))
+            }),
 
             // --- Nested scale levels (Universe <-> Galaxy) debug surface ---
             getScaleState: () => this.scaleStack.getState(this.ship.position),
@@ -1431,6 +1510,7 @@ export class App {
                 }
                 : null,
             xr: this.xr?.getDebugState?.(),
+            renderPipeline: this.renderPipeline?.getState?.(),
             gamepad: this.input.gamepad.getDebugState(),
             shipAnchors: this.ship.getAnchorNames(),
             anchorValidation: this.ship.validateAnchors(),

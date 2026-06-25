@@ -72,8 +72,9 @@ export class ShipPhysics {
      * @param {number} dt seconds
      * @param {object} command pilot intent (see EMPTY_COMMAND)
      * @param {THREE.Vector3|null} gravityAccel external world-space acceleration
+     * @param {THREE.Vector3|null} externalAccel additional soft forces, e.g. debris turbulence
      */
-    integrate(object3D, dt, command = {}, gravityAccel = null) {
+    integrate(object3D, dt, command = {}, gravityAccel = null, externalAccel = null) {
         const cmd = { ...EMPTY_COMMAND, ...command };
         this.lastCommand = cmd;
         const cfg = this.config;
@@ -106,6 +107,10 @@ export class ShipPhysics {
         if (gravityAccel) {
             this._gravityAccel.copy(gravityAccel);
             this.velocity.addScaledVector(this._gravityAccel, dt);
+        }
+
+        if (externalAccel) {
+            this.velocity.addScaledVector(externalAccel, dt);
         }
 
         // --- Damping: dampeners (continuous assist) then airbrake (momentary) ---

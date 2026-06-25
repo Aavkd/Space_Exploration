@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { StarBody } from './StarBody.js';
 import { PlanetBody, planetPalette } from './PlanetBody.js';
+import { DebrisField } from './DebrisField.js';
 import { starBodyRadius } from './starColor.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 
@@ -13,6 +14,9 @@ const EMPTY_COUNTS = Object.freeze({
     anomalies: 0,
     nebulae: 0,
     clusters: 0,
+    debrisFields: 0,
+    asteroids: 0,
+    ringParticles: 0,
     nodes: 0,
     filaments: 0
 });
@@ -33,12 +37,14 @@ export class SystemContents {
         this._scratch = new THREE.Vector3();
         this.planets = [];
         this.star = null;
+        this.debrisField = null;
         this._create();
     }
 
     update(shipPosition, dt) {
         this.star?.update(dt, shipPosition);
         for (const planet of this.planets) planet.update(dt);
+        this.debrisField?.update(shipPosition, dt);
     }
 
     rebaseOrigin(offset) {
@@ -55,7 +61,8 @@ export class SystemContents {
     getPOIs(shipPosition = new THREE.Vector3(), limit = 12) {
         const pois = [
             this.star.getPOI(),
-            ...this.planets.map((planet) => planet.getPOI())
+            ...this.planets.map((planet) => planet.getPOI()),
+            ...(this.debrisField?.getPOIs(shipPosition, 3) ?? [])
         ];
         return pois
             .map((poi) => ({ ...poi, distance: shipPosition.distanceTo(poi.position) }))
@@ -64,11 +71,19 @@ export class SystemContents {
     }
 
     getCounts() {
+        const debrisCounts = this.debrisField?.getCounts() ?? {};
         return {
             ...EMPTY_COUNTS,
             stars: 1,
-            planets: this.planets.length
+            planets: this.planets.length,
+            debrisFields: debrisCounts.debrisFields ?? 0,
+            asteroids: debrisCounts.asteroids ?? 0,
+            ringParticles: debrisCounts.ringParticles ?? 0
         };
+    }
+
+    getHazardState(shipPosition, velocity) {
+        return this.debrisField?.getHazardState(shipPosition, velocity);
     }
 
     getCurrentNode() {
@@ -100,6 +115,7 @@ export class SystemContents {
             this.star.light.intensity = (lighting.intensity ?? 2.35) * 2.1 * Math.max(0.7, this.star.luminosity);
             this.star.light.distance = Math.max(lighting.range ?? 175000, this.star.radius * 16);
         }
+        this.debrisField?.setRuntimeConfig(config.debris ?? {});
     }
 
     setVisualGlow({ sceneGlow = 1, landmarkGlow = 1 } = {}) {
@@ -127,6 +143,7 @@ export class SystemContents {
         this.group.add(this.star.group);
 
         this._createPlanets(starRadius);
+        this._createDebris(starRadius);
         this.group.add(this._createBackdrop());
     }
 
@@ -160,6 +177,17 @@ export class SystemContents {
             orbit += randomRange(this._rng, gas ? 12500 : 9000, gas ? 19500 : 14500);
             orbit = Math.min(orbit, this.regionRadius * 0.86);
         }
+    }
+
+    _createDebris(starRadius) {
+        this.debrisField = new DebrisField({
+            seed: this.seed,
+            config: this.runtimeConfig.debris,
+            planets: this.planets,
+            starRadius,
+            regionRadius: this.regionRadius
+        });
+        this.group.add(this.debrisField.group);
     }
 
     _createBackdrop() {

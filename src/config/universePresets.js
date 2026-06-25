@@ -66,6 +66,16 @@ const universeDefault = {
         driftSpeed: 2.7,
         bloom: 1.3
     },
+    debris: {
+        enabled: true,
+        systemBelts: true,
+        beltCount: 2,
+        density: 1,
+        opacity: 0.74,
+        brightness: 1,
+        driftSpeed: 1,
+        hazardIntensity: 1.4
+    },
     lighting: {
         intensity: 2.35,
         range: 175000,
@@ -95,6 +105,7 @@ Object.assign(denseCluster.global, {
 Object.assign(denseCluster.stars, { nearCount: 8000, midCount: 38000, bgCount: 70000, brightness: 2.8 });
 Object.assign(denseCluster.galaxies, { count: 60, sizeMin: 4500, sizeMax: 32000 });
 Object.assign(denseCluster.nebulae, { nebulaCount: 20, clusterCount: 30 });
+Object.assign(denseCluster.debris, { density: 1.15 });
 
 const deepVoid = cloneConfig(universeDefault);
 Object.assign(deepVoid.global, {
@@ -109,6 +120,7 @@ Object.assign(deepVoid.stars, { nearCount: 2500, midCount: 14000, bgCount: 52000
 Object.assign(deepVoid.galaxies, { count: 24, opacity: 0.68 });
 Object.assign(deepVoid.blackHoles, { blackHoleCount: 3, pulsarCount: 1, anomalyCount: 4 });
 Object.assign(deepVoid.nebulae, { nebulaCount: 6, clusterCount: 8, opacity: 0.45 });
+Object.assign(deepVoid.debris, { density: 0.62, hazardIntensity: 0.8 });
 
 const blackHoleGraveyard = cloneConfig(universeDefault);
 Object.assign(blackHoleGraveyard.global, {
@@ -125,6 +137,7 @@ Object.assign(blackHoleGraveyard.blackHoles, {
     colorOuter: '#9b4dff'
 });
 Object.assign(blackHoleGraveyard.nebulae, { nebulaCount: 9, clusterCount: 12 });
+Object.assign(blackHoleGraveyard.debris, { density: 1.2, hazardIntensity: 1.8 });
 
 const stellarNursery = cloneConfig(universeDefault);
 Object.assign(stellarNursery.global, {
@@ -145,6 +158,7 @@ Object.assign(stellarNursery.nebulae, {
     opacity: 0.86
 });
 Object.assign(stellarNursery.galaxies, { count: 36 });
+Object.assign(stellarNursery.debris, { density: 1.1, brightness: 1.12 });
 
 export const UNIVERSE_CONFIG = cloneConfig(universeDefault);
 

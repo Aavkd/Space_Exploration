@@ -373,6 +373,19 @@ a signature feature. Pairs with the warp distortion already eased in `App._tick`
 **Touches.** `StarField.js` vertex/fragment shaders (velocity uniform + heading),
 fed from the same speed source as `RenderPipeline.setWarpSpeedFactor`.
 
+**Current update.** Implemented as a shader-space effect on `StarField`:
+`App._updateSpeedFx` derives an eased perceptual beta from the same normalized
+hyperdrive `speedFactor` that drives warp, forwards it through
+`Universe.setRelativisticState`, and `StarField` applies aberration plus
+directional Doppler/beaming per point. The F2 panel now exposes a dedicated
+`Relativistic Stars` group (`enabled`, `intensity`, `maxBeta`,
+`debugOverrideEnabled`, `debugBeta`) so the effect can be tuned or forced visible
+without reaching hyperdrive speed.
+
+**Related fix.** `Warp > debugSpeedFactor` is no longer a permanent floor. It only
+overrides speed-driven warp when `Warp > debugOverrideEnabled` is checked, so the
+warp effect scales with hyperdrive speed by default.
+
 **Payoff.** High — signature, physically correct, leverages existing hyperdrive.
 **Effort.** Medium. **VR cost.** Low (vertex/fragment math on existing points).
 

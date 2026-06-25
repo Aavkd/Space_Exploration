@@ -151,9 +151,17 @@ The exact Racing thresholds assume a fixed top speed; ours is unbounded, so we
     `120^0.7 ≈ 30.3`).
   - `speedFactor = clamp(ship.speed / warpRef, 0, 1)`, then keep the existing
     `min(speedFactor, vrComfort.warpMax)` ceiling.
+  - `Warp > debugSpeedFactor` is a manual test value only when
+    `Warp > debugOverrideEnabled` is checked. It must not floor live warp by
+    default, or the screen warp appears fixed instead of speed-scaled.
 - **Speed-line thresholds** scale the same way: `minSpeed`/`maxSpeed` lerp from
   precision values (~200 / ~1800 m/s) to hyperdrive values (×`HYPER_MULT^0.7`).
   Stretch ∝ `speedFactor` and `log(effectiveMult)` (Racing `plane.js:1077`).
+- **Relativistic star response** reuses the same normalized `speedFactor` and
+  hyperdrive spool to drive a perceptual beta. `StarField` applies aberration in
+  the vertex shader and Doppler/beaming in the color path; F2 exposes
+  `Relativistic Stars` (`enabled`, `intensity`, `maxBeta`, `debugOverrideEnabled`,
+  `debugBeta`) for live tuning.
 - **FOV / distortion** use **absolute m/s thresholds** (Racing used absolute km/h):
   - `fovStart ≈ 8,000 m/s`, `fovMax ≈ 60,000 m/s` →
     `fovFactor = clamp((speed − fovStart)/(fovMax − fovStart), 0, 1)`.
@@ -248,6 +256,10 @@ The exact Racing thresholds assume a fixed top speed; ours is unbounded, so we
   gears (no instant saturation, no jitter at high speed).
 - Desktop: FOV widens (≤ +40°) and distortion ramps at very high speed, both
   capped; recovers smoothly on slow-down.
+- Warp is not visible at rest unless `Warp > debugOverrideEnabled` is checked;
+  with that off, `debugSpeedFactor` is just the stored manual test amount.
+- Relativistic Stars can be forced for tuning via `debugOverrideEnabled` +
+  `debugBeta`, and otherwise ramps with hyperdrive speed/spool.
 - VR: distortion ramps but stays ≤ `warpDistortionMaxVR`; no FOV change; speed
   lines + ship FX carry the read; setting `warpDistortionMaxVR = 0` yields a clean
   diegetic-only look with no code change.

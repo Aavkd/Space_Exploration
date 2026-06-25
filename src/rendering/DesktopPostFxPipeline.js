@@ -7,6 +7,7 @@ import { WarpSpeedShader } from '../postprocessing/WarpSpeedShader.js';
 import { Retro16BitShader } from '../postprocessing/Retro16BitShader.js';
 import { ASCIIShader } from '../postprocessing/ASCIIShader.js';
 import { HalftoneShader } from '../postprocessing/HalftoneShader.js';
+import { AutoExposureController } from './AutoExposureController.js';
 
 /**
  * Desktop post-FX backend: the original EffectComposer chain
@@ -26,6 +27,12 @@ export class DesktopPostFxPipeline {
         this.renderPass = new RenderPass(scene, camera);
         this.bloomPass = new UnrealBloomPass(size, 1.2, 0.8, 0.1);
         this.warpPass = new ShaderPass(WarpSpeedShader);
+        this.autoExposure = new AutoExposureController({ renderer });
+        this.autoExposurePass = new AutoExposureMeterPass({
+            autoExposure: this.autoExposure,
+            getBaseExposure: () => this.config?.retro?.exposure ?? 1,
+            onExposureChange: () => this._updateEffectiveExposure()
+        });
         this.retroPass = new ShaderPass(Retro16BitShader);
         this.asciiPass = new ShaderPass(ASCIIShader);
         this.halftonePass = new ShaderPass(HalftoneShader);
@@ -33,6 +40,7 @@ export class DesktopPostFxPipeline {
         this.composer.addPass(this.renderPass);
         this.composer.addPass(this.bloomPass);
         this.composer.addPass(this.warpPass);
+        this.composer.addPass(this.autoExposurePass);
         this.composer.addPass(this.retroPass);
         this.composer.addPass(this.asciiPass);
         this.composer.addPass(this.halftonePass);
@@ -43,11 +51,13 @@ export class DesktopPostFxPipeline {
     }
 
     render(dt) {
+        this._updateEffectiveExposure();
         this.composer.render(dt);
     }
 
     applyConfig(config) {
         this.config = config;
+        this.autoExposure.applyConfig(config.autoExposure);
 
         this.bloomPass.enabled = config.bloom.enabled;
         this.bloomPass.strength = Math.min(config.bloom.strength, config.vrComfort?.bloomMax ?? config.bloom.strength);
@@ -61,7 +71,9 @@ export class DesktopPostFxPipeline {
         Object.assign(this.warpPass.uniforms.streakIntensity, { value: config.warp.streakIntensity });
         Object.assign(this.warpPass.uniforms.distortion, { value: config.warp.distortion });
         Object.assign(this.warpPass.uniforms.blurSamples, { value: config.warp.blurSamples });
-        Object.assign(this.warpPass.uniforms.speedFactor, { value: config.warp.debugSpeedFactor });
+        Object.assign(this.warpPass.uniforms.speedFactor, {
+            value: config.warp.debugOverrideEnabled ? config.warp.debugSpeedFactor : 0
+        });
 
         this.retroPass.enabled = config.retro.enabled;
         const retroUniforms = this.retroPass.uniforms;
@@ -76,7 +88,7 @@ export class DesktopPostFxPipeline {
         retroUniforms.vignetteIntensity.value = config.retro.vignetteIntensity;
         retroUniforms.aberration.value = config.retro.aberration;
         retroUniforms.brightness.value = config.retro.brightness;
-        retroUniforms.exposure.value = config.retro.exposure;
+        this._updateEffectiveExposure();
 
         this.asciiPass.enabled = config.ascii.enabled;
         const asciiUniforms = this.asciiPass.uniforms;
@@ -95,7 +107,8 @@ export class DesktopPostFxPipeline {
     }
 
     setWarpSpeedFactor(speedFactor) {
-        this.warpPass.uniforms.speedFactor.value = Math.max(speedFactor, this.config.warp.debugSpeedFactor);
+        const debugFloor = this.config.warp.debugOverrideEnabled ? this.config.warp.debugSpeedFactor : 0;
+        this.warpPass.uniforms.speedFactor.value = Math.max(speedFactor ?? 0, debugFloor);
     }
 
     // Floored at the configured baseline so the F2 distortion slider stays
@@ -126,8 +139,19 @@ export class DesktopPostFxPipeline {
             warpResolution: this.warpPass.uniforms.resolution.value.toArray(),
             retroResolution: this.retroPass.uniforms.resolution.value.toArray(),
             asciiResolution: this.asciiPass.uniforms.resolution.value.toArray(),
-            halftoneResolution: this.halftonePass.uniforms.resolution.value.toArray()
+            halftoneResolution: this.halftonePass.uniforms.resolution.value.toArray(),
+            autoExposure: this.autoExposure.getDebugState(this.config?.retro?.exposure ?? 1)
         };
+    }
+
+    dispose() {
+        this.autoExposure.dispose();
+        this.composer?.dispose?.();
+    }
+
+    _updateEffectiveExposure() {
+        const baseExposure = this.config?.retro?.exposure ?? 1;
+        this.retroPass.uniforms.exposure.value = baseExposure * this.autoExposure.getExposureScale();
     }
 
     _loadAsciiTexture() {
@@ -144,4 +168,23 @@ export class DesktopPostFxPipeline {
     _getSize() {
         return new THREE.Vector2(window.innerWidth, window.innerHeight);
     }
+}
+
+class AutoExposureMeterPass {
+    constructor({ autoExposure, getBaseExposure, onExposureChange }) {
+        this.enabled = true;
+        this.needsSwap = false;
+        this.clear = false;
+        this.renderToScreen = false;
+        this.autoExposure = autoExposure;
+        this.getBaseExposure = getBaseExposure;
+        this.onExposureChange = onExposureChange;
+    }
+
+    render(_renderer, _writeBuffer, readBuffer, deltaTime = 0) {
+        this.autoExposure.updateFromTexture(readBuffer?.texture, deltaTime, { vr: false });
+        this.onExposureChange?.(this.getBaseExposure?.() ?? 1);
+    }
+
+    setSize() {}
 }

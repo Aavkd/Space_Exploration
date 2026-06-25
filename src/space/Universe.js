@@ -139,6 +139,10 @@ export class Universe {
         this.landmarks?.setVisualGlow(this.visualGlow);
     }
 
+    setRelativisticState(state) {
+        this.starField?.setRelativisticState(state);
+    }
+
     getPOIs(shipPosition = new THREE.Vector3(), limit = 12) {
         const nodes = this.web.nodes.map((node) => ({
             type: 'node',

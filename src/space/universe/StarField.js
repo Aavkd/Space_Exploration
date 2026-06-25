@@ -11,6 +11,7 @@ import { sampleGalaxyDiskPoint } from './galaxyShape.js';
 // shifts hue. The untinted blackbody colour is kept for system entry + lighting.
 const GALAXY_STAR_TINT = 0.64;
 const _starTint = new THREE.Color();
+const _defaultTravelDirection = new THREE.Vector3(0, 0, -1);
 
 export class StarField {
     constructor({ rng, web, config }) {
@@ -50,6 +51,18 @@ export class StarField {
             layer.material.uniforms.saturation.value = this.config.stars.saturation;
             layer.material.uniforms.bloom.value = this.config.stars.bloom ?? 1;
             layer.material.uniforms.regionRadius.value = this.config.global.regionRadius;
+        }
+    }
+
+    setRelativisticState({ beta = 0, direction = _defaultTravelDirection, observerPosition = null } = {}) {
+        const clampedBeta = THREE.MathUtils.clamp(beta, 0, 0.88);
+        for (const layer of Object.values(this.layers)) {
+            const uniforms = layer.material.uniforms;
+            uniforms.relativisticBeta.value = clampedBeta;
+            if (direction?.lengthSq?.() > 1e-8) {
+                uniforms.travelDirection.value.copy(direction).normalize();
+            }
+            if (observerPosition) uniforms.observerPosition.value.copy(observerPosition);
         }
     }
 
@@ -237,7 +250,10 @@ export class StarField {
                 size: { value: this.config.stars.size },
                 saturation: { value: this.config.stars.saturation },
                 bloom: { value: this.config.stars.bloom ?? 1 },
-                regionRadius: { value: this.config.global.regionRadius }
+                regionRadius: { value: this.config.global.regionRadius },
+                observerPosition: { value: new THREE.Vector3() },
+                travelDirection: { value: _defaultTravelDirection.clone() },
+                relativisticBeta: { value: 0 }
             },
             vertexShader: `
                 attribute float seed;
@@ -250,16 +266,45 @@ export class StarField {
                 uniform float brightness;
                 uniform float saturation;
                 uniform float regionRadius;
+                uniform vec3 observerPosition;
+                uniform vec3 travelDirection;
+                uniform float relativisticBeta;
 
                 void main() {
                     vec3 saturated = mix(vec3(dot(color, vec3(0.299, 0.587, 0.114))), color, saturation);
-                    vColor = saturated * brightness * brightnessSeed;
-                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                    vec3 toStar = worldPosition.xyz - observerPosition;
+                    float starDistance = max(length(toStar), 1.0);
+                    vec3 starDirection = toStar / starDistance;
+
+                    float beta = clamp(relativisticBeta, 0.0, 0.88);
+                    vec3 travel = normalize(travelDirection);
+                    float mu = clamp(dot(starDirection, travel), -0.999, 0.999);
+                    float gammaInv = sqrt(max(1.0 - beta * beta, 0.0001));
+                    float denom = max(1.0 + beta * mu, 0.0001);
+                    vec3 perpendicular = starDirection - travel * mu;
+                    vec3 apparentDirection = normalize(
+                        travel * ((mu + beta) / denom) +
+                        perpendicular * (gammaInv / denom)
+                    );
+                    worldPosition.xyz = observerPosition + apparentDirection * starDistance;
+
+                    float doppler = sqrt((1.0 + beta * mu) / max(1.0 - beta * mu, 0.0001));
+                    doppler = clamp(doppler, 0.62, 1.65);
+                    float blueShift = clamp((doppler - 1.0) * 1.35, 0.0, 1.0);
+                    float redShift = clamp((1.0 - doppler) * 1.55, 0.0, 1.0);
+                    vec3 dopplerColor = saturated;
+                    dopplerColor *= mix(vec3(1.0), vec3(0.7, 0.9, 1.32), blueShift);
+                    dopplerColor *= mix(vec3(1.0), vec3(1.32, 0.72, 0.48), redShift);
+                    float beam = clamp(doppler * doppler, 0.48, 2.05);
+                    vColor = dopplerColor * brightness * brightnessSeed * beam;
+
+                    vec4 mvPosition = viewMatrix * worldPosition;
                     float dist = max(-mvPosition.z, 1.0);
 
                     float twinkle = 0.72 + 0.28 * sin(time * (1.5 + seed * 0.003) + seed);
                     float borderFade = 1.0 - smoothstep(regionRadius * 0.86, regionRadius, length(position));
-                    vAlpha = twinkle * max(borderFade, 0.2);
+                    vAlpha = twinkle * max(borderFade, 0.2) * clamp(beam, 0.58, 1.65);
                     // Only the brightest stars grow diffraction glints.
                     vSpike = smoothstep(0.95, 1.8, brightnessSeed);
 
@@ -270,6 +315,7 @@ export class StarField {
                     // render, and a ceiling so close stars don't balloon.
                     float sizeScale = regionRadius * 0.02;
                     float px = size * (sizeScale / dist) * (0.5 + brightnessSeed * 0.7);
+                    px *= mix(1.0, clamp(beam, 0.75, 1.45), beta);
                     gl_PointSize = clamp(px, 1.8, 30.0);
                     gl_Position = projectionMatrix * mvPosition;
                 }

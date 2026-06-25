@@ -108,7 +108,7 @@ export class Ship {
         this.gravityField = gravityField;
     }
 
-    update(dt, commandState = {}, gravityField = this.gravityField) {
+    update(dt, commandState = {}, gravityField = this.gravityField, externalAcceleration = null) {
         this.commandState = commandState;
 
         // Ease the hyperdrive spool toward the latched intent. This tracks the
@@ -130,7 +130,7 @@ export class Ship {
             ? gravityField.getAcceleration(this.object3D.position, this._gravityAccel)
             : null;
 
-        this.physics.integrate(this.object3D, dt, command, gravityAccel);
+        this.physics.integrate(this.object3D, dt, command, gravityAccel, externalAcceleration);
 
         this._updateHyperdriveFx(easedLevel);
         this.speedLines.setMultiplier(this.physics.getEffectiveThrustMultiplier());

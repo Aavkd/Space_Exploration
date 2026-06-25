@@ -99,6 +99,7 @@ export class PostProcessingPanel {
             ]),
             this._createGroup('Warp', this.config.warp, [
                 ['enabled', 'checkbox'],
+                ['debugOverrideEnabled', 'checkbox'],
                 ['debugSpeedFactor', 'range', 0, 1, 0.01],
                 ['blurStrength', 'range', 0, 0.2, 0.001],
                 ['blurSamples', 'range', 1, 16, 1],
@@ -108,6 +109,13 @@ export class PostProcessingPanel {
                 ['distortion', 'range', 0, 1, 0.01],
                 ['speedFxScale', 'range', 0, 1, 0.01],
                 ['speedFxOnFootScale', 'range', 0, 1, 0.01]
+            ]),
+            this._createGroup('Relativistic Stars', this.config.relativisticStars, [
+                ['enabled', 'checkbox'],
+                ['intensity', 'range', 0, 4, 0.05],
+                ['maxBeta', 'range', 0, 0.95, 0.01],
+                ['debugOverrideEnabled', 'checkbox'],
+                ['debugBeta', 'range', 0, 0.95, 0.01]
             ]),
             this._createGroup('Retro / Pixel', this.config.retro, [
                 ['enabled', 'checkbox'],
@@ -123,6 +131,18 @@ export class PostProcessingPanel {
                 ['aberration', 'range', 0, 0.02, 0.0005],
                 ['brightness', 'range', -1, 1, 0.01],
                 ['exposure', 'range', 0.2, 4, 0.01]
+            ]),
+            this._createGroup('Auto Exposure', this.config.autoExposure, [
+                ['enabled', 'checkbox'],
+                ['targetLuminance', 'range', 0.02, 0.8, 0.01],
+                ['minExposureScale', 'range', 0.2, 1, 0.01],
+                ['maxExposureScale', 'range', 1, 3, 0.01],
+                ['adaptationUpSeconds', 'range', 0.1, 3, 0.05],
+                ['adaptationDownSeconds', 'range', 0.1, 3, 0.05],
+                ['vrAdaptationUpSeconds', 'range', 0.2, 4, 0.05],
+                ['vrAdaptationDownSeconds', 'range', 0.2, 4, 0.05],
+                ['meteringMinLog', 'range', -12, -2, 0.5],
+                ['meteringMaxLog', 'range', 0, 6, 0.5]
             ]),
             this._createGroup('ASCII', this.config.ascii, [
                 ['enabled', 'checkbox'],

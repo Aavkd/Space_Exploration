@@ -10,7 +10,8 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
 - Seeded procedural universe with stars, galaxies, nebulae, black holes, pulsars, anomalies, POI markers, and live regeneration controls.
 - Walkable ship interior with ship-local movement, piloting, and tethered EVA transitions.
 - Autonomous ship simulation with inertia, gravity attractors, dampeners, airbrake, boost, and hyperdrive.
-- Desktop post-FX stack plus a custom WebXR render path for bloom, retro pixel treatment, scanlines, color depth, and warp.
+- Desktop post-FX stack plus a custom WebXR render path for bloom, retro pixel treatment, scanlines, color depth, and speed-scaled warp.
+- Hyperdrive-responsive star-field aberration and Doppler/beaming, tunable from the F2 `Relativistic Stars` group.
 - DualSense / standard gamepad support, WebXR controller support, and runtime debug hooks.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 

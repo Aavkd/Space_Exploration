@@ -11,6 +11,7 @@ const desktopDefault = {
     },
     warp: {
         enabled: false,
+        debugOverrideEnabled: false,
         debugSpeedFactor: 0.77,
         blurStrength: 0.144,
         blurSamples: 6,
@@ -24,6 +25,13 @@ const desktopDefault = {
         // drift FX read calmer on foot. Eased between the two on take/leave.
         speedFxScale: 0.71,
         speedFxOnFootScale: 0.35
+    },
+    relativisticStars: {
+        enabled: true,
+        intensity: 1.8,
+        maxBeta: 0.82,
+        debugOverrideEnabled: false,
+        debugBeta: 0
     },
     retro: {
         enabled: true,
@@ -39,6 +47,18 @@ const desktopDefault = {
         aberration: 0.0045,
         brightness: -0.13,
         exposure: 4
+    },
+    autoExposure: {
+        enabled: true,
+        targetLuminance: 0.18,
+        minExposureScale: 0.5,
+        maxExposureScale: 1.65,
+        adaptationUpSeconds: 1.15,
+        adaptationDownSeconds: 0.55,
+        vrAdaptationUpSeconds: 1.65,
+        vrAdaptationDownSeconds: 0.95,
+        meteringMinLog: -7,
+        meteringMaxLog: 3
     },
     ascii: {
         enabled: false,
