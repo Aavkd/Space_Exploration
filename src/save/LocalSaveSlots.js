@@ -7,8 +7,10 @@ import {
     sanitizeSaveEnvelope
 } from './SaveEnvelope.js';
 
-export const SAVE_INDEX_KEY = 'deep-space-vr:save-index:v2';
-export const SAVE_SLOT_KEY_PREFIX = 'deep-space-vr:save-slot:v2:';
+export const SAVE_INDEX_KEY = 'deep-space-vr:save-index:v3';
+export const SAVE_SLOT_KEY_PREFIX = 'deep-space-vr:save-slot:v3:';
+export const LEGACY_SAVE_INDEX_KEY = 'deep-space-vr:save-index:v2';
+export const LEGACY_SAVE_SLOT_KEY_PREFIX = 'deep-space-vr:save-slot:v2:';
 export const SAVE_SLOT_LIMIT = 3;
 
 export class LocalSaveSlots {
@@ -35,6 +37,9 @@ export class LocalSaveSlots {
                 this.activeEnvelope = this.index.activeSlotId
                     ? this._readSlot(this.index.activeSlotId)
                     : null;
+            } else {
+                const legacyIndex = this.storage?.getItem(LEGACY_SAVE_INDEX_KEY);
+                if (legacyIndex) this._migrateVersion2Slots(legacyIndex);
             }
             if (!this.activeEnvelope) this._initializeFirstSlot();
         } catch (error) {
@@ -109,7 +114,7 @@ export class LocalSaveSlots {
         }
     }
 
-    saveDomains({ rpg, gameTime }, { kind = 'auto', reason = 'state-change' } = {}) {
+    saveDomains({ rpg, ship, gameTime }, { kind = 'auto', reason = 'state-change' } = {}) {
         const now = this.now();
         const next = sanitizeSaveEnvelope({
             ...this.activeEnvelope,
@@ -120,6 +125,7 @@ export class LocalSaveSlots {
                 savedAt: now,
                 sequence: this.activeEnvelope.autosave.sequence + 1
             },
+            ship: ship ?? this.activeEnvelope.ship,
             rpg: rpg ?? this.activeEnvelope.rpg,
             simulation: {
                 gameTime: gameTime ?? this.activeEnvelope.simulation.gameTime
@@ -221,6 +227,21 @@ export class LocalSaveSlots {
             ? migrateLegacyRpgSave(JSON.parse(legacyRaw), { slotId: id, now })
             : createSaveEnvelope({ slotId: id, slotName: 'Flight 1', now, rpg: createInitialRpgState() });
         this._commitNewSlot(envelope, { version: 1, activeSlotId: id, slotIds: [id] });
+    }
+
+    _migrateVersion2Slots(rawIndex) {
+        const legacyIndex = sanitizeIndex(JSON.parse(rawIndex));
+        const envelopes = legacyIndex.slotIds.map((slotId) => {
+            const raw = this.storage?.getItem(`${LEGACY_SAVE_SLOT_KEY_PREFIX}${slotId}`);
+            if (!raw) throw new Error(`Phase 13 save slot data is missing: ${slotId}`);
+            return sanitizeSaveEnvelope(JSON.parse(raw));
+        });
+        for (const envelope of envelopes) this._writeSlot(envelope);
+        this.index = legacyIndex;
+        this._writeIndex();
+        this.activeEnvelope = envelopes.find(
+            (envelope) => envelope.slot.id === legacyIndex.activeSlotId
+        ) ?? null;
     }
 
     _commitNewSlot(envelope, index) {

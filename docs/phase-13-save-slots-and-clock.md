@@ -2,6 +2,9 @@
 
 > **Status:** Complete. Automated verification, desktop browser smoke testing,
 > and the owner-performed normal-control/device checklist are recorded below.
+> **Historical note:** Phase 14 supersedes the version-2 envelope with version 3
+> and migrates Phase 13 slots non-destructively. This document retains the
+> Phase 13 contract as implemented at its signoff.
 
 ## Scope and decisions
 

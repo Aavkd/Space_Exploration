@@ -89,7 +89,8 @@ export const REQUIRED_SHIP_ANCHORS = Object.freeze([
     'exteriorSpawn',
     'cameraDebugMount',
     'radioStation',
-    'shipComputerStation'
+    'shipComputerStation',
+    'cargoTerminalStation'
 ]);
 
 export const SHIP_ANCHORS = Object.freeze({
@@ -133,6 +134,13 @@ export const SHIP_ANCHORS = Object.freeze({
         zone: 'observationBay',
         position: [1.7, 0.9, 2.4],
         forward: [-1, 0, 0],
+        interactionRadius: 1.0
+    },
+    cargoTerminalStation: {
+        role: 'Physical cargo, fuel, delivery, and recovery terminal.',
+        zone: 'observationBay',
+        position: [-1.7, 0.9, 2.4],
+        forward: [1, 0, 0],
         interactionRadius: 1.0
     },
     exitAirlock: {

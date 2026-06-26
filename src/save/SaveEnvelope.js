@@ -1,6 +1,8 @@
+import { createInitialShipState, sanitizeShipState } from '../rpg/cargo.js';
+import { migrateRpgState } from '../rpg/migrations.js';
 import { createInitialRpgState, sanitizeRpgState } from '../rpg/state.js';
 
-export const SAVE_ENVELOPE_VERSION = 2;
+export const SAVE_ENVELOPE_VERSION = 3;
 export const MAX_EVENT_LOG_ENTRIES = 500;
 export const PROTECTED_EVENT_TYPES = Object.freeze([
     'mission.resolved',
@@ -31,7 +33,7 @@ export function createSaveEnvelope({
             sequence: 0
         },
         player: {},
-        ship: {},
+        ship: createInitialShipState(),
         rpg,
         simulation: {
             gameTime
@@ -44,6 +46,7 @@ export function sanitizeSaveEnvelope(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error('Save envelope must be an object.');
     }
+    if (value.version === 2) value = migrateVersion2Envelope(value);
     if (value.version !== SAVE_ENVELOPE_VERSION) {
         throw new Error(
             value.version > SAVE_ENVELOPE_VERSION
@@ -55,7 +58,7 @@ export function sanitizeSaveEnvelope(value) {
 
     const createdAt = sanitizeTimestamp(value.slot.createdAt, 'slot.createdAt');
     const updatedAt = sanitizeTimestamp(value.slot.updatedAt, 'slot.updatedAt');
-    const rpg = sanitizeRpgState(value.rpg);
+    const rpg = sanitizeRpgState(migrateRpgState(value.rpg));
     rpg.eventLog = compactEventLog(rpg.eventLog);
 
     return {
@@ -68,7 +71,7 @@ export function sanitizeSaveEnvelope(value) {
         },
         autosave: sanitizeAutosave(value.autosave, updatedAt),
         player: sanitizeEmptyDomain(value.player, 'player'),
-        ship: sanitizeEmptyDomain(value.ship, 'ship'),
+        ship: sanitizeShipState(value.ship),
         rpg,
         simulation: {
             gameTime: sanitizeNonNegativeNumber(value.simulation?.gameTime, 'simulation.gameTime')
@@ -78,7 +81,7 @@ export function sanitizeSaveEnvelope(value) {
 }
 
 export function migrateLegacyRpgSave(value, { slotId, slotName = 'Migrated Flight', now } = {}) {
-    const rpg = sanitizeRpgState(value);
+    const rpg = sanitizeRpgState(migrateRpgState(value));
     const envelope = createSaveEnvelope({ slotId, slotName, now, rpg });
     envelope.autosave = {
         kind: 'migration',
@@ -87,6 +90,27 @@ export function migrateLegacyRpgSave(value, { slotId, slotName = 'Migrated Fligh
         sequence: 1
     };
     return sanitizeSaveEnvelope(envelope);
+}
+
+export function migrateVersion2Envelope(value) {
+    if (!value || value.version !== 2) {
+        throw new Error(`Expected save envelope version 2, received ${value?.version ?? 'missing'}.`);
+    }
+    const savedAt = typeof value.slot?.updatedAt === 'string'
+        ? value.slot.updatedAt
+        : new Date().toISOString();
+    return {
+        ...structuredClone(value),
+        version: 3,
+        ship: createInitialShipState(),
+        rpg: migrateRpgState(value.rpg),
+        autosave: {
+            kind: 'migration',
+            reason: 'phase-13-v2',
+            savedAt,
+            sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
+        }
+    };
 }
 
 export function compactEventLog(entries, maxEntries = MAX_EVENT_LOG_ENTRIES) {

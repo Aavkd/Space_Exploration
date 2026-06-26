@@ -4,7 +4,7 @@ import { RPG_STATE_VERSION } from './state.js';
 // Each migration must return a new plain object whose version is exactly the
 // next integer. Keeping the registry explicit prevents silent save corruption.
 export const RPG_STATE_MIGRATIONS = Object.freeze({
-    // 1: (state) => ({ ...state, version: 2 })
+    1: (state) => ({ ...state, version: 2 })
 });
 
 export function migrateRpgState(value) {

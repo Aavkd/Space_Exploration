@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "slot": {
+    "id": "slot-phase13",
+    "name": "Phase 13 Flight",
+    "createdAt": "2026-06-27T00:00:00.000Z",
+    "updatedAt": "2026-06-27T01:00:00.000Z"
+  },
+  "autosave": {
+    "kind": "auto",
+    "reason": "play-time-checkpoint",
+    "savedAt": "2026-06-27T01:00:00.000Z",
+    "sequence": 7
+  },
+  "player": {},
+  "ship": {},
+  "rpg": {
+    "version": 1,
+    "createdAt": "2026-06-26T00:00:00.000Z",
+    "updatedAt": "2026-06-27T01:00:00.000Z",
+    "factions": { "byId": {} },
+    "namedSystems": { "byId": {} },
+    "contacts": { "byId": {} },
+    "missions": { "byId": {} },
+    "comms": { "activeContactId": null, "llmFlavorEnabled": false },
+    "eventLog": [],
+    "worldFlags": {}
+  },
+  "simulation": { "gameTime": 123.5 },
+  "settings": {}
+}

@@ -5,9 +5,14 @@ import {
     NAMED_SYSTEM_IDS
 } from './registries.js';
 import { CONTACT_DEFINITIONS, CONTACT_IDS } from './contacts.js';
-import { MISSION_DEFINITIONS, MISSION_IDS, MISSION_STATUSES } from './missions.js';
+import {
+    MISSION_DEFINITIONS,
+    MISSION_IDS,
+    MISSION_STATUSES,
+    OBJECTIVE_STATUSES
+} from './missions.js';
 
-export const RPG_STATE_VERSION = 1;
+export const RPG_STATE_VERSION = 2;
 export const INITIAL_RPG_TIMESTAMP = '2026-06-26T00:00:00.000Z';
 
 export function createInitialRpgState() {
@@ -77,7 +82,8 @@ export function createInitialRpgState() {
             failedAt: null,
             outcomeId: null,
             lastBranchId: null,
-            updatedAt: null
+            updatedAt: null,
+            objectives: createInitialObjectives(mission)
         };
     }
 
@@ -296,8 +302,53 @@ function sanitizeMissionOverride(saved, base) {
         failedAt: saved.failedAt === null || isString(saved.failedAt) ? saved.failedAt : base.failedAt,
         outcomeId: saved.outcomeId === null || isString(saved.outcomeId) ? saved.outcomeId : base.outcomeId,
         lastBranchId: saved.lastBranchId === null || isString(saved.lastBranchId) ? saved.lastBranchId : base.lastBranchId,
-        updatedAt: saved.updatedAt === null || isString(saved.updatedAt) ? saved.updatedAt : base.updatedAt
+        updatedAt: saved.updatedAt === null || isString(saved.updatedAt) ? saved.updatedAt : base.updatedAt,
+        objectives: sanitizeObjectives(saved.objectives, base.objectives)
     };
+}
+
+function createInitialObjectives(mission) {
+    const byId = {};
+    for (const objective of Object.values(mission.objectives ?? {})) {
+        byId[objective.id] = {
+            id: objective.id,
+            status: OBJECTIVE_STATUSES.PENDING,
+            activatedAt: null,
+            completedAt: null,
+            failedAt: null
+        };
+    }
+    return {
+        currentObjectiveId: null,
+        byId
+    };
+}
+
+function sanitizeObjectives(saved, base) {
+    const byId = {};
+    const savedById = saved?.byId ?? {};
+    for (const [id, initial] of Object.entries(base.byId)) {
+        const value = savedById[id];
+        byId[id] = {
+            ...initial,
+            status: Object.values(OBJECTIVE_STATUSES).includes(value?.status)
+                ? value.status
+                : initial.status,
+            activatedAt: value?.activatedAt === null || isString(value?.activatedAt)
+                ? value.activatedAt
+                : initial.activatedAt,
+            completedAt: value?.completedAt === null || isString(value?.completedAt)
+                ? value.completedAt
+                : initial.completedAt,
+            failedAt: value?.failedAt === null || isString(value?.failedAt)
+                ? value.failedAt
+                : initial.failedAt
+        };
+    }
+    const currentObjectiveId = Object.hasOwn(byId, saved?.currentObjectiveId)
+        ? saved.currentObjectiveId
+        : null;
+    return { currentObjectiveId, byId };
 }
 
 function createMissionSummary(state) {

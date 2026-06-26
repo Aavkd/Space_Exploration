@@ -7,10 +7,13 @@ export {
     createEnvelopePreview,
     createSaveEnvelope,
     migrateLegacyRpgSave,
+    migrateVersion2Envelope,
     sanitizeSaveEnvelope
 } from './SaveEnvelope.js';
 export {
     LocalSaveSlots,
+    LEGACY_SAVE_INDEX_KEY,
+    LEGACY_SAVE_SLOT_KEY_PREFIX,
     SAVE_INDEX_KEY,
     SAVE_SLOT_KEY_PREFIX,
     SAVE_SLOT_LIMIT,

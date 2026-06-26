@@ -6,7 +6,12 @@ import {
     sanitizeRpgState
 } from './state.js';
 import { CONTACT_DEFINITIONS, CONTACT_IDS } from './contacts.js';
-import { MISSION_DEFINITIONS, MISSION_IDS, MISSION_STATUSES } from './missions.js';
+import {
+    MISSION_DEFINITIONS,
+    MISSION_IDS,
+    MISSION_STATUSES,
+    OBJECTIVE_STATUSES
+} from './missions.js';
 
 export class RpgRuntime {
     constructor({ persistence = new LocalRpgPersistence(), now = () => new Date().toISOString() } = {}) {
@@ -218,6 +223,7 @@ export class RpgRuntime {
             namedSystemId: definition.namedSystemId,
             branches: definition.branches,
             failureOutcomes: definition.failureOutcomes,
+            objectives: definition.objectives ?? {},
             state
         });
     }
@@ -417,6 +423,13 @@ export class RpgRuntime {
         mission.status = MISSION_STATUSES.ACCEPTED;
         mission.acceptedAt = now;
         mission.updatedAt = now;
+        const firstObjectiveId = Object.keys(mission.objectives?.byId ?? {})[0] ?? null;
+        if (firstObjectiveId) {
+            const objective = mission.objectives.byId[firstObjectiveId];
+            objective.status = OBJECTIVE_STATUSES.ACTIVE;
+            objective.activatedAt = now;
+            mission.objectives.currentObjectiveId = firstObjectiveId;
+        }
         const event = this._appendEventRef('mission.accepted', {
             missionId: id,
             contactId: mission.contactId,
@@ -435,6 +448,9 @@ export class RpgRuntime {
         const mission = this._getMissionStateRef(id);
         const outcome = definition.failureOutcomes?.[outcomeId];
         if (!outcome) throw new Error(`Unknown RPG mission failure outcome ID: ${id}/${outcomeId}`);
+        if (definition.requiresExternalResolution && mission.status === MISSION_STATUSES.ACCEPTED) {
+            throw new Error(`RPG mission failure requires its authoritative domain runtime: ${id}`);
+        }
         if (mission.status === MISSION_STATUSES.RESOLVED) {
             throw new Error(`RPG mission cannot fail after resolution: ${id}`);
         }
@@ -454,6 +470,13 @@ export class RpgRuntime {
         mission.outcomeId = outcomeId;
         mission.lastBranchId = null;
         mission.updatedAt = now;
+        for (const objective of Object.values(mission.objectives?.byId ?? {})) {
+            if (objective.status === OBJECTIVE_STATUSES.PENDING || objective.status === OBJECTIVE_STATUSES.ACTIVE) {
+                objective.status = OBJECTIVE_STATUSES.FAILED;
+                objective.failedAt = now;
+            }
+        }
+        if (mission.objectives) mission.objectives.currentObjectiveId = null;
         const worldFlags = this._applyWorldFlagsRef(outcome.worldFlags ?? {});
         const event = this._appendEventRef('mission.failed', {
             missionId: id,
@@ -476,6 +499,9 @@ export class RpgRuntime {
         const mission = this._getMissionStateRef(id);
         const branch = definition.branches?.[branchId];
         if (!branch) throw new Error(`Unknown RPG mission branch ID: ${id}/${branchId}`);
+        if (definition.requiresExternalResolution) {
+            throw new Error(`RPG mission resolution requires its authoritative domain runtime: ${id}`);
+        }
         if (mission.status === MISSION_STATUSES.RESOLVED && mission.lastBranchId === branchId) {
             return {
                 missionId: id,
@@ -496,6 +522,13 @@ export class RpgRuntime {
         mission.outcomeId = branchId;
         mission.lastBranchId = branchId;
         mission.updatedAt = now;
+        for (const objective of Object.values(mission.objectives?.byId ?? {})) {
+            if (objective.status !== OBJECTIVE_STATUSES.COMPLETE) {
+                objective.status = OBJECTIVE_STATUSES.COMPLETE;
+                objective.completedAt = now;
+            }
+        }
+        if (mission.objectives) mission.objectives.currentObjectiveId = null;
         this._appendEventRef('mission.resolved', {
             missionId: id,
             branchId,

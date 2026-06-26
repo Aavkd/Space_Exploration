@@ -49,9 +49,18 @@ export const NAMED_SYSTEM_DEFINITIONS = Object.freeze({
     }),
     index_hq: Object.freeze({
         id: 'index_hq',
+        name: 'Index Relay K-7',
+        navigationLabel: 'Index Relay K-7',
         role: 'Index HQ - the archive world, information is currency',
         startingTier: 2,
-        startingFactionId: 'index'
+        startingFactionId: 'index',
+        seed: 'rpg-index-hq-v1',
+        position: Object.freeze([-26000, 3500, 22000]),
+        star: Object.freeze({
+            color: '#91c8ff',
+            temperatureK: 7600,
+            luminosity: 1.15
+        })
     }),
     drifter_convergence: Object.freeze({
         id: 'drifter_convergence',

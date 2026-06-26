@@ -41,6 +41,23 @@ export const CONTACT_DEFINITIONS = Object.freeze({
                         })
                     }),
                     Object.freeze({
+                        id: 'ask_delivery_work',
+                        label: 'Ask about freight bound for the Index.',
+                        missionAction: Object.freeze({
+                            type: 'offer',
+                            missionId: 'index_archive_delivery'
+                        }),
+                        missionNodeMap: Object.freeze({
+                            unavailable: 'delivery_offer',
+                            offered: 'delivery_offer',
+                            accepted: 'delivery_accepted',
+                            'resolved:delivered': 'delivery_resolved',
+                            'failed:abandoned': 'delivery_abandoned',
+                            'failed:cargo_lost': 'delivery_lost',
+                            default: 'delivery_offer'
+                        })
+                    }),
+                    Object.freeze({
                         id: 'end_transmission',
                         label: 'End transmission.',
                         close: true
@@ -258,6 +275,137 @@ export const CONTACT_DEFINITIONS = Object.freeze({
                         label: 'End transmission.',
                         close: true
                     })
+                ])
+            }),
+            delivery_offer: Object.freeze({
+                id: 'delivery_offer',
+                text: 'Four sealed Index archive canisters are waiting at your cargo terminal. Take them to Index Relay K-7 intact. The relay pays 850 credits; the route and the fuel are yours to manage.',
+                choices: Object.freeze([
+                    Object.freeze({
+                        id: 'accept_archive_delivery',
+                        label: 'Accept the Index archive delivery.',
+                        missionAction: Object.freeze({
+                            type: 'accept',
+                            missionId: 'index_archive_delivery'
+                        }),
+                        nextNodeId: 'delivery_accepted'
+                    }),
+                    Object.freeze({
+                        id: 'decline_archive_delivery',
+                        label: 'Decline the freight job.',
+                        missionAction: Object.freeze({
+                            type: 'fail',
+                            missionId: 'index_archive_delivery',
+                            outcomeId: 'abandoned'
+                        }),
+                        nextNodeId: 'delivery_abandoned'
+                    }),
+                    Object.freeze({ id: 'return_intro', label: 'Return to the channel menu.', nextNodeId: 'intro' }),
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            }),
+            delivery_accepted: Object.freeze({
+                id: 'delivery_accepted',
+                text: 'The cargo authorization is live. Load the canisters at your ship terminal, lock Index Relay K-7, and keep your protected fuel reserve intact.',
+                choices: Object.freeze([
+                    Object.freeze({ id: 'return_intro', label: 'Return to the channel menu.', nextNodeId: 'intro' }),
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            }),
+            delivery_resolved: Object.freeze({
+                id: 'delivery_resolved',
+                text: 'Relay K-7 confirms the canisters and the payment. Clean work. The Index now has one more piece of the dark pinned under glass.',
+                choices: Object.freeze([
+                    Object.freeze({ id: 'return_intro', label: 'Return to the channel menu.', nextNodeId: 'intro' }),
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            }),
+            delivery_abandoned: Object.freeze({
+                id: 'delivery_abandoned',
+                text: 'Understood. The freight authorization is closed and the canisters are no longer your responsibility.',
+                choices: Object.freeze([
+                    Object.freeze({ id: 'return_intro', label: 'Return to the channel menu.', nextNodeId: 'intro' }),
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            }),
+            delivery_lost: Object.freeze({
+                id: 'delivery_lost',
+                text: 'The loss report reached us. The Index will notice the empty shelf, even if it never learns your name.',
+                choices: Object.freeze([
+                    Object.freeze({ id: 'return_intro', label: 'Return to the channel menu.', nextNodeId: 'intro' }),
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            })
+        })
+    }),
+    index_hq_archivist: Object.freeze({
+        id: 'index_hq_archivist',
+        type: 'contact',
+        name: 'Archivist Senn',
+        title: 'Index Relay K-7 Intake',
+        factionId: 'index',
+        civTier: 2,
+        namedSystemId: 'index_hq',
+        initialNodeId: 'intro',
+        nodes: Object.freeze({
+            intro: Object.freeze({
+                id: 'intro',
+                text: 'Index Relay K-7 intake acknowledges your transponder. Physical archive deliveries are verified through the cargo terminal; nothing enters the catalogue on a voice claim.',
+                choices: Object.freeze([
+                    Object.freeze({
+                        id: 'ask_delivery_status',
+                        label: 'Ask about the Port Meridian delivery.',
+                        missionAction: Object.freeze({
+                            type: 'offer',
+                            missionId: 'index_archive_delivery'
+                        }),
+                        missionNodeMap: Object.freeze({
+                            unavailable: 'not_expected',
+                            offered: 'not_expected',
+                            accepted: 'awaiting_terminal',
+                            'resolved:delivered': 'received',
+                            'failed:abandoned': 'closed',
+                            'failed:cargo_lost': 'lost',
+                            default: 'not_expected'
+                        })
+                    }),
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            }),
+            awaiting_terminal: Object.freeze({
+                id: 'awaiting_terminal',
+                text: 'Your manifest matches the expected seal count. Complete the physical transfer at your cargo terminal.',
+                choices: Object.freeze([
+                    Object.freeze({ id: 'return_intro', label: 'Return to intake.', nextNodeId: 'intro' }),
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            }),
+            received: Object.freeze({
+                id: 'received',
+                text: 'Four seals verified. Eight hundred fifty credits released. Your delivery is now part of the permanent record.',
+                choices: Object.freeze([
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            }),
+            not_expected: Object.freeze({
+                id: 'not_expected',
+                text: 'No active freight authorization is attached to your transponder.',
+                choices: Object.freeze([
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            }),
+            closed: Object.freeze({
+                id: 'closed',
+                text: 'The Port Meridian authorization was abandoned. Intake has closed the record.',
+                choices: Object.freeze([
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
+                ])
+            }),
+            lost: Object.freeze({
+                id: 'lost',
+                text: 'The manifest is marked lost. There is nothing for intake to verify.',
+                choices: Object.freeze([
+                    Object.freeze({ id: 'end_transmission', label: 'End transmission.', close: true })
                 ])
             })
         })

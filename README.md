@@ -14,6 +14,7 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
 - Hyperdrive-responsive star-field aberration and Doppler/beaming, tunable from the F2 `Relativistic Stars` group.
 - DualSense / standard gamepad support, WebXR controller support, and runtime debug hooks.
 - Validated first RPG loop at Port Meridian: cockpit comms, a deterministic two-branch mission, persistent faction reputation, world flags, and conversation outcomes.
+- Validated two-system delivery loop: persistent cargo, capacity, credits, protected-reserve fuel, exact-once rewards, and the placeholder Index Relay K-7 destination.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -28,8 +29,9 @@ Then open [http://localhost:5177/](http://localhost:5177/).
 
 ## RPG regression tests
 
-The dependency-free RPG suite covers Phase 11 mission behavior plus Phase 13
-slots, migration, import safety, storage failure, clock, and event retention:
+The dependency-free RPG suite covers Phase 11 mission behavior, Phase 13 slots
+and clock, plus Phase 14 cargo, fuel, migration, failures, checkpoint reloads,
+and exact-once delivery:
 
 ```powershell
 node --experimental-default-type=module --test tests/rpg/*.test.mjs
@@ -137,8 +139,23 @@ window.__deepSpaceDebug.rpg.reset();
 Walk to the observation-bay ship computer and press `C` / Triangle / XR select
 to inspect `A Clean Copy`, manage three isolated local slots, export validated
 JSON, preview/import it into a new slot, and inspect active-play time. Phase 11
-version-1 browser saves migrate automatically into the version-2 world envelope.
+version-1 browser saves migrate automatically into the current version-3 world
+envelope; Phase 13 version-2 slots migrate non-destructively.
 There is no cloud synchronization or offline simulation.
+
+### Cargo delivery
+
+`The Weight of a Copy` is the Phase 14 two-system delivery:
+
+1. At Port Meridian, hail Harbormaster Vale and ask about Index freight.
+2. Accept the job, then walk to the observation-bay cargo terminal and load four
+   archive canisters.
+3. Lock `Index Relay K-7 [RPG]` and engage hyperdrive.
+4. Enter the relay, hail Archivist Senn, and complete delivery at the cargo
+   terminal.
+
+The route consumes deterministic fuel while preserving a protected reserve.
+Static refuel and emergency rescue controls are available at the cargo terminal.
 
 ### Gamepad and VR
 
@@ -186,6 +203,7 @@ window.__deepSpaceDebug.rpg.getMission('port_meridian_route_packet');
 window.__deepSpaceDebug.saves.list();
 window.__deepSpaceDebug.saves.getActive();
 window.__deepSpaceDebug.saves.getGameTime();
+window.__deepSpaceDebug.delivery.getState();
 ```
 
 The Phase 11A-E implementation and verification checklist are documented in
@@ -204,6 +222,7 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-11-rpg-roadmap.md](docs/phase-11-rpg-roadmap.md) - RPG implementation roadmap and first comms mission slice
 - [docs/phase-12-radio-transceiver.md](docs/phase-12-radio-transceiver.md) - radio transceiver system, custom music folders, and cosmic beacons
 - [docs/phase-13-save-slots-and-clock.md](docs/phase-13-save-slots-and-clock.md) - versioned world envelope, local slots, ship log, and active-play clock
+- [docs/phase-14-cargo-fuel-delivery.md](docs/phase-14-cargo-fuel-delivery.md) - persistent cargo, fuel, recovery, and two-system delivery
 - [docs/rpg-future-development-roadmap.md](docs/rpg-future-development-roadmap.md) - post-Phase-11 vertical slices, dependencies, tests, and acceptance gates
 - [docs/rpg-phase-agent-prompts.md](docs/rpg-phase-agent-prompts.md) - copy-paste implementation prompts for each future RPG phase
 
@@ -212,3 +231,5 @@ The Phase 11A-E implementation and verification checklist are documented in
 - The imported ship mesh is heavy for VR and may need a decimated or LOD variant for sustained headset performance.
 - The interior collision model is an abstract ship-local blockout, not full collision against the authored GLB interior.
 - Untethered world-frame EVA, full physical hazards, and a 3D radar/map are still future work.
+- Phase 14 prices are static; dynamic markets, free trading, patrol scans,
+  docking, cargo meshes, and NPC ships remain future work.

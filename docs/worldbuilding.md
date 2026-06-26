@@ -261,8 +261,8 @@ Contested systems are not authored — they emerge from faction simulation dynam
 
 | # | Name | Role | Starting Tier | Starting Faction | Status |
 |---|---|---|---|---|---|
-| 1 | TBD | Entry hub — first major port, multi-faction, dense | 2 | The Commonwealth | Not authored |
-| 2 | TBD | Index HQ — the archive world, information is currency | 2 | Index | Not authored |
+| 1 | Port Meridian | Entry hub — first major port, multi-faction, dense | 2 | The Commonwealth | Phase 11 placeholder anchor/contact |
+| 2 | Index Relay K-7 | Index HQ — the archive world, information is currency | 2 | Index | Phase 14 placeholder anchor/contact |
 | 3 | TBD | Drifter convergence — they don’t settle but they meet here | 2 | Drifters | Not authored |
 | 4 | TBD | Concordance pilgrimage site — near a Tier 4 trace | 2 | The Concordance | Not authored |
 | 5 | TBD | Company of Doom stronghold — anti-ascension bastion | 2 | Company of Doom | Not authored |

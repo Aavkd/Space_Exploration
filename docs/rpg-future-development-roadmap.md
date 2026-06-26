@@ -187,6 +187,10 @@ Decision gate: autosave points and whether import always creates a new slot.
 
 ### Phase 14 - Cargo, Fuel, And Two-System Delivery
 
+**Status:** Complete; automated, Chromium-browser, and owner-performed
+normal-control/gamepad/WebXR validation are recorded in
+[`phase-14-cargo-fuel-delivery.md`](phase-14-cargo-fuel-delivery.md).
+
 **Objective:** prove a multi-step job that carries state through travel, consumes
 a resource, and pays a persistent reward.
 

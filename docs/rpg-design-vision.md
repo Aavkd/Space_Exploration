@@ -82,7 +82,14 @@ The procedural universe (already implemented) is the substrate. The RPG layer ad
 
 Named systems are defined by a **fixed seed override**, a **purpose role**, and a **dominant civilization tier**. Specific lore, names, and visual identity are to be designed in the worldbuilding document.
 
-**Implemented MVP anchor:** `entry_hub` currently appears in the root procedural universe as `Port Meridian`, using fixed position `[12000, 1400, -18000]` and fixed child system seed `rpg-entry-hub-v1`. It is exposed through the existing POI/navigation layer and reports active RPG metadata after scale descent. The first comms contact, `Harbormaster Vale`, is reachable only while this authored system is active. The first comms mission, `A Clean Copy`, lets the player route one piece of intel to Port Meridian traffic control or the Index archive channel, mutating reputation and persistent world flags. This remains placeholder authored content for proving the architecture; bespoke station meshes, broader NPC rosters, and multi-step missions are still deferred.
+**Implemented MVP anchors:** `entry_hub` appears as `Port Meridian` at fixed
+position `[12000, 1400, -18000]` with child seed `rpg-entry-hub-v1`.
+`index_hq` appears as the placeholder `Index Relay K-7` at
+`[-26000, 3500, 22000]` with child seed `rpg-index-hq-v1`. Both use the existing
+POI/navigation and scale-descent layers. Port Meridian hosts Harbormaster Vale,
+`A Clean Copy`, and the pickup for the Phase 14 cargo mission. Index Relay K-7
+hosts Archivist Senn and the destination for `The Weight of a Copy`. Names,
+contacts, and art remain placeholder authored content.
 
 Each named system should have:
 - A defined **role** (trade hub / hostile territory / mystery / faction HQ / Tier 4 contact point / etc.)

@@ -57,7 +57,7 @@ test('fresh state is deterministic and reset only clears RPG progress', () => {
     const storage = new MemoryStorage();
     const runtime = createRuntime(storage);
 
-    assert.equal(runtime.getState().version, 1);
+    assert.equal(runtime.getState().version, 2);
     assert.equal(runtime.getState().eventLog.length, 0);
     assert.equal(runtime.getMission('port_meridian_route_packet').state.status, 'unavailable');
 
@@ -154,16 +154,16 @@ test('persistence recovers from corrupt or unavailable storage', () => {
         const corruptStorage = new MemoryStorage([
             [RPG_LOCAL_STORAGE_KEY, '{not-json']
         ]);
-        assert.equal(new LocalRpgPersistence({ storage: corruptStorage }).load().version, 1);
+        assert.equal(new LocalRpgPersistence({ storage: corruptStorage }).load().version, 2);
 
         const futureStorage = new MemoryStorage([
             [RPG_LOCAL_STORAGE_KEY, JSON.stringify({
                 ...createInitialRpgState(),
-                version: 2
+                version: 3
             })]
         ]);
         const recoveredFuture = new LocalRpgPersistence({ storage: futureStorage }).load();
-        assert.equal(recoveredFuture.version, 1);
+        assert.equal(recoveredFuture.version, 2);
         assert.equal(recoveredFuture.eventLog.length, 0);
 
         const unavailableStorage = {
@@ -172,9 +172,9 @@ test('persistence recovers from corrupt or unavailable storage', () => {
             removeItem() { throw new Error('blocked'); }
         };
         const persistence = new LocalRpgPersistence({ storage: unavailableStorage });
-        assert.equal(persistence.load().version, 1);
-        assert.equal(persistence.save(createInitialRpgState()).version, 1);
-        assert.equal(persistence.reset().version, 1);
+        assert.equal(persistence.load().version, 2);
+        assert.equal(persistence.save(createInitialRpgState()).version, 2);
+        assert.equal(persistence.reset().version, 2);
     } finally {
         console.warn = originalWarn;
     }
@@ -190,8 +190,8 @@ test('migration boundary accepts current saves and rejects unsafe versions', () 
     assert.notEqual(migrateRpgState(state), state);
 
     assert.throws(
-        () => migrateRpgState({ ...state, version: 2 }),
-        /newer than supported version 1/
+        () => migrateRpgState({ ...state, version: 3 }),
+        /newer than supported version 2/
     );
     assert.throws(
         () => migrateRpgState({ ...state, version: 0 }),

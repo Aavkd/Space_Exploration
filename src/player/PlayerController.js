@@ -61,6 +61,7 @@ export class PlayerController {
             'navigationStation',
             'radioStation',
             'shipComputerStation',
+            'cargoTerminalStation',
             'exitAirlock',
             'interiorSpawn',
             'exteriorSpawn'
@@ -130,6 +131,8 @@ export class PlayerController {
             case 'openRadio':
                 return action;
             case 'openShipComputer':
+                return action;
+            case 'openCargoTerminal':
                 return action;
             case 'leaveControls':
                 this._leaveControls();
@@ -256,6 +259,7 @@ export class PlayerController {
             if (this._near('commsStation')) return 'openComms';
             if (this._near('radioStation')) return 'openRadio';
             if (this._near('shipComputerStation')) return 'openShipComputer';
+            if (this._near('cargoTerminalStation')) return 'openCargoTerminal';
             if (this._near('pilotControls')) return 'takeControls';
             if (this._near('exitAirlock')) return this._canSurfaceDisembark() ? 'disembarkSurface' : 'exitAirlock';
             return null;
@@ -298,6 +302,8 @@ export class PlayerController {
                 return 'Press C / Triangle - open radio console';
             case 'openShipComputer':
                 return 'Press C / Triangle - open ship log';
+            case 'openCargoTerminal':
+                return 'Press C / Triangle - open cargo terminal';
             case 'leaveControls':
                 return 'Press C / Triangle - leave the controls';
             case 'exitAirlock':

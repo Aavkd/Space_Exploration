@@ -36,7 +36,12 @@ import { DiegeticRadioPanel } from '../ui/DiegeticRadioPanel.js';
 import { UniverseNavigation } from '../ui/UniverseNavigation.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
-import { createRpgRuntime, LocalRpgPersistence } from '../rpg/index.js';
+import {
+    createRpgRuntime,
+    DeliveryRuntime,
+    isMeteredAuthoredRoute,
+    LocalRpgPersistence
+} from '../rpg/index.js';
 import { GameClock, LocalSaveSlots, SlotRpgPersistence } from '../save/index.js';
 
 // Rebase the world origin when the ship exceeds this distance from (0,0,0).
@@ -262,6 +267,8 @@ export class App {
         this.shipComputerMessage = '';
         this.shipComputerPreview = null;
         this.shipComputerTransferText = '';
+        this.cargoTerminalOpen = false;
+        this.cargoTerminalMessage = '';
         this.radioPower = true;
         this.radioVolume = 0.5;
         this.activeRadioStationIndex = 0;
@@ -275,6 +282,8 @@ export class App {
         this._bindEvents();
         this.rpgError = null;
         this.rpg = this._createRpgRuntimeSafely();
+        this.deliveryError = null;
+        this.delivery = this._createDeliveryRuntimeSafely();
         this._installDebugHooks();
         this._applyRuntimeConfig();
         this._loadInitialJsonPreset();
@@ -409,6 +418,7 @@ export class App {
                 else if (action === 'openNavigation') this._openNavigationPanel();
                 else if (action === 'openRadio') this._openRadioPanel();
                 else if (action === 'openShipComputer') this._openShipComputerPanel();
+                else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
                 this.input.gamepad.pulse({ duration: 90, weak: 0.25, strong: 0.45 });
                 this._syncDebugDomState();
             }
@@ -449,7 +459,25 @@ export class App {
     // Tactile feedback + state sync on engage/disengage. A punchy pulse on
     // engage, a softer one on disengage.
     _onHyperdriveToggled(fromXr = false) {
-        const engaged = this.shipControls.hyperdriveEngaged;
+        let engaged = this.shipControls.hyperdriveEngaged;
+        const targetSystemId = this.selectedNavigationTarget?.rpg?.namedSystemId ?? null;
+        const currentSystemId = this.delivery?.getState().ship.travel.currentSystemId ?? null;
+        if (
+            engaged
+            && isMeteredAuthoredRoute(currentSystemId, targetSystemId)
+            && this.delivery
+        ) {
+            try {
+                const result = this.delivery.beginAuthoredJump(targetSystemId);
+                this.cargoTerminalMessage = result.changed
+                    ? `Authored route charged ${result.fuelCost} fuel.`
+                    : `Authored route already charged ${result.fuelCost} fuel.`;
+            } catch (error) {
+                this.shipControls.hyperdriveEngaged = false;
+                engaged = false;
+                this.cargoTerminalMessage = error instanceof Error ? error.message : String(error);
+            }
+        }
         const pulse = engaged
             ? { duration: 160, weak: 0.5, strong: 0.7, strength: 0.6 }
             : { duration: 90, weak: 0.2, strong: 0.3, strength: 0.3 };
@@ -518,7 +546,9 @@ export class App {
     _syncActiveRpgSystem() {
         if (!this.rpg || !this.scaleStack) return false;
         try {
-            this.rpg.setActiveNamedSystem(this._findActiveRpgNamedSystemId());
+            const systemId = this._findActiveRpgNamedSystemId();
+            this.rpg.setActiveNamedSystem(systemId);
+            this.delivery?.syncSystem(systemId);
             return true;
         } catch (error) {
             this._recordRpgError('named-system sync', error);
@@ -552,6 +582,23 @@ export class App {
             });
         } catch (error) {
             this._recordRpgError('in-memory runtime initialization', error);
+            return null;
+        }
+    }
+
+    _createDeliveryRuntimeSafely() {
+        try {
+            return new DeliveryRuntime({
+                slots: this.saveSlots,
+                rpg: this.rpg,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.deliveryError = {
+                context: 'delivery runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 14 delivery runtime unavailable; flight remains active.', error);
             return null;
         }
     }
@@ -708,6 +755,7 @@ export class App {
             else if (action === 'openNavigation') this._openNavigationPanel();
             else if (action === 'openRadio') this._openRadioPanel();
             else if (action === 'openShipComputer') this._openShipComputerPanel();
+            else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
             this.xr.pulse({ duration: 80, strength: 0.34 });
             this._syncDebugDomState();
         }
@@ -936,6 +984,7 @@ export class App {
 
         this._createCommsPanel();
         this._createShipComputerPanel();
+        this._createCargoTerminalPanel();
         this._createNavigationPanel();
         this._createRadioPanel();
     }
@@ -1044,6 +1093,7 @@ export class App {
         this.gameClock.restore(envelope.simulation.gameTime);
         this._lastClockCheckpoint = this.gameClock.getTime();
         this.rpg.reload();
+        this.delivery?.reload();
         this._syncActiveRpgSystem();
         this._syncDebugDomState();
     }
@@ -1066,6 +1116,8 @@ export class App {
         const slots = this.saveSlots.listSlots();
         const envelope = this.saveSlots.getActiveEnvelope();
         const mission = this.rpg.getMission('port_meridian_route_packet');
+        const deliveryMission = this.rpg.getMission('index_archive_delivery');
+        const deliveryState = this.delivery?.getState() ?? null;
         const events = this.rpg.queryEvents({ missionId: mission.id, newestFirst: true, limit: 20 });
         const storageError = this.saveSlots.getStatus().lastError;
         const slotRows = slots.map((slot) => `
@@ -1098,6 +1150,11 @@ export class App {
                     <p>Status: ${escapeHtml(mission.state.status)} / Outcome: ${escapeHtml(mission.state.outcomeId ?? 'none')}</p>
                     <ol>${eventRows}</ol>
                 </section>
+                <section class="computer-card">
+                    <h3>The Weight of a Copy</h3>
+                    <p>Status: ${escapeHtml(deliveryMission.state.status)} / Outcome: ${escapeHtml(deliveryMission.state.outcomeId ?? 'none')}</p>
+                    <p>Credits: ${deliveryState?.ship.credits ?? 'unavailable'} / Fuel: ${deliveryState?.ship.fuel.current ?? 'unavailable'} / Cargo mass: ${deliveryState?.usedCargoMass ?? 'unavailable'}</p>
+                </section>
                 <section class="computer-card" style="grid-column:1/-1">
                     <h3>Validated export / import</h3>
                     <textarea data-save-json aria-label="Save JSON">${escapeHtml(this.shipComputerTransferText)}</textarea>
@@ -1107,6 +1164,135 @@ export class App {
             </div>
             <p class="${storageError ? 'computer-error' : ''}">${escapeHtml(storageError?.message ?? this.shipComputerMessage ?? '')}</p>
             <small>Envelope v${envelope.version}; imports always create a new slot.</small>
+        `;
+    }
+
+    _createCargoTerminalPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'cargo-terminal-panel';
+        panel.innerHTML = `
+            <style>
+                #cargo-terminal-panel {
+                    position: fixed; inset: 12% 18%; z-index: 24; display: none;
+                    overflow: auto; padding: 18px; color: #e5fff3;
+                    background: rgba(3, 15, 15, 0.96); border: 1px solid #68e0ad;
+                    font: 13px/1.5 "Consolas", "Courier New", monospace;
+                }
+                #cargo-terminal-panel .cargo-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+                #cargo-terminal-panel section { border:1px solid rgba(104,224,173,.35); padding:12px; }
+                #cargo-terminal-panel button { margin:4px; padding:7px 10px; color:#e5fff3; background:#0b3028; border:1px solid #68e0ad; }
+                #cargo-terminal-panel .terminal-error { color:#ffaaaa; }
+                @media (max-width:780px) { #cargo-terminal-panel { inset:6%; } #cargo-terminal-panel .cargo-grid { grid-template-columns:1fr; } }
+            </style>
+            <div data-cargo-terminal-content></div>
+        `;
+        document.body.appendChild(panel);
+        this.cargoTerminalPanel = panel;
+        this.cargoTerminalContentNode = panel.querySelector('[data-cargo-terminal-content]');
+        panel.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-cargo-action]');
+            if (!target) return;
+            this._handleCargoTerminalAction(target.dataset.cargoAction);
+        });
+    }
+
+    _openCargoTerminalPanel() {
+        this.cargoTerminalOpen = true;
+        this.cargoTerminalMessage = '';
+        this._exitPointerLock();
+        this._renderCargoTerminalPanel();
+        return this.delivery?.getState() ?? null;
+    }
+
+    _closeCargoTerminalPanel() {
+        this.cargoTerminalOpen = false;
+        if (this.cargoTerminalPanel) this.cargoTerminalPanel.style.display = 'none';
+        return false;
+    }
+
+    _handleCargoTerminalKeydown(event) {
+        if (!this.cargoTerminalOpen) return false;
+        if (event.code === 'Escape' || event.code === 'KeyC') {
+            event.preventDefault();
+            this._closeCargoTerminalPanel();
+        }
+        return true;
+    }
+
+    _handleCargoTerminalAction(action) {
+        try {
+            if (action === 'close') return this._closeCargoTerminalPanel();
+            if (!this.delivery) throw new Error(this.deliveryError?.message ?? 'Cargo runtime is unavailable.');
+            let result;
+            if (action === 'load') result = this.delivery.loadMissionCargo();
+            else if (action === 'deliver') result = this.delivery.deliverMissionCargo();
+            else if (action === 'abandon') result = this.delivery.abandonMission();
+            else if (action === 'lose') result = this.delivery.loseMissionCargo();
+            else if (action === 'refuel') result = this.delivery.refuel();
+            else if (action === 'rescue') result = this.delivery.emergencyRescue();
+            else throw new Error(`Unknown cargo-terminal action: ${action}`);
+            this.cargoTerminalMessage = result?.changed === false
+                ? `No change: ${result.reason ?? 'already applied'}.`
+                : 'Authoritative ship state saved.';
+        } catch (error) {
+            this.cargoTerminalMessage = error instanceof Error ? error.message : String(error);
+        }
+        this._updateCommsPanel();
+        this._renderCargoTerminalPanel();
+        this._syncDebugDomState();
+        return true;
+    }
+
+    _renderCargoTerminalPanel() {
+        if (!this.cargoTerminalPanel || !this.cargoTerminalContentNode) return;
+        this.cargoTerminalPanel.style.display = this.cargoTerminalOpen ? 'block' : 'none';
+        if (!this.cargoTerminalOpen) return;
+        if (!this.delivery) {
+            this.cargoTerminalContentNode.innerHTML = `
+                <h2>CARGO / FUEL TERMINAL</h2>
+                <p class="terminal-error">${escapeHtml(this.deliveryError?.message ?? 'Phase 14 runtime unavailable.')}</p>
+                <button data-cargo-action="close">Close</button>
+            `;
+            return;
+        }
+        const state = this.delivery.getState();
+        const ship = state.ship;
+        const mission = state.mission;
+        const stacks = ship.cargo.stacks.map((stack) => (
+            `<li>${escapeHtml(stack.cargoId)} × ${stack.quantity}</li>`
+        )).join('') || '<li>Empty</li>';
+        const objectives = Object.values(mission.state.objectives.byId).map((objective) => (
+            `<li>${escapeHtml(objective.id)} — ${escapeHtml(objective.status)}</li>`
+        )).join('');
+        const pending = ship.travel.pendingJump
+            ? `${escapeHtml(ship.travel.pendingJump.originSystemId)} → ${escapeHtml(ship.travel.pendingJump.targetSystemId)} / ${ship.travel.pendingJump.fuelCost} fuel`
+            : 'none';
+        this.cargoTerminalContentNode.innerHTML = `
+            <div style="display:flex;justify-content:space-between"><h2>CARGO / FUEL TERMINAL</h2><button data-cargo-action="close">Close</button></div>
+            <div class="cargo-grid">
+                <section>
+                    <h3>Ship stores</h3>
+                    <p>Credits: ${ship.credits}</p>
+                    <p>Fuel: ${ship.fuel.current} / ${ship.fuel.capacity} (reserve ${ship.fuel.reserve})</p>
+                    <p>Cargo mass: ${state.usedCargoMass} / ${ship.cargo.capacityMass}</p>
+                    <ul>${stacks}</ul>
+                    <button data-cargo-action="refuel">Buy 10 fuel / 25 credits</button>
+                    <button data-cargo-action="rescue">Emergency rescue / up to 50 credits</button>
+                </section>
+                <section>
+                    <h3>The Weight of a Copy</h3>
+                    <p>Status: ${escapeHtml(mission.state.status)} / ${escapeHtml(mission.state.outcomeId ?? 'none')}</p>
+                    <p>Active system: ${escapeHtml(state.activeSystemId ?? 'none')}</p>
+                    <p>Pending jump: ${pending}</p>
+                    <ol>${objectives}</ol>
+                    <button data-cargo-action="load">Load mission cargo</button>
+                    <button data-cargo-action="deliver">Deliver mission cargo</button>
+                    <button data-cargo-action="abandon">Abandon job</button>
+                    <button data-cargo-action="lose">Jettison / report cargo lost</button>
+                </section>
+            </div>
+            <p>${escapeHtml(this.cargoTerminalMessage)}</p>
+            <small>Static prices. No market, trading, docking, or patrol simulation.</small>
         `;
     }
 
@@ -1945,6 +2131,13 @@ export class App {
             `<b>PAD</b> ${gamepad.connected ? `<span class="on">${padId || 'CONNECTED'}</span>` : '<span class="off">OFF</span>'}`,
             `<b>SPEED</b> ${speed.toFixed(1)} m/s   <b>ANG</b> ${angSpeed.toFixed(1)} deg/s`
         ];
+        if (this.delivery) {
+            const delivery = this.delivery.getState();
+            lines.push(
+                `<b>FUEL</b> ${delivery.ship.fuel.current}/${delivery.ship.fuel.capacity} reserve ${delivery.ship.fuel.reserve}   <b>CARGO</b> ${delivery.usedCargoMass}/${delivery.ship.cargo.capacityMass}`
+            );
+        }
+        if (this.cargoTerminalMessage) lines.push(`<span class="warn">${escapeHtml(this.cargoTerminalMessage)}</span>`);
 
         if (nearest) {
             lines.push(
@@ -2104,6 +2297,7 @@ export class App {
         window.addEventListener('keydown', (event) => {
             this._unlockAudioFromGesture();
 
+            if (this._handleCargoTerminalKeydown(event)) return;
             if (this._handleShipComputerKeydown(event)) return;
             if (this._handleCommsKeydown(event)) return;
             if (this._handleNavigationKeydown(event)) return;
@@ -2200,6 +2394,7 @@ export class App {
                     else if (action === 'openNavigation') this._openNavigationPanel();
                     else if (action === 'openRadio') this._openRadioPanel();
                     else if (action === 'openShipComputer') this._openShipComputerPanel();
+                    else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
                     this._syncDebugDomState();
                 }
                 return;
@@ -2253,7 +2448,7 @@ export class App {
         this.canvas.addEventListener('pointerdown', () => this._unlockAudioFromGesture(), { passive: true });
         this.canvas.addEventListener('click', () => {
             this._unlockAudioFromGesture();
-            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen && !this.shipComputerOpen) {
+            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen && !this.shipComputerOpen && !this.cargoTerminalOpen) {
                 this.canvas.requestPointerLock?.();
             }
         });
@@ -2496,7 +2691,9 @@ export class App {
             getRpgState: () => this.rpg.getState(),
             getActiveNamedSystem: () => this.rpg.getActiveNamedSystem(),
             resetRpgState: () => {
-                const state = this.rpg.reset();
+                this.rpg.reset();
+                this._reloadActiveSlot();
+                const state = this.rpg.getState();
                 this._syncDebugDomState();
                 return state;
             },
@@ -2570,10 +2767,27 @@ export class App {
                     return state;
                 },
                 reset: () => {
-                    const state = this.rpg.reset();
+                    this.rpg.reset();
+                    this._reloadActiveSlot();
+                    const state = this.rpg.getState();
                     this._syncDebugDomState();
                     return state;
                 }
+            },
+            delivery: {
+                getState: () => this.delivery?.getState() ?? { unavailable: this.deliveryError },
+                syncSystem: (id) => this.delivery?.syncSystem(id),
+                loadCargo: () => this.delivery?.loadMissionCargo(),
+                beginJump: (targetSystemId) => this.delivery?.beginAuthoredJump(targetSystemId),
+                deliver: () => this.delivery?.deliverMissionCargo(),
+                abandon: () => this.delivery?.abandonMission(),
+                loseCargo: () => this.delivery?.loseMissionCargo(),
+                refuel: () => this.delivery?.refuel(),
+                emergencyRescue: () => this.delivery?.emergencyRescue(),
+                setFuelForDebug: (value) => this.delivery?.setFuelForDebug(value),
+                addCargoForDebug: (cargoId, quantity) => this.delivery?.addCargoForDebug(cargoId, quantity),
+                openTerminal: () => this._openCargoTerminalPanel(),
+                closeTerminal: () => this._closeCargoTerminalPanel()
             },
             saves: {
                 getStatus: () => this.saveSlots.getStatus(),
@@ -2808,11 +3022,13 @@ export class App {
             }),
             setHyperdriveEngaged: (on) => {
                 this.shipControls.hyperdriveEngaged = Boolean(on);
+                this._onHyperdriveToggled();
                 this._syncDebugDomState();
                 return this.shipControls.hyperdriveEngaged;
             },
             toggleHyperdrive: () => {
                 this.shipControls.handleToggleKey('Space');
+                this._onHyperdriveToggled();
                 this._syncDebugDomState();
                 return this.shipControls.hyperdriveEngaged;
             },
