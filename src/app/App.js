@@ -301,7 +301,6 @@ export class App {
         this._updateSpeedFx(dt, xrActive);
 
         this._updateTelemetry();
-        this._updateCommsPanel();
         this.universeNavigation.update({
             shipPosition: this.ship.position,
             camera: this.camera,

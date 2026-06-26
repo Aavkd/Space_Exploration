@@ -107,7 +107,7 @@ export const SHIP_ANCHORS = Object.freeze({
     commsStation: {
         role: 'Cockpit comms station for RPG contact hails.',
         zone: 'cockpit',
-        position: [2.25, 1.05, -11.75],
+        position: [1.5, 1.05, -11.75],
         forward: [-0.35, 0, -1],
         interactionRadius: 0.9
     },

@@ -265,7 +265,13 @@ export class PlayerController {
         const a = this.anchorPoints[name];
         if (!a) return false;
         const r = radius ?? a.radius;
-        return this.rig.position.distanceTo(a.pos) <= r;
+        // XZ-only distance: the walking player is always at deck Y=0, while
+        // anchors are mounted at console/panel height. Including Y in the
+        // distance would make the commsStation (Y=1.05, radius=0.9) permanently
+        // unreachable and leave exitAirlock/pilotControls very tight.
+        const dx = this.rig.position.x - a.pos.x;
+        const dz = this.rig.position.z - a.pos.z;
+        return Math.sqrt(dx * dx + dz * dz) <= r;
     }
 
     _computePrompt() {
