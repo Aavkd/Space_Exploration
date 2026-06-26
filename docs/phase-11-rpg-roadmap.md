@@ -1,7 +1,7 @@
 # Phase 11 - RPG Roadmap
 
-> **Status:** Phase 11A, 11B, 11C, and 11D implemented; Phase 11E is the next RPG slice.
-> **Last updated:** 2026-06-26.
+> **Status:** Phase 11A-E implemented and validated; Phase 12 is the next expansion slice.
+> **Last updated:** 2026-06-27.
 > **Companion docs:** `rpg-design-vision.md`, `worldbuilding.md`, `phase-09-voice-ai-assistant.md`.
 
 ## Goal
@@ -244,7 +244,7 @@ Suggested tests:
 - Decline path: state is remembered. **Covered by RPG runtime smoke test; mission status becomes `failed` with outcome `declined`.**
 - Resolve path A: faction reputation and world flag match expected values. **Covered by RPG runtime smoke test; Commonwealth +0.18, Index -0.08, owner `commonwealth`.**
 - Resolve path B: different faction reputation and world flag match expected values. **Covered by RPG runtime smoke test; Index +0.18, Commonwealth -0.08, owner `index`.**
-- Reload after resolution: contact dialogue reflects the chosen outcome. **Implemented through persisted mission/contact conversation state; browser reload validation remains part of Phase 11E.**
+- Reload after resolution: contact dialogue reflects the chosen outcome. **Verified for the Commonwealth, Index, and decline outcomes through a fresh runtime backed by the same saved state.**
 
 Implementation notes:
 
@@ -263,22 +263,99 @@ Known limits:
 
 ## Phase 11E - Validation And Hardening
 
+**Implementation status:** Complete as of 2026-06-27.
+
 Objective: stabilize the first RPG loop before expanding.
 
 Deliverables:
 
-- Manual validation checklist.
-- Debug commands for resetting only RPG state.
-- Save migration placeholder.
-- Clear error handling for unknown mission/contact/faction IDs.
-- Documentation update with implementation notes and known limits.
+- Manual validation checklist. **Added below and completed by the project owner for the physical first-mission loop.**
+- Debug commands for resetting only RPG state. **Implemented through `window.__deepSpaceDebug.rpg.reset()` and `window.__deepSpaceDebug.resetRpgState()`.**
+- Save migration placeholder. **Implemented as the explicit `RPG_STATE_MIGRATIONS` registry and `migrateRpgState()` boundary in `src/rpg/migrations.js`. Current version-1 saves pass through to sanitization; unsafe, missing, and future versions recover to a fresh state with a warning.**
+- Clear error handling for unknown mission/contact/faction IDs. **Implemented and runtime-verified with descriptive errors.**
+- Documentation update with implementation notes and known limits. **Completed in this document and the project README.**
+- Automated regression coverage. **Implemented in `tests/rpg/rpg-runtime.test.mjs` with Node's built-in test runner and no package install.**
+- Core-app failure containment. **Implemented with guarded RPG initialization, an in-memory fallback, protected named-system/debug synchronization, and an error diagnostic in the mirrored RPG debug state.**
 
 Acceptance criteria:
 
-- The full first loop can be tested from a clean save in under five minutes.
-- No RPG failure prevents core flight, scale transitions, or rendering.
-- Save reset is possible without clearing browser/site data manually.
-- Known limitations are documented before moving to expansion phases.
+- The full first loop can be tested from a clean save in under five minutes. **Manually validated by the project owner.**
+- No RPG failure prevents core flight, scale transitions, or rendering. **Corrupt or unavailable persistence recovers to defaults; unexpected initialization failures retry with in-memory persistence; named-system and debug-state synchronization errors are caught and exposed without escaping into the scale/render lifecycle.**
+- Save reset is possible without clearing browser/site data manually. **Verified through the RPG-only debug reset API.**
+- Known limitations are documented before moving to expansion phases. **Documented below and in the Phase 11A-D sections.**
+
+### Manual validation checklist
+
+Run this from a static server in a modern Chromium browser:
+
+1. Open the app, then run `window.__deepSpaceDebug.rpg.reset()` in DevTools.
+2. Confirm `getMission('port_meridian_route_packet').state.status` is
+   `unavailable` and all faction reputation values are `0`.
+3. Use the cockpit navigation computer to select `Port Meridian [RPG]`, travel
+   to it, and enter the authored system.
+4. Confirm `window.__deepSpaceDebug.rpg.getActiveNamedSystem().id` is
+   `entry_hub`.
+5. Walk to the cockpit comms station, press `C`, and confirm Harbormaster Vale
+   is available.
+6. Choose `Ask if any work needs doing.`, accept `A Clean Copy`, and resolve it
+   through either the Commonwealth or Index route.
+7. Confirm the mission is `resolved`, the selected faction gained `0.18`, the
+   other lost `0.08`, and `port_meridian.route_packet_owner` matches the chosen
+   branch.
+8. Close and reopen comms. Confirm the branch-specific resolved response is
+   shown.
+9. Reload the page, re-enter Port Meridian, and confirm the mission,
+   reputation, world flags, and resolved dialogue are unchanged.
+10. Reset RPG state again and optionally repeat with the other resolution
+    branch or the decline path.
+
+Useful inspection commands:
+
+```js
+const rpg = window.__deepSpaceDebug.rpg;
+rpg.getState();
+rpg.getCommsState();
+rpg.getMission('port_meridian_route_packet');
+rpg.getReputation('commonwealth');
+rpg.getReputation('index');
+rpg.reset();
+```
+
+### Verification record - 2026-06-27
+
+- Static Chromium smoke test: app loaded and rendered from a local HTTP server
+  with no application console errors.
+- Fresh-state mirror: schema version `1`, ten named systems, zero events, no
+  contacts outside Port Meridian, and `port_meridian_route_packet` initially
+  `unavailable`.
+- Ship integration: all required anchors validated, including
+  `commsStation` and `navigationStation`.
+- JavaScript syntax: all 87 JavaScript files under `src/` and `tests/` passed
+  `node --check`.
+- Deterministic runtime smoke test: offer, accept, Commonwealth resolution,
+  Index resolution, and decline paths passed through authored dialogue choices.
+- Persistence smoke test: mission state, reputation, world flags, and
+  branch-specific dialogue nodes survived a new runtime using the same saved
+  storage.
+- Recovery smoke test: corrupt JSON and unavailable storage returned a fresh
+  state with warnings; unknown faction, mission, and contact IDs produced
+  descriptive errors.
+- Committed regression suite: all seven tests in
+  `tests/rpg/rpg-runtime.test.mjs` pass with Node's built-in test runner.
+- Hardened browser smoke test: RPG debug state reported `available: true`,
+  `error: null`, and the browser logged no application errors.
+
+### Remaining limits after validation
+
+- The mission is intentionally comms-only; it does not yet exercise travel,
+  cargo, docking, combat, timers, credits, or surface content.
+- There is one implicit browser-local save and no save-slot, export/import, or
+  cross-device synchronization UI.
+- The migration registry is intentionally empty while version `1` is current.
+  A migration function must be added before increasing `RPG_STATE_VERSION`.
+- The regression suite is committed but is not yet run by a CI workflow.
+- PCVR interaction and sustained headset performance still require
+  device-specific regression testing.
 
 ## Expansion Roadmap
 

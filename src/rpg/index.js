@@ -1,4 +1,5 @@
 export { LocalRpgPersistence, RPG_LOCAL_STORAGE_KEY } from './persistence.js';
+export { RPG_STATE_MIGRATIONS, migrateRpgState } from './migrations.js';
 export { RpgRuntime, createRpgRuntime } from './RpgRuntime.js';
 export {
     RPG_STATE_VERSION,

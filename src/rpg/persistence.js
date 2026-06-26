@@ -1,4 +1,5 @@
 import { createInitialRpgState, sanitizeRpgState } from './state.js';
+import { migrateRpgState } from './migrations.js';
 
 export const RPG_LOCAL_STORAGE_KEY = 'deep-space-vr:rpg-state:v1';
 
@@ -14,7 +15,7 @@ export class LocalRpgPersistence {
         try {
             const raw = this.storage.getItem(this.key);
             if (!raw) return createInitialRpgState();
-            return sanitizeRpgState(JSON.parse(raw));
+            return sanitizeRpgState(migrateRpgState(JSON.parse(raw)));
         } catch (error) {
             console.warn('Could not load RPG state; starting from a fresh state.', error);
             return createInitialRpgState();

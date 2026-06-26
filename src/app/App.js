@@ -36,7 +36,7 @@ import { DiegeticRadioPanel } from '../ui/DiegeticRadioPanel.js';
 import { UniverseNavigation } from '../ui/UniverseNavigation.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
-import { createRpgRuntime } from '../rpg/index.js';
+import { createRpgRuntime, LocalRpgPersistence } from '../rpg/index.js';
 
 // Rebase the world origin when the ship exceeds this distance from (0,0,0).
 // 1 000 units → float32 precision < 0.0002 units, imperceptible on any surface.
@@ -264,10 +264,12 @@ export class App {
         ];
         this._createTelemetryHud();
         this._bindEvents();
+        this.rpgError = null;
+        this.rpg = this._createRpgRuntimeSafely();
         this._installDebugHooks();
         this._applyRuntimeConfig();
         this._loadInitialJsonPreset();
-        this.rpg = createRpgRuntime();
+        this._syncActiveRpgSystem();
         this._loadCustomRadioStations();
     }
 
@@ -497,8 +499,14 @@ export class App {
     }
 
     _syncActiveRpgSystem() {
-        if (!this.rpg || !this.scaleStack) return;
-        this.rpg.setActiveNamedSystem(this._findActiveRpgNamedSystemId());
+        if (!this.rpg || !this.scaleStack) return false;
+        try {
+            this.rpg.setActiveNamedSystem(this._findActiveRpgNamedSystemId());
+            return true;
+        } catch (error) {
+            this._recordRpgError('named-system sync', error);
+            return false;
+        }
     }
 
     _findActiveRpgNamedSystemId() {
@@ -507,6 +515,57 @@ export class App {
             if (rpg?.namedSystemId) return rpg.namedSystemId;
         }
         return null;
+    }
+
+    _createRpgRuntimeSafely() {
+        try {
+            return createRpgRuntime();
+        } catch (error) {
+            this._recordRpgError('persistent runtime initialization', error);
+        }
+
+        try {
+            return createRpgRuntime({
+                persistence: new LocalRpgPersistence({ storage: null })
+            });
+        } catch (error) {
+            this._recordRpgError('in-memory runtime initialization', error);
+            return null;
+        }
+    }
+
+    _recordRpgError(context, error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.rpgError = {
+            context,
+            message,
+            occurredAt: new Date().toISOString()
+        };
+        console.error(`RPG ${context} failed; core simulation will continue.`, error);
+        return this.rpgError;
+    }
+
+    _getRpgDebugState() {
+        if (!this.rpg) {
+            return {
+                available: false,
+                error: this.rpgError
+            };
+        }
+
+        try {
+            return {
+                available: true,
+                ...this.rpg.getSummary(),
+                comms: this.rpg.getCommsState(),
+                error: this.rpgError
+            };
+        } catch (error) {
+            return {
+                available: false,
+                error: this._recordRpgError('debug-state sync', error)
+            };
+        }
     }
 
     // Debug: jump the ship to a given altitude over a quadtree planet, then rebase
@@ -2628,12 +2687,7 @@ export class App {
                 : null,
             xr: this.xr?.getDebugState?.(),
             renderPipeline: this.renderPipeline?.getState?.(),
-            rpg: this.rpg
-                ? {
-                    ...this.rpg.getSummary(),
-                    comms: this.rpg.getCommsState()
-                }
-                : null,
+            rpg: this._getRpgDebugState(),
             gamepad: this.input.gamepad.getDebugState(),
             shipAnchors: this.ship.getAnchorNames(),
             anchorValidation: this.ship.validateAnchors(),

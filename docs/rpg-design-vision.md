@@ -1,8 +1,8 @@
 # Deep Space VR — RPG Design Vision
 
-> **Status:** Design source of truth. Phase 11A local RPG state spine, Phase 11B authored system anchor, Phase 11C cockpit comms/contact slice, and Phase 11D first mission loop are implemented.
+> **Status:** Design source of truth. Phase 11A-E state, authored-system, cockpit-comms, first-mission, and validation slices are implemented.
 > **Purpose:** Capture the intended RPG layer architecture so it can be developed incrementally without losing design intent.
-> **Last updated:** 2026-06-26 (rounds 1–4 locked, worldbuilding session open)
+> **Last updated:** 2026-06-27 (rounds 1–4 locked, first RPG loop validated, worldbuilding session open)
 
 ---
 
@@ -180,6 +180,10 @@ Tier 4 entities do **not** follow the standard NPC model. They are simulation-le
 **Dialogue system: Hybrid (locked).** Authored key beats and mission-critical dialogue are scripted. All other NPC conversation is LLM-driven — NPCs respond to anything the player says, contextually. The Phase 09 voice AI is the infrastructure for the LLM layer. Key authored beats take priority and can interrupt or redirect open LLM dialogue.
 
 **Current implementation note:** Phase 11C proves the deterministic comms/contact path, and Phase 11D adds the first deterministic mission consequence path. The LLM flavor lane exists only as a disabled-by-default stub (`source: 'stub'`) and cannot mutate contact, mission, reputation, or world state. Live voice/LLM service integration remains deferred.
+
+Phase 11E adds a versioned save-migration registry, dependency-free RPG
+regression tests, corrupt-storage recovery, and guarded app integration with an
+in-memory fallback so an RPG failure does not interrupt flight or rendering.
 
 ---
 

@@ -13,7 +13,7 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
 - Desktop post-FX stack plus a custom WebXR render path for bloom, retro pixel treatment, scanlines, color depth, and speed-scaled warp.
 - Hyperdrive-responsive star-field aberration and Doppler/beaming, tunable from the F2 `Relativistic Stars` group.
 - DualSense / standard gamepad support, WebXR controller support, and runtime debug hooks.
-- RPG foundation with a deterministic Port Meridian cockpit comms contact and local save-backed conversation state.
+- Validated first RPG loop at Port Meridian: cockpit comms, a deterministic two-branch mission, persistent faction reputation, world flags, and conversation outcomes.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -25,6 +25,16 @@ python -m http.server 5177
 ```
 
 Then open [http://localhost:5177/](http://localhost:5177/).
+
+## RPG regression tests
+
+Phase 11 includes a dependency-free Node test suite for state creation, reset,
+both mission branches, decline, persistence recovery, invalid IDs, and the save
+migration boundary:
+
+```powershell
+node --experimental-default-type=module --test tests/rpg/rpg-runtime.test.mjs
+```
 
 ## Custom Radio & Music Transceiver
 
@@ -103,6 +113,26 @@ Notes:
 | `L` | Toggle ship animation loop |
 | `H` | Toggle VR HUD |
 
+### First RPG mission
+
+The first playable RPG slice is `A Clean Copy` in the authored Port Meridian
+system:
+
+1. Use the cockpit navigation computer to lock `Port Meridian [RPG]`.
+2. Enter the system and walk to the cockpit comms station.
+3. Press `C` to contact Harbormaster Vale.
+4. Ask for work, accept the route packet, then route it to either the
+   Commonwealth or the Index.
+5. Reopen comms after resolving the mission to see the saved branch-specific
+   response.
+
+The mission result is saved automatically in browser `localStorage`. To reset
+only RPG progress without clearing other site data:
+
+```js
+window.__deepSpaceDebug.rpg.reset();
+```
+
 ### Gamepad and VR
 
 - DualSense and standard gamepads are supported on desktop and in VR.
@@ -147,6 +177,9 @@ window.__deepSpaceDebug.rpg.adjustReputation('commonwealth', 0.25, 'manual-test'
 window.__deepSpaceDebug.rpg.getCommsState();
 window.__deepSpaceDebug.rpg.getMission('port_meridian_route_packet');
 ```
+
+The Phase 11A-E implementation and verification checklist are documented in
+[docs/phase-11-rpg-roadmap.md](docs/phase-11-rpg-roadmap.md).
 
 ## Documentation map
 
