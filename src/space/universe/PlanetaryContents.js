@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { planetPalette } from './PlanetBody.js';
+import { normalizePlanetDescriptor } from './planetPresets.js';
 import { planetHeroRadius } from '../../config/scaleTiers.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 
@@ -38,14 +39,14 @@ const BASE_FREQ = 2.2;            // continent-scale noise frequency
 export class PlanetaryContents {
     constructor({ seed, descriptor, regionRadius }) {
         this.seed = seed;
-        this.descriptor = descriptor;
-        this.kind = descriptor?.kind ?? 'terrestrial';
-        this.landable = Boolean(descriptor?.landable);
-        this.name = descriptor?.name ?? 'Unnamed world';
+        this.descriptor = normalizePlanetDescriptor(descriptor);
+        this.kind = this.descriptor?.kind ?? 'terrestrial';
+        this.landable = Boolean(this.descriptor?.landable);
+        this.name = this.descriptor?.name ?? 'Unnamed world';
         this.regionRadius = regionRadius;
 
-        this.radius = planetHeroRadius(this.kind, descriptor?.systemRadius ?? 1200);
-        this.palette = descriptor?.palette ?? planetPalette(this.kind, 0);
+        this.radius = planetHeroRadius(this.kind, this.descriptor?.systemRadius ?? 1200);
+        this.palette = this.descriptor?.paletteArray ?? planetPalette(this.kind, 0);
 
         this.group = new THREE.Group();
         this.group.name = `Planetary:${this.name}`;

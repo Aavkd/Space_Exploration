@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { StarBody } from './StarBody.js';
-import { PlanetBody, planetPalette } from './PlanetBody.js';
+import { PlanetBody } from './PlanetBody.js';
+import { createPlanetDescriptor, TERRESTRIAL_TYPES } from './planetPresets.js';
 import { DebrisField } from './DebrisField.js';
 import { starBodyRadius } from './starColor.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
@@ -141,7 +142,13 @@ export class SystemContents {
             system: {
                 name: this.anchor.name,
                 planets: this.planets.length,
-                starRadius: this.star.radius
+                starRadius: this.star.radius,
+                planetTypes: this.planets.map((planet) => ({
+                    name: planet.name,
+                    kind: planet.kind,
+                    type: planet.type,
+                    radius: planet.radius
+                }))
             }
         };
     }
@@ -186,26 +193,39 @@ export class SystemContents {
     }
 
     _createPlanets(starRadius) {
-        const planetCount = 4 + Math.floor(this._rng() * 4);
+        const planetCount = TERRESTRIAL_TYPES.length + Math.floor(this._rng() * 3);
         let orbit = starRadius * 3.2 + randomRange(this._rng, 6500, 10500);
         let guaranteedRing = false;
 
         for (let i = 0; i < planetCount; i++) {
-            const gas = i > 1 && this._rng() < 0.48;
+            const forcedType = i < TERRESTRIAL_TYPES.length ? TERRESTRIAL_TYPES[i] : null;
+            const gas = !forcedType && this._rng() < 0.55;
+            const kind = gas ? 'gas' : 'terrestrial';
             const radius = gas
                 ? randomRange(this._rng, 2200, 4700)
                 : randomRange(this._rng, 720, 1850);
             const hasRings = gas && (!guaranteedRing || this._rng() < 0.5);
             guaranteedRing = guaranteedRing || hasRings;
+            const name = `${gas ? 'Gas giant' : typeLabel(forcedType ?? 'world')} ${i + 1}`;
+            const descriptor = createPlanetDescriptor({
+                seed: this.seed,
+                index: i,
+                name,
+                kind,
+                type: forcedType,
+                systemRadius: radius,
+                hasRings,
+                starProfile: this.anchor
+            });
             const planet = new PlanetBody({
-                name: `${gas ? 'Gas giant' : 'World'} ${i + 1}`,
-                kind: gas ? 'gas' : 'terrestrial',
+                name,
+                kind,
                 radius,
                 orbitRadius: orbit,
                 orbitSpeed: randomRange(this._rng, 0.004, 0.018) * (this._rng() < 0.5 ? -1 : 1),
                 spinSpeed: randomRange(this._rng, 0.04, 0.18),
                 phase: this._rng() * Math.PI * 2,
-                palette: planetPalette(gas ? 'gas' : 'terrestrial', i + Math.floor(this._rng() * 3)),
+                descriptor,
                 hasRings
             });
             planet.pivot.rotation.x = randomRange(this._rng, -0.09, 0.09);
@@ -259,6 +279,18 @@ export class SystemContents {
         points.name = 'SystemBackdropStars';
         points.frustumCulled = false;
         return points;
+    }
+}
+
+function typeLabel(type) {
+    switch (type) {
+        case 'temperate': return 'Temperate world';
+        case 'ice': return 'Ice world';
+        case 'desert': return 'Desert world';
+        case 'volcanic': return 'Volcanic world';
+        case 'barren': return 'Barren moon';
+        case 'toxic': return 'Toxic world';
+        default: return 'World';
     }
 }
 

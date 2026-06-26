@@ -303,6 +303,12 @@ flows.
 > framework now includes System descent. Remaining Part 9 work is richer system
 > content: moons, belts, comets, better atmospheres, planet/orbit descent, and
 > eventual Planetary / Surface tiers.
+>
+> **Planet visual pass shipped:** [planet-visual-system-revamp.md](planet-visual-system-revamp.md)
+> adds typed planet descriptors, six guaranteed terrestrial archetypes visible in
+> the System tier, biome/material variety, stronger terrain readability, and the
+> shared deterministic surface model used by render geometry, collision, landing,
+> and surface EVA.
 
 ---
 

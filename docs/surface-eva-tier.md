@@ -29,6 +29,11 @@
 >
 > Where this spec and the architecture doc disagree on the planet's representation,
 > **this spec wins.** Gas giants are unchanged (hero-sphere cloud deck, orbit-only).
+>
+> **Visual/biome pass shipped:** [planet-visual-system-revamp.md](planet-visual-system-revamp.md)
+> adds typed planet descriptors, six guaranteed terrestrial archetypes in the
+> System tier, and a shared surface model for render geometry, collision, landing,
+> and surface EVA sampling.
 
 ---
 

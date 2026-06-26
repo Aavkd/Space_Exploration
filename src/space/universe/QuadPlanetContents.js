@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { planetPalette } from './PlanetBody.js';
 import { planetTrueRadius, QUAD_PLANET } from '../../config/scaleTiers.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
-import { PlanetHeightBasis } from './planetHeightBasis.js';
+import { createPlanetSurfaceModel, normalizePlanetDescriptor, paletteToLegacyArray } from './planetPresets.js';
 import { CubeSphereQuadTree } from './CubeSphereQuadTree.js';
 
 // --- Tier 3 rework / Tier 4: true-radius quadtree planet ------------------
@@ -61,16 +61,18 @@ const f32add = (a, b) => new THREE.Vector3(
 export class QuadPlanetContents {
     constructor({ seed, descriptor, regionRadius }) {
         this.seed = seed;
-        this.descriptor = descriptor;
-        this.kind = descriptor?.kind ?? 'terrestrial';
-        this.landable = Boolean(descriptor?.landable);
-        this.name = descriptor?.name ?? 'Unnamed world';
+        this.descriptor = normalizePlanetDescriptor(descriptor);
+        this.kind = this.descriptor?.kind ?? 'terrestrial';
+        this.type = this.descriptor?.type ?? 'temperate';
+        this.landable = Boolean(this.descriptor?.landable);
+        this.name = this.descriptor?.name ?? 'Unnamed world';
 
-        this.radius = planetTrueRadius(this.kind, descriptor?.systemRadius ?? 1200);
+        this.radius = planetTrueRadius(this.kind, this.descriptor?.systemRadius ?? 1200);
         // The planetary theatre. region/exit shells are derived from this in
         // Level.createPlanetaryLevel; this is a sane fallback if constructed bare.
         this.regionRadius = regionRadius ?? this.radius * 1.6;
-        this.palette = descriptor?.palette ?? planetPalette(this.kind, 0);
+        this.palette = this.descriptor?.palette ?? planetPalette(this.kind, 0);
+        this.paletteArray = this.descriptor?.paletteArray ?? (Array.isArray(this.palette) ? this.palette : paletteToLegacyArray(this.palette));
 
         this.group = new THREE.Group();
         this.group.name = `QuadPlanet:${this.name}`;
@@ -93,18 +95,9 @@ export class QuadPlanetContents {
         ).normalize();
         this.sunColor = new THREE.Color('#fff2d6');
 
-        this.basis = new PlanetHeightBasis({
+        this.basis = createPlanetSurfaceModel(this.descriptor, {
             seed,
-            radius: this.radius,
-            reliefMetres: QUAD_PLANET.reliefMetres,
-            seaLevel: QUAD_PLANET.seaLevel,
-            baseFreq: QUAD_PLANET.baseFreq,
-            detailAmplitude: QUAD_PLANET.detailAmplitude,
-            detailFreq: QUAD_PLANET.detailFreq,
-            localReliefAmplitude: QUAD_PLANET.localReliefAmplitude,
-            localReliefFreq: QUAD_PLANET.localReliefFreq,
-            microReliefAmplitude: QUAD_PLANET.microReliefAmplitude,
-            microReliefFreq: QUAD_PLANET.microReliefFreq
+            radius: this.radius
         });
 
         this._material = this._createTileMaterial();
@@ -120,6 +113,8 @@ export class QuadPlanetContents {
             cacheTiles: QUAD_PLANET.cacheTiles
         });
         this.group.add(this.quadtree.group);
+        this.atmosphere = this._createAtmosphere();
+        if (this.atmosphere) this.group.add(this.atmosphere);
 
         // Scratch reused per-frame.
         this._camLocal = new THREE.Vector3();
@@ -187,11 +182,13 @@ export class QuadPlanetContents {
         const normal = (out.normal ??= new THREE.Vector3());
         this._surfaceNormalAt(dir, normal);
         const up = (out.up ??= new THREE.Vector3()).copy(dir);
+        this.basis.sampleAt(dir, out, { normal });
         out.altitude = dist - surfaceR;
         out.radius = surfaceR;
         out.slopeDeg = THREE.MathUtils.radToDeg(
             Math.acos(THREE.MathUtils.clamp(normal.dot(up), -1, 1))
         );
+        out.slope = THREE.MathUtils.degToRad(out.slopeDeg);
         return out;
     }
 
@@ -220,6 +217,7 @@ export class QuadPlanetContents {
             leaf.mesh.position.copy(this._tmp);
             if (leaf.depth > maxDepth) maxDepth = leaf.depth;
         }
+        if (this.atmosphere) this.atmosphere.position.copy(this._centerScene);
         this._lastMaxDepth = maxDepth;
     }
 
@@ -292,6 +290,7 @@ export class QuadPlanetContents {
             tier: 'planetary',
             name: this.name,
             kind: this.kind,
+            planetType: this.type,
             canLand: this.landable,
             altitude,
             clearance,
@@ -341,7 +340,7 @@ export class QuadPlanetContents {
     getCurrentNode() {
         return {
             name: this.name,
-            theme: 'terrestrial world (true radius)',
+            theme: `${this.type} terrestrial world (true radius)`,
             radius: this.regionRadius
         };
     }
@@ -434,10 +433,11 @@ export class QuadPlanetContents {
             const r = Math.sqrt(Math.max(0, 1 - y * y));
             const theta = i * golden;
             const dir = this._tmp.set(Math.cos(theta) * r, y, Math.sin(theta) * r).normalize();
-            const { land } = this.basis.landAt(dir);
+            const sample = this.basis.sampleAt(dir, {}, { includeSlope: true });
+            const land = sample.land;
             const surfaceR = this.heightAt(dir);
-            const slopeDeg = this._slopeDegrees(dir);
-            const elevation = surfaceR - this.radius;
+            const slopeDeg = sample.slopeDeg;
+            const elevation = sample.elevation;
             const lat = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)));
             const lon = THREE.MathUtils.radToDeg(Math.atan2(dir.z, dir.x));
 
@@ -447,6 +447,7 @@ export class QuadPlanetContents {
                 if (land < 0.35) score -= 5;
             } else {
                 score = -slopeDeg * 0.35 - Math.abs(land - 0.16) * 2 + (land > 0.02 ? 0.7 : -1.5);
+                if (sample.isLiquid) score -= 3.0;
             }
 
             if (score > bestScore) {
@@ -457,6 +458,8 @@ export class QuadPlanetContents {
                     lat,
                     lon,
                     land,
+                    biome: sample.biome,
+                    material: sample.material,
                     elevation,
                     slopeDeg,
                     surfaceRadius: surfaceR
@@ -478,11 +481,24 @@ export class QuadPlanetContents {
         const lat = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)));
         const lon = THREE.MathUtils.radToDeg(Math.atan2(dir.z, dir.x));
         const tileStats = this.quadtree.getStats();
+        const sample = this.basis.sampleAt(dir, {}, { includeSlope: true });
+        const altitude = dist - sample.height;
         return {
+            name: this.name,
+            kind: this.kind,
+            planetType: this.type,
+            biome: sample.biome,
+            material: sample.material,
+            slopeDeg: sample.slopeDeg,
+            elevation: sample.elevation,
+            normalizedElevation: sample.normalizedElevation,
+            land: sample.land,
+            moisture: sample.moisture,
+            temperature: sample.temperature,
             radiusTrue: this.radius,
             centreMagnitude: this._centerScene.length(),
-            altitude: dist - this.heightAt(dir),
-            clearance: dist - this.heightAt(dir) - (this._lastShipClearance ?? FALLBACK_SHIP_CLEARANCE),
+            altitude,
+            clearance: altitude - (this._lastShipClearance ?? FALLBACK_SHIP_CLEARANCE),
             subShipLat: lat,
             subShipLon: lon,
             leafTiles: this._lastLeafCount,
@@ -661,11 +677,14 @@ export class QuadPlanetContents {
                 #include <common>
                 #include <logdepthbuf_pars_vertex>
                 attribute vec3 aColor;
+                attribute vec3 aMaterialData;
                 varying vec3 vColor;
+                varying vec3 vMaterialData;
                 varying vec3 vWorldNormal;
                 varying vec3 vWorldPos;
                 void main() {
                     vColor = aColor;
+                    vMaterialData = aMaterialData;
                     vec4 worldPos = modelMatrix * vec4(position, 1.0);
                     vWorldPos = worldPos.xyz;
                     vWorldNormal = normalize(mat3(modelMatrix) * normal);
@@ -677,6 +696,7 @@ export class QuadPlanetContents {
                 #include <common>
                 #include <logdepthbuf_pars_fragment>
                 varying vec3 vColor;
+                varying vec3 vMaterialData;
                 varying vec3 vWorldNormal;
                 varying vec3 vWorldPos;
                 uniform vec3 uSunDir;
@@ -692,18 +712,72 @@ export class QuadPlanetContents {
                     float day = uAmbient + smoothstep(0.0, 0.25, ndl) * (0.85 + ndl * 0.4);
                     vec3 cell = floor(vWorldPos * 0.65);
                     float grain = hash31(cell);
-                    float micro = 0.74 + grain * 0.46;
-                    float pebble = smoothstep(0.84, 1.0, grain) * 0.22;
-                    vec3 terrainColor = vColor * (micro + pebble);
-                    gl_FragColor = vec4(terrainColor * day * uSunColor, 1.0);
+                    float rough = clamp(vMaterialData.x, 0.0, 1.0);
+                    float micro = mix(0.86, 0.68, rough) + grain * mix(0.18, 0.42, rough);
+                    float pebble = smoothstep(0.82, 1.0, grain) * mix(0.06, 0.24, rough);
+                    float slopeShade = mix(1.0, 0.78, clamp(vMaterialData.z / 48.0, 0.0, 1.0));
+                    vec3 terrainColor = vColor * (micro + pebble) * slopeShade;
+                    vec3 emissive = vColor * vMaterialData.y * (1.4 + grain * 0.5);
+                    gl_FragColor = vec4(terrainColor * day * uSunColor + emissive, 1.0);
                     #include <logdepthbuf_fragment>
                 }
             `
         });
     }
 
+    _createAtmosphere() {
+        const atmosphere = this.descriptor?.atmosphere;
+        if (!atmosphere || (atmosphere.density ?? 0) <= 0.02) return null;
+        const geometry = new THREE.SphereGeometry(this.radius * (1.012 + atmosphere.density * 0.035), 64, 32);
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                uColor: { value: new THREE.Color(atmosphere.color ?? '#7fb6ff') },
+                uSunDir: { value: this.sunDir.clone() },
+                uDensity: { value: atmosphere.density ?? 0.35 },
+                uRimStrength: { value: atmosphere.rimStrength ?? 1.0 }
+            },
+            vertexShader: `
+                varying vec3 vWorldNormal;
+                varying vec3 vViewDir;
+                void main() {
+                    vec4 wp = modelMatrix * vec4(position, 1.0);
+                    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                    vViewDir = normalize(cameraPosition - wp.xyz);
+                    gl_Position = projectionMatrix * viewMatrix * wp;
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vWorldNormal;
+                varying vec3 vViewDir;
+                uniform vec3 uColor;
+                uniform vec3 uSunDir;
+                uniform float uDensity;
+                uniform float uRimStrength;
+                void main() {
+                    vec3 N = normalize(vWorldNormal);
+                    float rim = pow(1.0 - abs(dot(N, normalize(vViewDir))), 2.4);
+                    float day = 0.28 + 0.72 * max(dot(N, normalize(uSunDir)), 0.0);
+                    float alpha = rim * day * uDensity * 0.65;
+                    gl_FragColor = vec4(uColor * rim * day * uRimStrength, alpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            side: THREE.BackSide,
+            depthWrite: false
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = 'QuadPlanetAtmosphere';
+        mesh.frustumCulled = false;
+        return mesh;
+    }
+
     dispose() {
         this.quadtree.dispose();
         this._material.dispose();
+        if (this.atmosphere) {
+            this.atmosphere.geometry.dispose();
+            this.atmosphere.material.dispose();
+        }
     }
 }

@@ -272,11 +272,13 @@ export class CubeSphereQuadTree {
         const positions = new Float32Array(total * 3);
         const normals = new Float32Array(total * 3);
         const colors = new Float32Array(total * 3);
+        const materialData = new Float32Array(total * 3);
 
         const dir = new THREE.Vector3();
         const pos = new THREE.Vector3();
         const nrm = new THREE.Vector3();
         const color = new THREE.Color();
+        const sample = { color };
         const edgeMetres = node.edgeMetres || (this.radius * Math.PI * 0.5 / Math.max(1, 2 ** node.depth));
         const skirtDepth = THREE.MathUtils.clamp(
             edgeMetres * this.skirtFraction,
@@ -284,10 +286,13 @@ export class CubeSphereQuadTree {
             MAX_SKIRT_DEPTH
         );
 
-        const writeVertex = (index, p, n, col) => {
+        const writeVertex = (index, p, n, col, roughness = 0.7, emissive = 0, slopeDeg = 0) => {
             positions[index * 3] = p.x; positions[index * 3 + 1] = p.y; positions[index * 3 + 2] = p.z;
             normals[index * 3] = n.x; normals[index * 3 + 1] = n.y; normals[index * 3 + 2] = n.z;
             colors[index * 3] = col.r; colors[index * 3 + 1] = col.g; colors[index * 3 + 2] = col.b;
+            materialData[index * 3] = roughness;
+            materialData[index * 3 + 1] = emissive;
+            materialData[index * 3 + 2] = slopeDeg;
         };
 
         // Surface grid.
@@ -299,8 +304,17 @@ export class CubeSphereQuadTree {
                 const r = this.basis.surfaceRadiusAt(dir);
                 pos.copy(dir).multiplyScalar(r).sub(origin); // tile-relative (small)
                 this._surfaceNormal(node.faceIndex, u, v, dir, nrm);
-                this._tileColor(dir, color);
-                writeVertex(j * gridN + i, pos, nrm, color);
+                this.basis.sampleAt(dir, sample, { normal: nrm });
+                const slopeDeg = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(nrm.dot(dir), -1, 1)));
+                writeVertex(
+                    j * gridN + i,
+                    pos,
+                    nrm,
+                    sample.color,
+                    sample.roughnessHint,
+                    sample.emissiveStrength,
+                    slopeDeg
+                );
             }
         }
 
@@ -330,7 +344,15 @@ export class CubeSphereQuadTree {
                 pos.addScaledVector(this._sa, -skirtDepth);
                 nrm.set(normals[srcIndex * 3], normals[srcIndex * 3 + 1], normals[srcIndex * 3 + 2]);
                 color.setRGB(colors[srcIndex * 3], colors[srcIndex * 3 + 1], colors[srcIndex * 3 + 2]);
-                writeVertex(skirtBase + k, pos, nrm, color);
+                writeVertex(
+                    skirtBase + k,
+                    pos,
+                    nrm,
+                    color,
+                    materialData[srcIndex * 3],
+                    materialData[srcIndex * 3 + 1],
+                    materialData[srcIndex * 3 + 2]
+                );
             }
             for (let k = 0; k < borderIndices.length - 1; k++) {
                 const t0 = borderIndices[k];
@@ -358,6 +380,7 @@ export class CubeSphereQuadTree {
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
         geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('aMaterialData', new THREE.BufferAttribute(materialData, 3));
         geometry.setIndex(indices);
 
         const mesh = new THREE.Mesh(geometry, this.material);
@@ -395,23 +418,6 @@ export class CubeSphereQuadTree {
         return target.multiplyScalar(this.basis.surfaceRadiusAt(target));
     }
 
-    // Biome/altitude bands, matching the hero sphere's terrain colouring so a
-    // world looks the same when rebuilt at true radius (palette = [ocean, land, high]).
-    _tileColor(dir, color) {
-        const { n, land } = this.basis.landAt(dir);
-        if (n < this.basis.seaLevel) {
-            color.set(this.palette[0]).multiplyScalar(0.55 + n * 0.6);
-        } else {
-            color.set(this.palette[1]).lerp(TMP_HIGH.set(this.palette[2]), THREE.MathUtils.smoothstep(land, 0.45, 1));
-            const detail = this.basis.detailAt?.(dir) ?? 0;
-            color.multiplyScalar(0.94 + detail * 0.08);
-        }
-        const lat = Math.abs(dir.y);
-        const icing = THREE.MathUtils.smoothstep(lat, 0.78, 0.95) + (land > 0.82 ? 0.6 : 0);
-        color.lerp(TMP_ICE, Math.min(0.85, icing));
-        return color;
-    }
-
     getStats() {
         return {
             leafCount: this.leaves.length,
@@ -442,6 +448,4 @@ export class CubeSphereQuadTree {
     }
 }
 
-const TMP_HIGH = new THREE.Color();
-const TMP_ICE = new THREE.Color('#dcecff');
 const ZERO = new THREE.Vector3();

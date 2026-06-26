@@ -125,11 +125,11 @@ export const QUAD_PLANET = Object.freeze({
     // Verts per tile edge (grid is tileRes × tileRes quads → (tileRes+1)^2 verts).
     tileRes: 16,
     // Subdivide when (tileEdgeMetres / distanceToCamera) > this. Larger = coarser.
-    errorThreshold: 1.1,
+    errorThreshold: 0.95,
     // Hard cap on recursion depth. At R≈6.4e6 m, depth 16 → ~190 m tiles, whose
     // vertices sit within ±100 m of the tile centre — comfortably inside float32
     // precision once the tile is placed camera-relative (§4).
-    maxDepth: 16,
+    maxDepth: 17,
     // Skirt drop as a fraction of a tile's edge length: border verts are pulled
     // radially inward to hide cracks between adjacent LOD levels (§3.3). Cheap
     // first cut; geomorph/edge-stitch is deferred (§14).
@@ -140,7 +140,7 @@ export const QUAD_PLANET = Object.freeze({
     streamingBudgetMs: 2.0,
     // Inactive generated tiles retained for repeated passes before their
     // geometry is disposed.
-    cacheTiles: 384,
+    cacheTiles: 512,
     // Coarse terrain shape at true radius. Relief is expressed in real metres so
     // a 6-9 Mm planet gets kilometre-scale mountains, not radius-fraction walls.
     // seaLevel = fbm threshold below which the surface is flat ocean;
