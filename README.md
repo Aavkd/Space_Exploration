@@ -28,12 +28,11 @@ Then open [http://localhost:5177/](http://localhost:5177/).
 
 ## RPG regression tests
 
-Phase 11 includes a dependency-free Node test suite for state creation, reset,
-both mission branches, decline, persistence recovery, invalid IDs, and the save
-migration boundary:
+The dependency-free RPG suite covers Phase 11 mission behavior plus Phase 13
+slots, migration, import safety, storage failure, clock, and event retention:
 
 ```powershell
-node --experimental-default-type=module --test tests/rpg/rpg-runtime.test.mjs
+node --experimental-default-type=module --test tests/rpg/*.test.mjs
 ```
 
 ## Custom Radio & Music Transceiver
@@ -133,6 +132,14 @@ only RPG progress without clearing other site data:
 window.__deepSpaceDebug.rpg.reset();
 ```
 
+### Ship log and save slots
+
+Walk to the observation-bay ship computer and press `C` / Triangle / XR select
+to inspect `A Clean Copy`, manage three isolated local slots, export validated
+JSON, preview/import it into a new slot, and inspect active-play time. Phase 11
+version-1 browser saves migrate automatically into the version-2 world envelope.
+There is no cloud synchronization or offline simulation.
+
 ### Gamepad and VR
 
 - DualSense and standard gamepads are supported on desktop and in VR.
@@ -176,6 +183,9 @@ window.__deepSpaceDebug.applyUniversePreset('dense_cluster');
 window.__deepSpaceDebug.rpg.adjustReputation('commonwealth', 0.25, 'manual-test');
 window.__deepSpaceDebug.rpg.getCommsState();
 window.__deepSpaceDebug.rpg.getMission('port_meridian_route_packet');
+window.__deepSpaceDebug.saves.list();
+window.__deepSpaceDebug.saves.getActive();
+window.__deepSpaceDebug.saves.getGameTime();
 ```
 
 The Phase 11A-E implementation and verification checklist are documented in
@@ -193,6 +203,7 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-08-ship-speed-and-hyperdrive.md](docs/phase-08-ship-speed-and-hyperdrive.md) - speed regime and hyperdrive design
 - [docs/phase-11-rpg-roadmap.md](docs/phase-11-rpg-roadmap.md) - RPG implementation roadmap and first comms mission slice
 - [docs/phase-12-radio-transceiver.md](docs/phase-12-radio-transceiver.md) - radio transceiver system, custom music folders, and cosmic beacons
+- [docs/phase-13-save-slots-and-clock.md](docs/phase-13-save-slots-and-clock.md) - versioned world envelope, local slots, ship log, and active-play clock
 - [docs/rpg-future-development-roadmap.md](docs/rpg-future-development-roadmap.md) - post-Phase-11 vertical slices, dependencies, tests, and acceptance gates
 - [docs/rpg-phase-agent-prompts.md](docs/rpg-phase-agent-prompts.md) - copy-paste implementation prompts for each future RPG phase
 

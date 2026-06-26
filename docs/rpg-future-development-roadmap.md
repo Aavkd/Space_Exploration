@@ -147,6 +147,10 @@ Phase 12B custom music does not block the RPG roadmap.
 
 ### Phase 13 - Ship Log, Save Slots, And Simulation Clock
 
+**Status:** Complete; automated, desktop-browser, and owner-performed
+normal-control/device validation are recorded in
+[`phase-13-save-slots-and-clock.md`](phase-13-save-slots-and-clock.md).
+
 **Objective:** establish the durable state envelope before more systems write
 incompatible data.
 

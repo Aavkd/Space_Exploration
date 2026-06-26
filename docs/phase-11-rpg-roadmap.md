@@ -1,6 +1,8 @@
 # Phase 11 - RPG Roadmap
 
-> **Status:** Phase 11A-E implemented and validated; Phase 12 is the next expansion slice.
+> **Status:** Phase 11A-E implemented and validated. Phase 13 now migrates the
+> version-1 RPG save into a version-2 world envelope; see
+> `phase-13-save-slots-and-clock.md`.
 > **Last updated:** 2026-06-27.
 > **Companion docs:** `rpg-design-vision.md`, `rpg-future-development-roadmap.md`,
 > `worldbuilding.md`, `phase-09-voice-ai-assistant.md`.

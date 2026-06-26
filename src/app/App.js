@@ -37,6 +37,7 @@ import { UniverseNavigation } from '../ui/UniverseNavigation.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
 import { createRpgRuntime, LocalRpgPersistence } from '../rpg/index.js';
+import { GameClock, LocalSaveSlots, SlotRpgPersistence } from '../save/index.js';
 
 // Rebase the world origin when the ship exceeds this distance from (0,0,0).
 // 1 000 units → float32 precision < 0.0002 units, imperceptible on any surface.
@@ -184,6 +185,10 @@ export class App {
 
         this.input = this._createInputState();
         this.paused = false;
+        this.gameClock = new GameClock();
+        this.saveSlots = new LocalSaveSlots();
+        this.gameClock.restore(this.saveSlots.getActiveEnvelope().simulation.gameTime);
+        this._lastClockCheckpoint = this.gameClock.getTime();
         this.postFxConfig = structuredClone(POST_FX_PRESETS.desktopDefault);
         this.activePreset = POST_FX_PRESET_NAMES.desktopDefault;
         this.displayMode = 'desktop';
@@ -253,6 +258,10 @@ export class App {
         this.selectedNavigationTarget = null;
         this.navigationPanelOpen = false;
         this.radioOpen = false;
+        this.shipComputerOpen = false;
+        this.shipComputerMessage = '';
+        this.shipComputerPreview = null;
+        this.shipComputerTransferText = '';
         this.radioPower = true;
         this.radioVolume = 0.5;
         this.activeRadioStationIndex = 0;
@@ -279,6 +288,13 @@ export class App {
 
     _tick() {
         const dt = Math.min(this.clock.getDelta(), 0.05);
+        const clockActive = !this.paused
+            && document.visibilityState === 'visible'
+            && (typeof document.hasFocus !== 'function' || document.hasFocus());
+        this.gameClock.update(clockActive);
+        if (this.gameClock.getTime() - this._lastClockCheckpoint >= 5) {
+            this._checkpointGameClock('play-time-checkpoint');
+        }
         const gamepad = this.input.gamepad.update();
         const xrInput = this.xr.update(dt, this.postFxConfig.vrComfort);
         const xrActive = this.xr.isPresenting;
@@ -392,6 +408,7 @@ export class App {
                 if (action === 'openComms') this._openCommsPanel();
                 else if (action === 'openNavigation') this._openNavigationPanel();
                 else if (action === 'openRadio') this._openRadioPanel();
+                else if (action === 'openShipComputer') this._openShipComputerPanel();
                 this.input.gamepad.pulse({ duration: 90, weak: 0.25, strong: 0.45 });
                 this._syncDebugDomState();
             }
@@ -519,7 +536,12 @@ export class App {
 
     _createRpgRuntimeSafely() {
         try {
-            return createRpgRuntime();
+            return createRpgRuntime({
+                persistence: new SlotRpgPersistence({
+                    slots: this.saveSlots,
+                    getGameTime: () => this.gameClock.getTime()
+                })
+            });
         } catch (error) {
             this._recordRpgError('persistent runtime initialization', error);
         }
@@ -685,6 +707,7 @@ export class App {
             if (action === 'openComms') this._openCommsPanel();
             else if (action === 'openNavigation') this._openNavigationPanel();
             else if (action === 'openRadio') this._openRadioPanel();
+            else if (action === 'openShipComputer') this._openShipComputerPanel();
             this.xr.pulse({ duration: 80, strength: 0.34 });
             this._syncDebugDomState();
         }
@@ -912,8 +935,179 @@ export class App {
         this.promptContainer = prompt;
 
         this._createCommsPanel();
+        this._createShipComputerPanel();
         this._createNavigationPanel();
         this._createRadioPanel();
+    }
+
+    _createShipComputerPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'ship-computer-panel';
+        panel.innerHTML = `
+            <style>
+                #ship-computer-panel {
+                    position: fixed; inset: 7% 8%; z-index: 24; display: none;
+                    overflow: auto; padding: 18px; color: #dff7ff;
+                    background: rgba(2, 10, 18, 0.96); border: 1px solid #4ccbe8;
+                    font: 12px/1.45 "Consolas", "Courier New", monospace;
+                }
+                #ship-computer-panel .computer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+                #ship-computer-panel .computer-card { border: 1px solid rgba(76,203,232,.35); padding: 10px; }
+                #ship-computer-panel button { margin: 3px; padding: 6px 9px; color: #dff7ff; background: #092332; border: 1px solid #4ccbe8; }
+                #ship-computer-panel textarea { box-sizing: border-box; width: 100%; min-height: 150px; color: #dff7ff; background: #020a12; border: 1px solid #347486; }
+                #ship-computer-panel .active-slot { color: #8dffbf; }
+                #ship-computer-panel .computer-error { color: #ff9d9d; }
+                @media (max-width: 780px) { #ship-computer-panel .computer-grid { grid-template-columns: 1fr; } }
+            </style>
+            <div data-ship-computer-content></div>
+        `;
+        document.body.appendChild(panel);
+        this.shipComputerPanel = panel;
+        this.shipComputerContentNode = panel.querySelector('[data-ship-computer-content]');
+        panel.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-computer-action]');
+            if (!target) return;
+            this._handleShipComputerAction(target.dataset.computerAction, target.dataset.slotId);
+        });
+    }
+
+    _openShipComputerPanel() {
+        this.shipComputerOpen = true;
+        this.shipComputerMessage = '';
+        this._exitPointerLock();
+        this._renderShipComputerPanel();
+        return this.saveSlots.getStatus();
+    }
+
+    _closeShipComputerPanel() {
+        this.shipComputerOpen = false;
+        if (this.shipComputerPanel) this.shipComputerPanel.style.display = 'none';
+        return false;
+    }
+
+    _handleShipComputerKeydown(event) {
+        if (!this.shipComputerOpen) return false;
+        if (event.code === 'Escape') {
+            event.preventDefault();
+            this._closeShipComputerPanel();
+        }
+        return true;
+    }
+
+    _handleShipComputerAction(action, slotId) {
+        try {
+            const textarea = this.shipComputerPanel.querySelector('[data-save-json]');
+            if (textarea) this.shipComputerTransferText = textarea.value;
+            if (action === 'close') return this._closeShipComputerPanel();
+            if (action === 'new') {
+                this.saveSlots.createSlot(`Flight ${this.saveSlots.listSlots().length + 1}`);
+                this._reloadActiveSlot();
+                this.shipComputerMessage = 'Created and loaded a new isolated slot.';
+            } else if (action === 'load') {
+                this._checkpointGameClock('slot-switch');
+                this.saveSlots.loadSlot(slotId);
+                this._reloadActiveSlot();
+                this.shipComputerMessage = `Loaded ${slotId}.`;
+            } else if (action === 'delete') {
+                this.saveSlots.deleteSlot(slotId);
+                this._reloadActiveSlot();
+                this.shipComputerMessage = `Deleted ${slotId}.`;
+            } else if (action === 'export') {
+                this.shipComputerTransferText = this.saveSlots.exportSlot(slotId);
+                this.shipComputerPreview = null;
+                this.shipComputerMessage = `Exported ${slotId} below. Copy the JSON to preserve it.`;
+            } else if (action === 'preview') {
+                this.shipComputerPreview = this.saveSlots.previewImport(this.shipComputerTransferText);
+                this.shipComputerMessage = 'Import validated. Review the preview, then create a new slot.';
+            } else if (action === 'import') {
+                const token = this.shipComputerPreview?.token;
+                this.saveSlots.importPreviewed(this.shipComputerTransferText, token);
+                this._reloadActiveSlot();
+                this.shipComputerPreview = null;
+                this.shipComputerMessage = 'Imported into a new slot; no existing slot was overwritten.';
+            } else if (action === 'reset') {
+                this.saveSlots.resetActiveSlot();
+                this._reloadActiveSlot();
+                this.shipComputerMessage = 'Reset only the active slot.';
+            } else {
+                throw new Error(`Unknown ship-computer action: ${action}`);
+            }
+        } catch (error) {
+            this.shipComputerMessage = error instanceof Error ? error.message : String(error);
+        }
+        this._renderShipComputerPanel();
+        return true;
+    }
+
+    _reloadActiveSlot() {
+        const envelope = this.saveSlots.getActiveEnvelope();
+        this.gameClock.restore(envelope.simulation.gameTime);
+        this._lastClockCheckpoint = this.gameClock.getTime();
+        this.rpg.reload();
+        this._syncActiveRpgSystem();
+        this._syncDebugDomState();
+    }
+
+    _checkpointGameClock(reason = 'clock-checkpoint') {
+        if (!this.saveSlots || !this.rpg) return null;
+        const envelope = this.saveSlots.saveDomains(
+            { rpg: this.rpg.getState(), gameTime: this.gameClock.getTime() },
+            { kind: 'auto', reason }
+        );
+        this._lastClockCheckpoint = envelope.simulation.gameTime;
+        return envelope;
+    }
+
+    _renderShipComputerPanel() {
+        if (!this.shipComputerPanel || !this.shipComputerContentNode) return;
+        this.shipComputerPanel.style.display = this.shipComputerOpen ? 'block' : 'none';
+        if (!this.shipComputerOpen) return;
+
+        const slots = this.saveSlots.listSlots();
+        const envelope = this.saveSlots.getActiveEnvelope();
+        const mission = this.rpg.getMission('port_meridian_route_packet');
+        const events = this.rpg.queryEvents({ missionId: mission.id, newestFirst: true, limit: 20 });
+        const storageError = this.saveSlots.getStatus().lastError;
+        const slotRows = slots.map((slot) => `
+            <div class="${slot.active ? 'active-slot' : ''}">
+                ${escapeHtml(slot.name)} — ${escapeHtml(slot.id)} ${slot.active ? '[ACTIVE]' : ''}
+                <button data-computer-action="load" data-slot-id="${escapeHtml(slot.id)}">Load</button>
+                <button data-computer-action="export" data-slot-id="${escapeHtml(slot.id)}">Export</button>
+                ${slots.length > 1 ? `<button data-computer-action="delete" data-slot-id="${escapeHtml(slot.id)}">Delete</button>` : ''}
+                <small>${escapeHtml(slot.autosave.kind)} / ${escapeHtml(slot.autosave.reason)} / ${escapeHtml(slot.autosave.savedAt)}</small>
+            </div>
+        `).join('');
+        const eventRows = events.map((event) => `
+            <li>${escapeHtml(event.createdAt)} — ${escapeHtml(event.type)} — ${escapeHtml(event.payload?.branchId ?? event.payload?.outcomeId ?? '')}</li>
+        `).join('') || '<li>No A Clean Copy history yet.</li>';
+        const preview = this.shipComputerPreview
+            ? `<pre>${escapeHtml(JSON.stringify(this.shipComputerPreview, null, 2))}</pre><button data-computer-action="import">Import as new slot</button>`
+            : '';
+
+        this.shipComputerContentNode.innerHTML = `
+            <div style="display:flex;justify-content:space-between"><h2>SHIP LOG / LOCAL ARCHIVE</h2><button data-computer-action="close">Close</button></div>
+            <div class="computer-grid">
+                <section class="computer-card">
+                    <h3>Save slots (${slots.length}/3)</h3>${slotRows}
+                    <button data-computer-action="new" ${slots.length >= 3 ? 'disabled' : ''}>New slot</button>
+                    <button data-computer-action="reset">Reset active slot</button>
+                    <p>Play time: ${formatGameTime(this.gameClock.getTime())}</p>
+                </section>
+                <section class="computer-card">
+                    <h3>A Clean Copy</h3>
+                    <p>Status: ${escapeHtml(mission.state.status)} / Outcome: ${escapeHtml(mission.state.outcomeId ?? 'none')}</p>
+                    <ol>${eventRows}</ol>
+                </section>
+                <section class="computer-card" style="grid-column:1/-1">
+                    <h3>Validated export / import</h3>
+                    <textarea data-save-json aria-label="Save JSON">${escapeHtml(this.shipComputerTransferText)}</textarea>
+                    <button data-computer-action="preview">Validate & preview import</button>
+                    ${preview}
+                </section>
+            </div>
+            <p class="${storageError ? 'computer-error' : ''}">${escapeHtml(storageError?.message ?? this.shipComputerMessage ?? '')}</p>
+            <small>Envelope v${envelope.version}; imports always create a new slot.</small>
+        `;
     }
 
     _createCommsPanel() {
@@ -1901,9 +2095,16 @@ export class App {
 
     _bindEvents() {
         window.addEventListener('resize', () => this._resize());
+        window.addEventListener('pagehide', () => this._checkpointGameClock('pagehide'));
+        window.addEventListener('beforeunload', () => this._checkpointGameClock('beforeunload'));
+        document.addEventListener('visibilitychange', () => {
+            this.gameClock.setActive(false);
+            this._checkpointGameClock('visibility-change');
+        });
         window.addEventListener('keydown', (event) => {
             this._unlockAudioFromGesture();
 
+            if (this._handleShipComputerKeydown(event)) return;
             if (this._handleCommsKeydown(event)) return;
             if (this._handleNavigationKeydown(event)) return;
             if (this._handleRadioKeydown(event)) return;
@@ -1998,6 +2199,7 @@ export class App {
                     if (action === 'openComms') this._openCommsPanel();
                     else if (action === 'openNavigation') this._openNavigationPanel();
                     else if (action === 'openRadio') this._openRadioPanel();
+                    else if (action === 'openShipComputer') this._openShipComputerPanel();
                     this._syncDebugDomState();
                 }
                 return;
@@ -2051,7 +2253,7 @@ export class App {
         this.canvas.addEventListener('pointerdown', () => this._unlockAudioFromGesture(), { passive: true });
         this.canvas.addEventListener('click', () => {
             this._unlockAudioFromGesture();
-            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen) {
+            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen && !this.shipComputerOpen) {
                 this.canvas.requestPointerLock?.();
             }
         });
@@ -2356,6 +2558,7 @@ export class App {
                     this._syncDebugDomState();
                     return event;
                 },
+                queryEvents: (query) => this.rpg.queryEvents(query),
                 save: () => {
                     const state = this.rpg.save();
                     this._syncDebugDomState();
@@ -2371,6 +2574,40 @@ export class App {
                     this._syncDebugDomState();
                     return state;
                 }
+            },
+            saves: {
+                getStatus: () => this.saveSlots.getStatus(),
+                list: () => this.saveSlots.listSlots(),
+                getActive: () => this.saveSlots.getActiveEnvelope(),
+                create: (name) => {
+                    const envelope = this.saveSlots.createSlot(name);
+                    this._reloadActiveSlot();
+                    return envelope;
+                },
+                load: (id) => {
+                    const envelope = this.saveSlots.loadSlot(id);
+                    this._reloadActiveSlot();
+                    return envelope;
+                },
+                delete: (id) => {
+                    const envelope = this.saveSlots.deleteSlot(id);
+                    this._reloadActiveSlot();
+                    return envelope;
+                },
+                export: (id) => this.saveSlots.exportSlot(id),
+                previewImport: (text) => this.saveSlots.previewImport(text),
+                importPreviewed: (text, token) => {
+                    const envelope = this.saveSlots.importPreviewed(text, token);
+                    this._reloadActiveSlot();
+                    return envelope;
+                },
+                resetActive: () => {
+                    const envelope = this.saveSlots.resetActiveSlot();
+                    this._reloadActiveSlot();
+                    return envelope;
+                },
+                getGameTime: () => this.gameClock.getTime(),
+                checkpoint: (reason) => this._checkpointGameClock(reason)
             },
             getDebrisState: () => ({
                 hazard: {
@@ -2688,6 +2925,11 @@ export class App {
             xr: this.xr?.getDebugState?.(),
             renderPipeline: this.renderPipeline?.getState?.(),
             rpg: this._getRpgDebugState(),
+            saves: {
+                ...this.saveSlots.getStatus(),
+                slots: this.saveSlots.listSlots(),
+                gameTime: this.gameClock.getTime()
+            },
             gamepad: this.input.gamepad.getDebugState(),
             shipAnchors: this.ship.getAnchorNames(),
             anchorValidation: this.ship.validateAnchors(),
@@ -2741,4 +2983,12 @@ function escapeHtml(value) {
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+}
+
+function formatGameTime(seconds) {
+    const whole = Math.max(0, Math.floor(Number(seconds) || 0));
+    const hours = Math.floor(whole / 3600);
+    const minutes = Math.floor((whole % 3600) / 60);
+    const secs = whole % 60;
+    return [hours, minutes, secs].map((value) => String(value).padStart(2, '0')).join(':');
 }

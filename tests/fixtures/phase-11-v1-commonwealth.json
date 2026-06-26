@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "createdAt": "2026-06-26T00:00:00.000Z",
+  "updatedAt": "2026-06-26T12:05:00.000Z",
+  "factions": {
+    "byId": {
+      "commonwealth": { "reputation": 0.18 },
+      "index": { "reputation": -0.08 }
+    }
+  },
+  "contacts": {
+    "byId": {
+      "port_meridian_harbormaster": {
+        "relationship": 0,
+        "alive": true,
+        "conversation": {
+          "nodeId": "mission_resolved_commonwealth",
+          "startedAt": "2026-06-26T12:00:00.000Z",
+          "updatedAt": "2026-06-26T12:05:00.000Z",
+          "lastChoiceId": "route_commonwealth",
+          "choiceCount": 4
+        }
+      }
+    }
+  },
+  "missions": {
+    "byId": {
+      "port_meridian_route_packet": {
+        "status": "resolved",
+        "offeredAt": "2026-06-26T12:01:00.000Z",
+        "acceptedAt": "2026-06-26T12:02:00.000Z",
+        "resolvedAt": "2026-06-26T12:05:00.000Z",
+        "failedAt": null,
+        "outcomeId": "commonwealth",
+        "lastBranchId": "commonwealth",
+        "updatedAt": "2026-06-26T12:05:00.000Z"
+      }
+    }
+  },
+  "comms": {
+    "activeContactId": null,
+    "llmFlavorEnabled": false
+  },
+  "eventLog": [
+    {
+      "id": "event-000001",
+      "type": "mission.resolved",
+      "payload": {
+        "missionId": "port_meridian_route_packet",
+        "branchId": "commonwealth"
+      },
+      "createdAt": "2026-06-26T12:05:00.000Z"
+    },
+    {
+      "id": "event-000002",
+      "type": "mission.consequence",
+      "payload": {
+        "missionId": "port_meridian_route_packet",
+        "branchId": "commonwealth"
+      },
+      "createdAt": "2026-06-26T12:05:00.000Z"
+    }
+  ],
+  "worldFlags": {
+    "port_meridian.route_packet_owner": "commonwealth",
+    "port_meridian.route_packet_commonwealth_secured": true,
+    "port_meridian.route_packet_index_archived": false,
+    "port_meridian.route_packet_resolved": true
+  }
+}

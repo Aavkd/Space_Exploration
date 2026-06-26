@@ -257,6 +257,20 @@ export class RpgRuntime {
         return cloneRpgValue(event);
     }
 
+    queryEvents({ type = null, missionId = null, factionId = null, limit = 100, newestFirst = false } = {}) {
+        if (type !== null && (typeof type !== 'string' || !type)) {
+            throw new Error('RPG event query type must be a non-empty string or null.');
+        }
+        const boundedLimit = Math.max(0, Math.min(500, Math.floor(Number(limit) || 0)));
+        let entries = this.state.eventLog.filter((entry) => (
+            (type === null || entry.type === type)
+            && (missionId === null || entry.payload?.missionId === missionId)
+            && (factionId === null || entry.payload?.factionId === factionId)
+        ));
+        if (newestFirst) entries = [...entries].reverse();
+        return cloneRpgValue(entries.slice(0, boundedLimit));
+    }
+
     save() {
         this.state = this.persistence.save(this.state);
         return this.getState();

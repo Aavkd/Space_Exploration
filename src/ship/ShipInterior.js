@@ -88,7 +88,8 @@ export const REQUIRED_SHIP_ANCHORS = Object.freeze([
     'interiorSpawn',
     'exteriorSpawn',
     'cameraDebugMount',
-    'radioStation'
+    'radioStation',
+    'shipComputerStation'
 ]);
 
 export const SHIP_ANCHORS = Object.freeze({
@@ -125,6 +126,13 @@ export const SHIP_ANCHORS = Object.freeze({
         zone: 'circulation',
         position: [-1.3, 0.5, -7.5],
         forward: [1, 0, 0],
+        interactionRadius: 1.0
+    },
+    shipComputerStation: {
+        role: 'Durable ship log, simulation clock, and local save-slot terminal.',
+        zone: 'observationBay',
+        position: [1.7, 0.9, 2.4],
+        forward: [-1, 0, 0],
         interactionRadius: 1.0
     },
     exitAirlock: {
