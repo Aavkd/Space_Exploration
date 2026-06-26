@@ -83,6 +83,7 @@ export const REQUIRED_SHIP_ANCHORS = Object.freeze([
     'cockpitSeat',
     'pilotControls',
     'commsStation',
+    'navigationStation',
     'exitAirlock',
     'interiorSpawn',
     'exteriorSpawn',
@@ -109,6 +110,13 @@ export const SHIP_ANCHORS = Object.freeze({
         zone: 'cockpit',
         position: [1.5, 1.05, -11.75],
         forward: [-0.35, 0, -1],
+        interactionRadius: 0.9
+    },
+    navigationStation: {
+        role: 'Cockpit navigation station for selecting destinations.',
+        zone: 'cockpit',
+        position: [-1.2, 0.70, -11.2],
+        forward: [0.35, 0, -1],
         interactionRadius: 0.9
     },
     exitAirlock: {

@@ -58,6 +58,7 @@ export class PlayerController {
             'pilotControls',
             'cockpitSeat',
             'commsStation',
+            'navigationStation',
             'exitAirlock',
             'interiorSpawn',
             'exteriorSpawn'
@@ -121,6 +122,8 @@ export class PlayerController {
                 this._enterPiloting();
                 break;
             case 'openComms':
+                return action;
+            case 'openNavigation':
                 return action;
             case 'leaveControls':
                 this._leaveControls();
@@ -243,6 +246,7 @@ export class PlayerController {
         if (this.state === PLAYER_STATE.PILOTING) return 'leaveControls';
 
         if (this.state === PLAYER_STATE.WALKING) {
+            if (this._near('navigationStation')) return 'openNavigation';
             if (this._near('commsStation')) return 'openComms';
             if (this._near('pilotControls')) return 'takeControls';
             if (this._near('exitAirlock')) return this._canSurfaceDisembark() ? 'disembarkSurface' : 'exitAirlock';
@@ -280,6 +284,8 @@ export class PlayerController {
                 return 'Press C / Triangle - take the controls';
             case 'openComms':
                 return 'Press C / Triangle - open cockpit comms';
+            case 'openNavigation':
+                return 'Press C / Triangle - open cockpit navigation';
             case 'leaveControls':
                 return 'Press C / Triangle - leave the controls';
             case 'exitAirlock':

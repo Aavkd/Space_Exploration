@@ -31,6 +31,7 @@ import { UniversePanel } from '../rendering/UniversePanel.js';
 import { XRExperience } from '../xr/XRExperience.js';
 import { XRVisualEffects } from '../xr/XRVisualEffects.js';
 import { DiegeticStatusPanel } from '../ui/DiegeticStatusPanel.js';
+import { DiegeticNavigationPanel } from '../ui/DiegeticNavigationPanel.js';
 import { UniverseNavigation } from '../ui/UniverseNavigation.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
@@ -208,6 +209,17 @@ export class App {
         this.universeNavigation = new UniverseNavigation({ universe: this.environment });
         this.diegeticPanel = new DiegeticStatusPanel();
         this.camera.add(this.diegeticPanel.object3D);
+
+        this.diegeticNavPanel = new DiegeticNavigationPanel();
+        const navAnchor = this.ship.getAnchor('navigationStation');
+        if (navAnchor) {
+            navAnchor.add(this.diegeticNavPanel.object3D);
+            this.diegeticNavPanel.object3D.position.set(0, 0, -0.4);
+            const marker = navAnchor.getObjectByName('navigationStationMarker');
+            if (marker) {
+                marker.visible = false;
+            }
+        }
         this.xr = new XRExperience({
             renderer: this.renderer,
             scene: this.scene,
@@ -224,14 +236,16 @@ export class App {
             environment: this.environment
         });
         this.xrVisualEffects.resize(window.innerWidth, window.innerHeight, this.renderer.getPixelRatio());
-        this.rpg = createRpgRuntime();
+        this.activeUniversePreset = 'default';
         this.commsPanelOpen = false;
-
+        this.selectedNavigationTarget = null;
+        this.navigationPanelOpen = false;
         this._createTelemetryHud();
         this._bindEvents();
         this._installDebugHooks();
         this._applyRuntimeConfig();
         this._loadInitialJsonPreset();
+        this.rpg = createRpgRuntime();
     }
 
     start() {
@@ -304,7 +318,14 @@ export class App {
         this.universeNavigation.update({
             shipPosition: this.ship.position,
             camera: this.camera,
-            displayMode: this.displayMode
+            displayMode: this.displayMode,
+            pilotActive: this.shipControls.pilotActive,
+            selectedTarget: this.selectedNavigationTarget,
+            ship: this.ship
+        });
+        this.diegeticNavPanel.update({
+            pois: this.environment.getPOIs(this.ship.position, 8),
+            selectedTarget: this.selectedNavigationTarget
         });
         this.universePanel.updateStats({
             counts: this.environment.getCounts(),
@@ -338,6 +359,7 @@ export class App {
             const action = this.playerController.interact();
             if (action) {
                 if (action === 'openComms') this._openCommsPanel();
+                else if (action === 'openNavigation') this._openNavigationPanel();
                 this.input.gamepad.pulse({ duration: 90, weak: 0.25, strong: 0.45 });
                 this._syncDebugDomState();
             }
@@ -404,6 +426,12 @@ export class App {
         } else {
             this.ship.object3D.position.set(0, 0, 0);
         }
+
+        // Shift the active navigation target coordinate by the rebase offset
+        if (this.selectedNavigationTarget && this.selectedNavigationTarget.position) {
+            this.selectedNavigationTarget.position.sub(offset);
+        }
+
         // Rebase runs in the active level's frame only (dormant ancestors keep
         // their frozen frame so an ascent can restore the ship there).
         this.scaleStack.rebaseOrigin(offset);
@@ -566,6 +594,7 @@ export class App {
         const action = this.playerController.interact();
         if (action) {
             if (action === 'openComms') this._openCommsPanel();
+            else if (action === 'openNavigation') this._openNavigationPanel();
             this.xr.pulse({ duration: 80, strength: 0.34 });
             this._syncDebugDomState();
         }
@@ -793,6 +822,7 @@ export class App {
         this.promptContainer = prompt;
 
         this._createCommsPanel();
+        this._createNavigationPanel();
     }
 
     _createCommsPanel() {
@@ -1030,6 +1060,202 @@ export class App {
         this.commsContentNode.innerHTML = lines.join('');
     }
 
+    _createNavigationPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'cockpit-navigation-panel';
+        panel.innerHTML = `
+            <style>
+                #cockpit-navigation-panel {
+                    position: fixed;
+                    left: 18px;
+                    top: 72px;
+                    width: min(420px, calc(100vw - 36px));
+                    max-height: calc(100vh - 116px);
+                    overflow: auto;
+                    padding: 14px;
+                    background: rgba(3, 9, 20, 0.9);
+                    border: 1px solid rgba(135, 210, 255, 0.42);
+                    border-radius: 4px;
+                    color: #dff0ff;
+                    font: 13px/1.45 "Consolas", "Courier New", monospace;
+                    letter-spacing: 0;
+                    text-shadow: 0 0 10px rgba(120, 180, 255, 0.45);
+                    box-shadow: 0 0 28px rgba(70, 150, 255, 0.16);
+                    pointer-events: auto;
+                    z-index: 12;
+                    display: none;
+                }
+                #cockpit-navigation-panel .nav-head {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    margin-bottom: 12px;
+                    border-bottom: 1px solid rgba(135, 210, 255, 0.22);
+                    padding-bottom: 6px;
+                }
+                #cockpit-navigation-panel .nav-title {
+                    color: #9bdcff;
+                    font-size: 13px;
+                    font-weight: bold;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                }
+                #cockpit-navigation-panel .nav-item {
+                    margin: 8px 0;
+                    padding: 8px 10px;
+                    border: 1px solid rgba(135, 210, 255, 0.22);
+                    border-radius: 4px;
+                    background: rgba(15, 35, 62, 0.42);
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                #cockpit-navigation-panel .nav-item.active {
+                    border-color: rgba(116, 255, 176, 0.6);
+                    background: rgba(20, 70, 45, 0.52);
+                }
+                #cockpit-navigation-panel .nav-name {
+                    color: #e9f5ff;
+                    font-weight: bold;
+                }
+                #cockpit-navigation-panel .nav-item.active .nav-name {
+                    color: #74ffb0;
+                }
+                #cockpit-navigation-panel button {
+                    color: #dff0ff;
+                    background: rgba(36, 74, 112, 0.72);
+                    border: 1px solid rgba(155, 220, 255, 0.42);
+                    border-radius: 4px;
+                    padding: 5px 8px;
+                    font: inherit;
+                    cursor: pointer;
+                }
+                #cockpit-navigation-panel button:hover,
+                #cockpit-navigation-panel button:focus {
+                    background: rgba(54, 105, 150, 0.88);
+                    outline: none;
+                }
+                #cockpit-navigation-panel button.active-btn {
+                    background: rgba(40, 140, 80, 0.88);
+                    border-color: rgba(116, 255, 176, 0.6);
+                    color: #74ffb0;
+                }
+                #cockpit-navigation-panel .nav-close {
+                    min-width: 32px;
+                    text-align: center;
+                    padding: 5px 8px;
+                }
+                #cockpit-navigation-panel .nav-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    margin-top: 10px;
+                }
+            </style>
+            <div data-nav-content></div>
+        `;
+        document.body.appendChild(panel);
+        this.navigationPanel = panel;
+        this.navigationContentNode = panel.querySelector('[data-nav-content]');
+        panel.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-nav-action]');
+            if (!target) return;
+            event.preventDefault();
+            const action = target.dataset.navAction;
+            const index = Number(target.dataset.navIndex);
+            if (action === 'close') this._closeNavigationPanel();
+            else if (action === 'select') this._selectNavigationTargetByIndex(index);
+        });
+    }
+
+    _openNavigationPanel() {
+        this.navigationPanelOpen = true;
+        this._exitPointerLock();
+        this._updateNavigationPanel();
+        this._syncDebugDomState();
+    }
+
+    _closeNavigationPanel() {
+        this.navigationPanelOpen = false;
+        this._updateNavigationPanel();
+        this._syncDebugDomState();
+    }
+
+    _selectNavigationTargetByIndex(index) {
+        const pois = this.environment.getPOIs(this.ship.position, 8);
+        const poi = pois[index];
+        if (poi) {
+            if (this.selectedNavigationTarget && this.selectedNavigationTarget.name === poi.name) {
+                this.selectedNavigationTarget = null;
+            } else {
+                this.selectedNavigationTarget = poi;
+            }
+            this._updateNavigationPanel();
+            this._syncDebugDomState();
+        }
+    }
+
+    _handleNavigationKeydown(event) {
+        if (!this.navigationPanelOpen) return false;
+        if (event.code === 'Escape' || event.code === 'KeyC') {
+            event.preventDefault();
+            this._closeNavigationPanel();
+            return true;
+        }
+        if (/^Digit[1-8]$/.test(event.code)) {
+            const index = Number(event.code.slice(5)) - 1;
+            event.preventDefault();
+            this._selectNavigationTargetByIndex(index);
+            return true;
+        }
+        return false;
+    }
+
+    _updateNavigationPanel() {
+        if (!this.navigationPanel || !this.navigationContentNode) return;
+        this.navigationPanel.style.display = this.navigationPanelOpen ? 'block' : 'none';
+        if (!this.navigationPanelOpen) return;
+
+        const pois = this.environment.getPOIs(this.ship.position, 8);
+        const lines = [
+            '<div class="nav-head">',
+            '<div>',
+            '<div class="nav-title">Cockpit Navigation Computer</div>',
+            '</div>',
+            '<button class="nav-close" data-nav-action="close" title="Close console">X</button>',
+            '</div>',
+            '<div class="nav-list">'
+        ];
+
+        pois.forEach((poi, index) => {
+            const isSelected = this.selectedNavigationTarget && this.selectedNavigationTarget.name === poi.name;
+            const activeClass = isSelected ? ' active' : '';
+            const btnClass = isSelected ? ' class="active-btn"' : '';
+            const btnLabel = isSelected ? 'LOCKED' : 'LOCK TARGET';
+            
+            let distStr = '';
+            const distance = this.ship.position.distanceTo(poi.position);
+            if (distance > 100000) distStr = `${(distance / 1000).toFixed(0)}k`;
+            else if (distance > 1000) distStr = `${(distance / 1000).toFixed(1)}k`;
+            else distStr = `${distance.toFixed(0)}m`;
+
+            lines.push(
+                `<div class="nav-item${activeClass}">`,
+                `<div>`,
+                `<span style="color: rgba(135,210,255,0.6); margin-right: 8px;">[${index + 1}]</span>`,
+                `<span class="nav-name">${escapeHtml(poi.name)}</span>`,
+                `<div style="font-size: 11px; color: rgba(210,232,255,0.6); margin-top: 2px;">Distance: ${distStr}</div>`,
+                `</div>`,
+                `<button${btnClass} data-nav-action="select" data-nav-index="${index}">${btnLabel}</button>`,
+                `</div>`
+            );
+        });
+
+        lines.push('</div>');
+        this.navigationContentNode.innerHTML = lines.join('\n');
+    }
+
     _updateTelemetry() {
         if (!this.telemetryNode) return;
 
@@ -1214,6 +1440,7 @@ export class App {
             this._unlockAudioFromGesture();
 
             if (this._handleCommsKeydown(event)) return;
+            if (this._handleNavigationKeydown(event)) return;
 
             if (event.code === 'F2') {
                 event.preventDefault();
@@ -1303,6 +1530,7 @@ export class App {
                 if (!event.repeat && this.cameraMode === 'player') {
                     const action = this.playerController.interact();
                     if (action === 'openComms') this._openCommsPanel();
+                    else if (action === 'openNavigation') this._openNavigationPanel();
                     this._syncDebugDomState();
                 }
                 return;
@@ -1356,7 +1584,7 @@ export class App {
         this.canvas.addEventListener('pointerdown', () => this._unlockAudioFromGesture(), { passive: true });
         this.canvas.addEventListener('click', () => {
             this._unlockAudioFromGesture();
-            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen) {
+            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen) {
                 this.canvas.requestPointerLock?.();
             }
         });
