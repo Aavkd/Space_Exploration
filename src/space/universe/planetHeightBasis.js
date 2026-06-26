@@ -25,7 +25,11 @@ export class PlanetHeightBasis {
         seaLevel = 0.5,
         baseFreq = 2.2,
         detailAmplitude = 0,
-        detailFreq = 180
+        detailFreq = 180,
+        localReliefAmplitude = 0,
+        localReliefFreq = 900,
+        microReliefAmplitude = 0,
+        microReliefFreq = 4200
     }) {
         this.seed = seed;
         this.radius = radius;
@@ -35,6 +39,10 @@ export class PlanetHeightBasis {
         this.baseFreq = baseFreq;
         this.detailAmplitude = detailAmplitude;
         this.detailFreq = detailFreq;
+        this.localReliefAmplitude = localReliefAmplitude;
+        this.localReliefFreq = localReliefFreq;
+        this.microReliefAmplitude = microReliefAmplitude;
+        this.microReliefFreq = microReliefFreq;
 
         // Identical derivation to PlanetaryContents (`'terrain'` sub-seed + an
         // offset drawn from the `'planetary'` rng stream) so a given planet seed
@@ -65,8 +73,13 @@ export class PlanetHeightBasis {
     surfaceRadiusAt(dir) {
         const { land } = this.landAt(dir);
         const coarse = this.radius + this.reliefMetres * land;
-        if (this.detailAmplitude <= 0 || land <= 0) return coarse;
-        return coarse + this.detailAt(dir) * this.detailAmplitude * Math.min(1, land * 1.35);
+        if (land <= 0) return coarse;
+
+        const landMask = THREE.MathUtils.smoothstep(land, 0.02, 0.28);
+        const detail = this.detailAt(dir) * this.detailAmplitude;
+        const ridge = this.ridgeAt(dir) * this.localReliefAmplitude;
+        const micro = this.microAt(dir) * this.microReliefAmplitude;
+        return coarse + (detail + ridge + micro) * landMask;
     }
 
     detailAt(dir) {
@@ -75,6 +88,27 @@ export class PlanetHeightBasis {
             dir.x * this.detailFreq + this._noiseOffset.z * 1.7,
             dir.y * this.detailFreq + this._noiseOffset.x * 1.7,
             dir.z * this.detailFreq + this._noiseOffset.y * 1.7
+        );
+        return (n - 0.5) * 2;
+    }
+
+    ridgeAt(dir) {
+        if (this.localReliefAmplitude <= 0) return 0;
+        const n = this._fbm(
+            dir.x * this.localReliefFreq + this._noiseOffset.y * 2.9,
+            dir.y * this.localReliefFreq + this._noiseOffset.z * 2.9,
+            dir.z * this.localReliefFreq + this._noiseOffset.x * 2.9
+        );
+        const ridge = 1 - Math.abs(n * 2 - 1);
+        return (ridge - 0.42) * 2;
+    }
+
+    microAt(dir) {
+        if (this.microReliefAmplitude <= 0) return 0;
+        const n = this._fbm(
+            dir.x * this.microReliefFreq + this._noiseOffset.x * 4.7,
+            dir.y * this.microReliefFreq + this._noiseOffset.y * 4.7,
+            dir.z * this.microReliefFreq + this._noiseOffset.z * 4.7
         );
         return (n - 0.5) * 2;
     }

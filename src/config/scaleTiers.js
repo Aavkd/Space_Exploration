@@ -145,11 +145,15 @@ export const QUAD_PLANET = Object.freeze({
     // a 6-9 Mm planet gets kilometre-scale mountains, not radius-fraction walls.
     // seaLevel = fbm threshold below which the surface is flat ocean;
     // baseFreq = continent-scale noise frequency.
-    reliefMetres: 8_000,
+    reliefMetres: 14_000,
     seaLevel: 0.5,
     baseFreq: 2.2,
-    detailAmplitude: 85,
-    detailFreq: 260,
+    detailAmplitude: 260,
+    detailFreq: 380,
+    localReliefAmplitude: 980,
+    localReliefFreq: 980,
+    microReliefAmplitude: 110,
+    microReliefFreq: 5200,
     // Camera-far multiple of the true radius, so the whole limb + a standoff are
     // inside the frustum. The log depth buffer keeps the 0.1 m near plane usable
     // alongside this (§4).

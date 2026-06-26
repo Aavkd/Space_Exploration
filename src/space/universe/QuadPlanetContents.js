@@ -100,7 +100,11 @@ export class QuadPlanetContents {
             seaLevel: QUAD_PLANET.seaLevel,
             baseFreq: QUAD_PLANET.baseFreq,
             detailAmplitude: QUAD_PLANET.detailAmplitude,
-            detailFreq: QUAD_PLANET.detailFreq
+            detailFreq: QUAD_PLANET.detailFreq,
+            localReliefAmplitude: QUAD_PLANET.localReliefAmplitude,
+            localReliefFreq: QUAD_PLANET.localReliefFreq,
+            microReliefAmplitude: QUAD_PLANET.microReliefAmplitude,
+            microReliefFreq: QUAD_PLANET.microReliefFreq
         });
 
         this._material = this._createTileMaterial();
