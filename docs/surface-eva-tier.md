@@ -1,8 +1,22 @@
 # Planet Surface — Streaming Flight + EVA (Tier 3 rework / Tier 4) — Implementation Spec
 
-> **Status: DECISIONS LOCKED — NOT YET BUILT.** Agent-facing build spec for
-> low-altitude **streaming flight over true-scale planetary terrain** plus
-> **on-foot EVA**, for the nested scale stack
+> **Status: §12 PHASES 1–5 SHIPPED; PHASES 1–2 BROWSER VERIFIED; PHASE 4 SCRIPTED BROWSER SMOKE VERIFIED.**
+> True-radius planet is rendering and confirmed in-browser. Observed: R = 9,126,466 m,
+> ALT 1577.8 km, gravity pull 5.81 m/s², SECTOR telemetry reads "terrestrial world
+> (true radius)". Camera-relative precision holds — no float swim at altitude.
+> Tile faceting visible at high-altitude coarse LOD (expected; geomorph is §12 phase 6
+> polish). Jitter isolation test (Node.js): camera-relative static error ≤ 3 µm at 2 m
+> altitude vs 185 mm naive absolute.
+> Phase 3 ships a time-sliced tile queue, bounded LRU cache, and streaming
+> telemetry. Phase 4 ships quadtree-sampled ship contact: radial gravity rests the
+> hull at clearance over the shared terrain height field, `LANDED` waits for settled
+> contact, and `ALT` reports height above solid terrain. Scripted browser smoke:
+> deterministic plain + mountainside touchdown both reached `LANDED`, and an outward
+> impulse lifted off cleanly. Phase 5 adds on-foot surface EVA, player-anchor
+> rebasing, `C` disembark/board prompts, and the `T` inside/outside EVA test toggle.
+>
+> Agent-facing build spec for low-altitude **streaming flight over true-scale
+> planetary terrain** plus **on-foot EVA**, for the nested scale stack
 > ([universe-scale-architecture.md](universe-scale-architecture.md)).
 >
 > **This supersedes the hero-sphere stand-in** used by the shipped Planetary tier
@@ -294,26 +308,40 @@ in-space tethered `EVA` state is untouched.
 
 ## 10 — File-by-file change list
 
-**New**
+**New — shipped (§12 phases 1–4)**
 
 | File | Purpose |
 |---|---|
-| `src/space/universe/QuadPlanetContents.js` | Continuous-LOD quadtree planet: cube-sphere quadtree, `heightAt` (shared coarse + fine octaves), tile mesh + skirts, per-tile material, radial gravity, atmosphere/sky, `collideShip`, `getLandingState`, `gravityReach`, Universe-compatible surface. |
-| `src/space/universe/QuadTree.js` (or inline) | Quad node: subdivide/merge by screen-space error, neighbour links, tile lifecycle. |
-| `src/space/universe/TileStreamer.js` | Time-sliced generation queue + bounded LRU tile cache + dispose. |
-| `src/player/SurfaceLocomotion.js` | On-foot walker on the tangent plane: look-relative heading, `heightAt` ground-follow, slope limit. |
+| `src/space/universe/QuadPlanetContents.js` | ✅ Continuous-LOD quadtree planet: cube-sphere quadtree, `heightAt` (coarse only — fine octaves deferred), tile mesh + skirts, per-tile material (logdepth), radial gravity, `collideShip`, `getLandingState`, `gravityReach`, terrain-normal contact damping, landing-site debug helpers, Universe-compatible surface. `runJitterTest()` for precision verification. |
+| `src/space/universe/CubeSphereQuadTree.js` | ✅ 6-face cube-sphere quadtree: `update(cameraLocal)` → subdivide/merge by distance proxy; streams tile mesh generation through `TileStreamer`; `_buildTile()` → camera-relative vertices + skirts; `getStats()`. |
+| `src/space/universe/planetHeightBasis.js` | ✅ `PlanetHeightBasis`: shared coarse height function (same `_fbm`/`_noiseSeed`/`_noiseOffset` derivation as `PlanetaryContents`) lifted into one module so orbit shape == surface shape. |
+| `src/space/universe/TileStreamer.js` | ✅ Time-sliced generation queue + bounded LRU tile cache + geometry disposal (§12 phase 3). Stable face/depth/x/y tile keys preserve deterministic repeated passes. |
 
-**Edited**
+**New — shipped (§12 phase 5)**
+
+| File | Purpose |
+|---|---|
+| `src/player/SurfaceLocomotion.js` | ✅ On-foot walker on the tangent plane: look-relative heading, `heightAt` ground-follow, slope limit, and surface debug step state (§12 phase 5). |
+
+**Edited — shipped (§12 phases 1–4)**
 
 | File | Change |
 |---|---|
-| `src/config/scaleTiers.js` | Add `planetTrueRadius()`; quadtree LOD config (error thresholds, tile grid size, skirt depth, generation budget, cache size). |
-| `src/space/scale/Level.js` | `createPlanetaryLevel`: dispatch landable-terrestrial → `QuadPlanetContents`, else (gas) → `PlanetaryContents`. No new descent kind. |
-| `src/space/scale/ScaleStack.js` | No change to the transition machine (System→Planet stays veiled; nothing inside the planet). Remove/skip the previously-proposed `blend` kind — not needed. |
-| `src/app/App.js` | (a) `_maybeRebaseOrigin` anchors on the active entity (§7.3). (b) Per-frame LOD update + camera-relative tile origin pass (or delegate to the level's `update`). (c) Disembark/board wiring + rig reparent (§8). (d) `ON FOOT` telemetry. (e) Debug hooks (§13). |
-| `src/player/PlayerController.js` | Surface walking mode + disembark/board transitions/prompts. Leave ship-frame `EVA` untouched. |
-| `src/space/universe/PlanetaryContents.js` | Keep for gas giants. Optionally extract the shared `_fbm`/seed/offset + `surfaceRadiusAt` so `QuadPlanetContents` reuses one source of truth for the coarse term. |
-| `docs/universe-scale-architecture.md` | Note the planet representation rework (true-radius quadtree for landable terrestrial; hero sphere retained for gas), the in-planet seamless LOD (no veil), and the now-mandatory async generation. |
+| `src/config/scaleTiers.js` | ✅ Added `planetTrueRadius()`, `USE_QUAD_PLANET` flag, `QUAD_PLANET` config (tile res, error threshold, capped skirts, metre-based relief, LOD limits, streaming ms budget, cache tile budget). |
+| `src/space/scale/Level.js` | ✅ `createPlanetaryLevel` dispatches landable-terrestrial → `createQuadPlanetLevel()` (→ `QuadPlanetContents`); gas → `PlanetaryContents`. |
+| `src/app/App.js` | ✅ `camera.far` respects `environment.cameraFar` (true-radius planet needs ~24 Mm far plane). Debug hooks: `getPlanetState`, `runPlanetJitterTest`, `teleportAltitude`, `teleportLatLon`, `findLandingSite`, `teleportLandingSite`. `_teleportShipAltitude()` helper. Planet state mirrored into DOM debug element. |
+
+**Edited — shipped (§12 phase 5)**
+
+| File | Change |
+|---|---|
+| `src/space/scale/ScaleStack.js` | No change needed (System→Planet stays veiled; no `blend` kind). |
+| `src/app/App.js` | ✅ `_maybeRebaseOrigin` anchors on active entity (§7.3); `KeyT` inside/outside EVA toggle; disembark/board debug hooks; `ON FOOT` + active-anchor telemetry. |
+| `src/player/PlayerController.js` | ✅ `PLAYER_STATE.SURFACE`, landed disembark/board transitions, `teleportEvaToggle()`, and surface prompt/debug state. |
+| `src/player/PlayerRig.js` | ✅ Surface reference frame: camera/body up follows sampled terrain normal while ship-local walking and tethered EVA keep their original up convention. |
+| `src/space/universe/QuadPlanetContents.js` | ✅ Public surface sampling/projection helpers expose the shared `heightAt` terrain to on-foot locomotion without mesh raycasts. |
+| `src/space/universe/PlanetaryContents.js` | Keep for gas giants; no change needed (shared height basis is now in `planetHeightBasis.js`). |
+| `docs/universe-scale-architecture.md` | ✅ Updated §14 to reflect shipped quadtree files and precision foundation. |
 
 ---
 
@@ -344,23 +372,38 @@ in-space tethered `EVA` state is untouched.
 
 Each phase is shippable and verifiable on its own.
 
-1. **Static quadtree planet, fixed LOD.** `QuadPlanetContents` renders a true-radius
-   cube-sphere at a fixed subdivision; ship flies near it. *Accept:* curved planet
-   from afar, no float jitter at altitude (camera-relative origins working), height
-   field matches `surfaceRadiusAt` shape.
-2. **Dynamic LOD + skirts.** Subdivide/merge by distance; skirts hide cracks. *Accept:*
-   detail resolves continuously as you descend from orbit to low altitude with no
-   veil; no visible gaps; merges back cleanly on ascent (curvature returns).
-3. **Streaming + async budget.** Tile queue, LRU cache, ms budget. *Accept:* a fast
+1. ✅ **SHIPPED — browser verified.** Static quadtree planet + dynamic LOD + skirts.
+   Confirmed in-browser: R = 9,126,466 m, ALT 1577.8 km, gravity 5.81 m/s², SECTOR
+   telemetry "terrestrial world (true radius)". No float swim. Tile faceting visible
+   at coarse LOD high altitude — expected without geomorph (§6 polish). Jitter
+   isolation: camera-relative static error ≤ 3 µm at 2 m altitude.
+2. ✅ **SHIPPED (with phase 1)** — Dynamic LOD and skirts implemented in the same pass.
+   LOD subdivides/merges by camera distance each frame. Skirts hide edge cracks.
+   Visual: tile edges read as faceted geometry at high altitude; geomorph blending
+   deferred to §6 polish (does not affect precision or correctness).
+3. ✅ **SHIPPED — code/browser smoke verified.** Streaming + async budget. Tile queue,
+   LRU cache, ms budget. Parents remain visible until every replacement child tile
+   is ready, so the renderer can temporarily show coarser terrain but should not
+   expose holes. `getPlanetState()` reports `queueLength`, `cacheSize`,
+   `cacheLimit`, `budgetMs`, `totalBuilt`, `generatedLastFrame`, `cacheHits`,
+   `cacheMisses`, and `evictions`. *Accept still to profile manually:* a fast
    low-altitude pass over varied terrain holds frame rate; no holes; deterministic
    tiles on a repeated pass.
-4. **Ship landing on the quadtree.** `collideShip` + radial gravity rest the ship on
-   real terrain anywhere. *Accept:* land on a mountainside and a plain; `LANDED`/`ALT`
-   telemetry correct; lift off cleanly.
-5. **On foot (EVA).** `SurfaceLocomotion`, disembark/board, rig reparent, anchor
-   switch. *Accept:* walk on detailed ground under the ship, terrain-follow over
-   slopes, camera up = surface up, no jitter across a rebase on foot, re-board and fly
-   away.
+4. ✅ **SHIPPED — scripted browser smoke verified; pending full manual flight pass.** Ship landing on the quadtree.
+   `collideShip` samples `heightAt(dir)` from the shared quadtree terrain basis,
+   rests the hull at `SHIP_CLEARANCE`, cancels into-ground contact velocity, damps
+   surface tangent drift, and only reports `LANDED` once contact speed is settled.
+   `ALT` is now terrain-relative while `clearance` remains available in debug state.
+   Debug acceptance helpers: `teleportLandingSite('mountain', m)`,
+   `teleportLandingSite('plain', m)`, and `teleportLatLon(lat, lon, m)`.
+   *Scripted accept:* plain slope ≈0.12° and mountainside slope ≈6.12° both
+   settled to `LANDED`, `ALT` stayed terrain-relative at hull clearance, and an
+   outward impulse lifted the ship back to non-contact.
+5. ✅ **SHIPPED — syntax smoke verified; pending full manual planet pass.** On foot
+   (EVA). `SurfaceLocomotion`, disembark/board, rig reparent, active-anchor switch,
+   and `T` inside/outside EVA testing shortcut. *Accept:* walk on detailed ground
+   under the ship, terrain-follow over slopes, camera up = surface up, no jitter
+   across a rebase on foot, re-board and fly away.
 6. **Polish & determinism.** Re-enter a planet → identical terrain. Atmosphere/biome
    tuning, geomorph if needed, instanced surface detail (rocks). Tune `R_true`, LOD
    thresholds, budgets for feel.
@@ -372,12 +415,19 @@ Each phase is shippable and verifiable on its own.
 Extend `window.__deepSpaceDebug` (`App.js:1290+`):
 
 - `getPlanetState()` — `R_true`, sub-ship lat/long, current max LOD depth, live tile
-  count, generation-queue length, cache occupancy, ship altitude (float64).
-- `disembark()` / `boardShip()` — force the on-foot transitions.
-- `teleportAltitude(m)` / `teleportLatLon(lat, lon)` — jump the ship for fast LOD /
-  streaming verification.
-- Mirror tile count + max LOD + active anchor into `#deep-space-debug-state` for
-  headless checks.
+  count, generation-queue length, cache occupancy/limit, ms budget, generated tiles
+  this frame, total built tiles, cache hits/misses/evictions, ship altitude
+  (float64).
+- `disembark()` / `boardShip()` / `teleportEvaToggle()` — force the on-foot or
+  ship-frame EVA transitions. Keyboard `T` calls the same toggle in player mode.
+- `teleportAltitude(m)` / `teleportLatLon(lat, lon, m)` — jump the ship for fast
+  LOD / streaming verification.
+- `findLandingSite(kind)` / `teleportLandingSite(kind, m)` — deterministic plain
+  and mountainside test points for quadtree landing acceptance.
+- `getSurfaceEvaState()` / `forceRebaseActiveAnchor()` — inspect surface feet
+  altitude/slope/up vectors and force the player-anchor rebase acceptance check.
+- Mirror tile count + max LOD + active anchor + player state into
+  `#deep-space-debug-state` for headless checks.
 - Telemetry HUD: `ON FOOT` + surface-relative altitude added to the existing
   `SURFACE / LANDED` block.
 

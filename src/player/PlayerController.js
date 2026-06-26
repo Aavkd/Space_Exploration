@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RelativeLocomotion } from './RelativeLocomotion.js';
+import { SurfaceLocomotion } from './SurfaceLocomotion.js';
 
 // Player states. Locomotion and piloting are deliberately SEPARATE states:
 //   WALKING  - on foot inside the ship, ship-local relative locomotion.
@@ -7,14 +8,18 @@ import { RelativeLocomotion } from './RelativeLocomotion.js';
 //              head look is free but does NOT steer the ship.
 //   EVA      - free-floating excursion outside, still in the ship reference frame
 //              (a tethered/relative EVA; see phase-04 doc for the limitation).
+//   SURFACE  - on-foot planetary EVA, parented into the active planet frame.
 export const PLAYER_STATE = Object.freeze({
     WALKING: 'walking',
     PILOTING: 'piloting',
-    EVA: 'eva'
+    EVA: 'eva',
+    SURFACE: 'surface'
 });
 
 const LOOK_SENSITIVITY = 0.0022; // rad per pixel
 const GAMEPAD_LOOK_RATE = 2.4; // rad per second at full stick deflection
+const SURFACE_EGRESS_DISTANCE = 5.5;
+const SURFACE_BOARD_RADIUS = 4.0;
 const WALK_KEYS = Object.freeze({
     forward: 'KeyW',
     back: 'KeyS',
@@ -26,11 +31,22 @@ const WALK_KEYS = Object.freeze({
 });
 
 export class PlayerController {
-    constructor({ ship, playerRig, shipControls, locomotion } = {}) {
+    constructor({
+        ship,
+        playerRig,
+        shipControls,
+        locomotion,
+        surfaceLocomotion,
+        getSurfaceProvider = () => null,
+        getSurfaceParent = () => null
+    } = {}) {
         this.ship = ship;
         this.rig = playerRig;
         this.shipControls = shipControls;
         this.locomotion = locomotion ?? new RelativeLocomotion();
+        this.surfaceLocomotion = surfaceLocomotion ?? new SurfaceLocomotion();
+        this.getSurfaceProvider = getSurfaceProvider;
+        this.getSurfaceParent = getSurfaceParent;
 
         this.state = PLAYER_STATE.WALKING;
         this.prompt = null;
@@ -49,6 +65,12 @@ export class PlayerController {
         this._cameraPos = new THREE.Vector3();
         this._cameraQuat = new THREE.Quaternion();
         this._orientation = new THREE.Quaternion();
+        this._worldPos = new THREE.Vector3();
+        this._anchorWorld = new THREE.Vector3();
+        this._boardPoint = new THREE.Vector3();
+        this._surfaceSpawn = new THREE.Vector3();
+        this._shipOutward = new THREE.Vector3();
+        this._surfaceForward = new THREE.Vector3();
 
         this._enterWalking(this.anchorPoints.interiorSpawn?.pos);
     }
@@ -103,8 +125,14 @@ export class PlayerController {
             case 'exitAirlock':
                 this._enterEVA();
                 break;
+            case 'disembarkSurface':
+                this._enterSurface();
+                break;
             case 'enterShip':
                 this._enterFromEVA();
+                break;
+            case 'boardSurface':
+                this._enterFromSurface();
                 break;
             default:
                 return false;
@@ -112,11 +140,49 @@ export class PlayerController {
         return action;
     }
 
+    teleportEvaToggle() {
+        if (this.state === PLAYER_STATE.SURFACE) {
+            this._enterFromSurface();
+            return 'boardSurface';
+        }
+        if (this.state === PLAYER_STATE.EVA) {
+            this._enterFromEVA();
+            return 'enterShip';
+        }
+        if (this._canSurfaceDisembark()) {
+            this._enterSurface({ force: true });
+            return 'disembarkSurface';
+        }
+        this._enterEVA();
+        return 'exitAirlock';
+    }
+
+    disembark({ force = false } = {}) {
+        if (force || this._canSurfaceDisembark()) {
+            this._enterSurface({ force });
+            return 'disembarkSurface';
+        }
+        return false;
+    }
+
+    boardShip() {
+        if (this.state === PLAYER_STATE.SURFACE) {
+            this._enterFromSurface();
+            return 'boardSurface';
+        }
+        if (this.state === PLAYER_STATE.EVA) {
+            this._enterFromEVA();
+            return 'enterShip';
+        }
+        return false;
+    }
+
     // --- per-frame -------------------------------------------------------
 
     update(dt, keys, gamepad = null) {
         if (this.state === PLAYER_STATE.WALKING) this._updateWalking(dt, keys, gamepad);
         else if (this.state === PLAYER_STATE.EVA) this._updateEVA(dt, keys, gamepad);
+        else if (this.state === PLAYER_STATE.SURFACE) this._updateSurface(dt, keys, gamepad);
         // PILOTING: the rig stays anchored at the seat; the ship is flown by
         // ShipControls from App._tick. Head look is applied via applyMouseLook.
 
@@ -147,6 +213,20 @@ export class PlayerController {
         this.locomotion.floatEVA(this.rig.position, orientation, move, dt, { boost });
     }
 
+    _updateSurface(dt, keys, gamepad) {
+        const surface = this._surfaceProvider();
+        if (!surface) return;
+
+        const axes = gamepad?.connected ? gamepad.axes : null;
+        const move = {
+            forward: clampAxis(axis(keys, WALK_KEYS.forward, WALK_KEYS.back) - (axes?.leftY ?? 0)),
+            strafe: clampAxis(axis(keys, WALK_KEYS.strafeRight, WALK_KEYS.strafeLeft) + (axes?.leftX ?? 0))
+        };
+        const run = !this.comfortMode && keys.has(WALK_KEYS.run);
+        const step = this.surfaceLocomotion.walk(this.rig.position, this.rig.yaw, move, dt, { run });
+        this._applySurfaceFrame(step);
+    }
+
     /** Place App.camera at the rig's converted world pose. */
     updateCamera(camera) {
         const pose = this.rig.getCameraWorldPose(this._cameraPos, this._cameraQuat);
@@ -161,12 +241,17 @@ export class PlayerController {
 
         if (this.state === PLAYER_STATE.WALKING) {
             if (this._near('pilotControls')) return 'takeControls';
-            if (this._near('exitAirlock')) return 'exitAirlock';
+            if (this._near('exitAirlock')) return this._canSurfaceDisembark() ? 'disembarkSurface' : 'exitAirlock';
             return null;
         }
 
         if (this.state === PLAYER_STATE.EVA) {
             if (this._near('exteriorSpawn', 2.2) || this._near('exitAirlock', 2.6)) return 'enterShip';
+            return null;
+        }
+
+        if (this.state === PLAYER_STATE.SURFACE) {
+            if (this._nearSurfaceBoardPoint()) return 'boardSurface';
             return null;
         }
         return null;
@@ -187,8 +272,12 @@ export class PlayerController {
                 return 'Press C / Triangle - leave the controls';
             case 'exitAirlock':
                 return 'Press C / Triangle - exit through the airlock (EVA)';
+            case 'disembarkSurface':
+                return 'Press C / Triangle - step out onto the surface';
             case 'enterShip':
                 return 'Press C / Triangle - enter the ship';
+            case 'boardSurface':
+                return 'Press C / Triangle - board the ship';
             default:
                 return null;
         }
@@ -212,15 +301,34 @@ export class PlayerController {
     }
 
     getDebugState() {
+        const surface = this.getSurfaceEvaState();
         return {
             state: this.state,
-            shipLocalPosition: this.rig.position.toArray(),
+            referenceFrame: this.rig.state.referenceFrame,
+            shipLocalPosition: this.rig.state.referenceFrame === 'ship-local' ? this.rig.position.toArray() : null,
+            surfacePosition: this.rig.state.referenceFrame === 'surface' ? this.rig.position.toArray() : null,
             yawDeg: THREE.MathUtils.radToDeg(this.rig.yaw),
             pitchDeg: THREE.MathUtils.radToDeg(this.rig.pitch),
-            volumeId: this.locomotion.containsXZ(this.rig.position.x, this.rig.position.z),
+            volumeId: this.rig.state.referenceFrame === 'ship-local'
+                ? this.locomotion.containsXZ(this.rig.position.x, this.rig.position.z)
+                : null,
             contextualAction: this.getContextualAction(),
             prompt: this.prompt,
-            lastStep: this.locomotion.lastStep
+            lastStep: this.state === PLAYER_STATE.SURFACE ? this.surfaceLocomotion.lastStep : this.locomotion.lastStep,
+            surface
+        };
+    }
+
+    getSurfaceEvaState() {
+        if (this.state !== PLAYER_STATE.SURFACE) return null;
+        const sample = this._surfaceProvider()?.getSurfaceSample?.(this.rig.position);
+        return {
+            grounded: this.surfaceLocomotion.lastStep.grounded,
+            altitude: sample?.altitude ?? null,
+            slopeDeg: sample?.slopeDeg ?? null,
+            surfaceUp: sample?.up?.toArray?.() ?? null,
+            surfaceNormal: sample?.normal?.toArray?.() ?? null,
+            boardingDistance: this._surfaceBoardingDistance()
         };
     }
 
@@ -228,6 +336,7 @@ export class PlayerController {
 
     _enterWalking(localPos, { yaw } = {}) {
         this.state = PLAYER_STATE.WALKING;
+        this.rig.setReferenceFrame('ship-local');
         if (localPos) this.rig.setShipLocalPosition(localPos);
         this.locomotion.clampInside(this.rig.position);
         this.rig.position.y = this.locomotion.config.deckHeight;
@@ -261,6 +370,8 @@ export class PlayerController {
     }
 
     _enterEVA() {
+        this._ensureRigParent(this.ship.interiorRoot);
+        this.rig.setReferenceFrame('ship-local');
         const spawn = this.anchorPoints.exteriorSpawn;
         if (spawn) this.rig.setShipLocalPosition(spawn.pos.clone());
         // Face out the port airlock (+X), level pitch.
@@ -275,6 +386,94 @@ export class PlayerController {
         const airlock = this.anchorPoints.exitAirlock ?? this.anchorPoints.interiorSpawn;
         const inside = airlock ? new THREE.Vector3(airlock.pos.x, 0, airlock.pos.z) : null;
         this._enterWalking(inside, { yaw: 0 });
+    }
+
+    _enterSurface({ force = false } = {}) {
+        const surface = this._surfaceProvider();
+        const parent = this.getSurfaceParent?.();
+        if (!surface || !parent || (!force && !this._canSurfaceDisembark())) return false;
+
+        const anchorWorld = this.ship.getAnchorWorldPosition?.('exteriorSpawn', this._anchorWorld)
+            ?? this._anchorWorld.copy(this.ship.position);
+        const boardPoint = surface.projectToSurface?.(anchorWorld, 0, this._boardPoint)
+            ?? surface.getSurfaceSample(anchorWorld)?.point;
+        if (!boardPoint) return false;
+
+        this._shipOutward.copy(anchorWorld).sub(this.ship.position);
+        const sample = surface.getSurfaceSample(boardPoint);
+        this._shipOutward.addScaledVector(sample.normal, -this._shipOutward.dot(sample.normal));
+        if (this._shipOutward.lengthSq() < 1e-8) this._shipOutward.set(0, 0, -1);
+        this._shipOutward.normalize();
+        const point = surface.projectToSurface?.(
+            this._surfaceSpawn.copy(boardPoint).addScaledVector(this._shipOutward, SURFACE_EGRESS_DISTANCE),
+            0,
+            this._worldPos
+        ) ?? boardPoint;
+
+        this.surfaceLocomotion.setSurface(surface);
+        this.surfaceLocomotion.setPreferredForward(this._shipOutward);
+        parent.add(this.rig.object3D);
+        this.rig.position.copy(point);
+        this.rig.setReferenceFrame('surface');
+        this.rig.setEyeHeight(this.ship.dimensions?.eyeHeight ?? 1.65);
+        this.ship.physics?.halt?.();
+        this.shipControls?.setPilotActive(false);
+        this.rig.state.seatedAtControls = false;
+        this.state = PLAYER_STATE.SURFACE;
+        this.rig.setBodyVisible(false);
+        const step = this.surfaceLocomotion.sample(this.rig.position);
+        this._applySurfaceFrame(this.surfaceLocomotion.lastStep, step);
+        this.rig.setLook(0, -0.22);
+        return true;
+    }
+
+    _enterFromSurface() {
+        this._ensureRigParent(this.ship.interiorRoot);
+        const airlock = this.anchorPoints.exitAirlock ?? this.anchorPoints.interiorSpawn;
+        const inside = airlock ? new THREE.Vector3(airlock.pos.x, 0, airlock.pos.z) : null;
+        this._enterWalking(inside, { yaw: 0 });
+    }
+
+    _surfaceProvider() {
+        const surface = this.getSurfaceProvider?.();
+        if (!surface?.getSurfaceSample) return null;
+        this.surfaceLocomotion.setSurface(surface);
+        return surface;
+    }
+
+    _canSurfaceDisembark() {
+        const surface = this._surfaceProvider();
+        if (!surface) return false;
+        return Boolean(surface.getLandingState?.(this.ship.position)?.landed);
+    }
+
+    _nearSurfaceBoardPoint(radius = SURFACE_BOARD_RADIUS) {
+        const distance = this._surfaceBoardingDistance();
+        return Number.isFinite(distance) && distance <= radius;
+    }
+
+    _surfaceBoardingDistance() {
+        const surface = this._surfaceProvider();
+        if (!surface) return Infinity;
+        const anchorWorld = this.ship.getAnchorWorldPosition?.('exteriorSpawn', this._anchorWorld);
+        if (!anchorWorld) return Infinity;
+        const boardPoint = surface.projectToSurface?.(anchorWorld, 0, this._boardPoint);
+        if (!boardPoint) return Infinity;
+        this.rig.object3D.getWorldPosition(this._worldPos);
+        return this._worldPos.distanceTo(boardPoint);
+    }
+
+    _applySurfaceFrame(step, sample = null) {
+        const surfaceSample = sample ?? this._surfaceProvider()?.getSurfaceSample?.(this.rig.position);
+        if (!surfaceSample) return;
+        const base = step?.baseForward
+            ? this._surfaceForward.fromArray(step.baseForward)
+            : this._surfaceForward.set(0, 0, -1);
+        this.rig.setSurfaceFrame(surfaceSample.normal, base);
+    }
+
+    _ensureRigParent(parent) {
+        if (parent && this.rig.object3D.parent !== parent) parent.add(this.rig.object3D);
     }
 }
 

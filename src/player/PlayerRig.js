@@ -11,6 +11,8 @@ import { SHIP_DIMENSIONS } from '../ship/ShipInterior.js';
 // Hierarchy (all ship-local):
 //   object3D (yaw, feet position) -> head (eye height + pitch) -> camera point
 const PITCH_LIMIT = THREE.MathUtils.degToRad(88);
+const DEFAULT_UP = new THREE.Vector3(0, 1, 0);
+const DEFAULT_FORWARD = new THREE.Vector3(0, 0, -1);
 
 export class PlayerRig {
     constructor({ ship, eyeHeight = SHIP_DIMENSIONS.eyeHeight ?? 1.65 } = {}) {
@@ -40,7 +42,14 @@ export class PlayerRig {
         this._worldQuat = new THREE.Quaternion();
         this._scratchScale = new THREE.Vector3();
         this._orientation = new THREE.Quaternion();
+        this._basisQuat = new THREE.Quaternion();
+        this._yawQuat = new THREE.Quaternion();
         this._euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        this._surfaceUp = DEFAULT_UP.clone();
+        this._surfaceForward = DEFAULT_FORWARD.clone();
+        this._surfaceRight = new THREE.Vector3(1, 0, 0);
+        this._surfaceBack = new THREE.Vector3(0, 0, 1);
+        this._basis = new THREE.Matrix4();
 
         this._createDebugBody();
     }
@@ -54,6 +63,23 @@ export class PlayerRig {
         this.object3D.position.copy(vec3);
     }
 
+    setReferenceFrame(referenceFrame) {
+        this.state.referenceFrame = referenceFrame;
+        this._applyOrientation();
+    }
+
+    setSurfaceFrame(up, forwardHint = null) {
+        if (up?.isVector3 && up.lengthSq() > 1e-8) this._surfaceUp.copy(up).normalize();
+        if (forwardHint?.isVector3 && forwardHint.lengthSq() > 1e-8) {
+            this._surfaceForward.copy(forwardHint).addScaledVector(
+                this._surfaceUp,
+                -forwardHint.dot(this._surfaceUp)
+            );
+            if (this._surfaceForward.lengthSq() > 1e-8) this._surfaceForward.normalize();
+        }
+        this._applyOrientation();
+    }
+
     setEyeHeight(height) {
         this.eyeHeight = height;
         this.head.position.y = height;
@@ -63,7 +89,7 @@ export class PlayerRig {
     setLook(yaw, pitch) {
         this.yaw = yaw;
         this.pitch = THREE.MathUtils.clamp(pitch, -PITCH_LIMIT, PITCH_LIMIT);
-        this.object3D.rotation.set(0, this.yaw, 0);
+        this._applyOrientation();
         this.head.rotation.set(this.pitch, 0, 0);
     }
 
@@ -77,6 +103,11 @@ export class PlayerRig {
      * ship frame.
      */
     getLocalOrientation(target = this._orientation) {
+        if (this.state.referenceFrame === 'surface') {
+            this.head.updateWorldMatrix(true, false);
+            this.head.matrixWorld.decompose(this._worldPos, target, this._scratchScale);
+            return target;
+        }
         this._euler.set(this.pitch, this.yaw, 0, 'YXZ');
         return target.setFromEuler(this._euler);
     }
@@ -108,6 +139,23 @@ export class PlayerRig {
     /** Hide the body in first person (camera is inside it), show it otherwise. */
     setBodyVisible(visible) {
         if (this.marker) this.marker.visible = visible;
+    }
+
+    _applyOrientation() {
+        if (this.state.referenceFrame !== 'surface') {
+            this.object3D.rotation.set(0, this.yaw, 0);
+            return;
+        }
+
+        this._surfaceBack.copy(this._surfaceForward).negate().normalize();
+        this._surfaceRight.copy(this._surfaceUp).cross(this._surfaceBack);
+        if (this._surfaceRight.lengthSq() < 1e-8) this._surfaceRight.set(1, 0, 0);
+        this._surfaceRight.normalize();
+        this._surfaceBack.copy(this._surfaceRight).cross(this._surfaceUp).normalize();
+        this._basis.makeBasis(this._surfaceRight, this._surfaceUp, this._surfaceBack);
+        this._basisQuat.setFromRotationMatrix(this._basis);
+        this._yawQuat.setFromAxisAngle(DEFAULT_UP, this.yaw);
+        this.object3D.quaternion.copy(this._basisQuat).multiply(this._yawQuat);
     }
 
     _createDebugBody() {

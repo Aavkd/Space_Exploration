@@ -55,6 +55,7 @@ Notes:
 | `Shift` | Run on foot |
 | `R` / `F` | EVA up / down |
 | `C` | Contextual interact: take controls, leave controls, exit airlock, re-enter ship |
+| `T` | Teleport/toggle inside-outside EVA for testing |
 | `V` | Return to the first-person player camera |
 
 ### Piloting

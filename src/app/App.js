@@ -154,7 +154,9 @@ export class App {
             ship: this.ship,
             playerRig: this.playerRig,
             shipControls: this.shipControls,
-            locomotion: this.locomotion
+            locomotion: this.locomotion,
+            getSurfaceProvider: () => this.environment?.getSurfaceSample ? this.environment : null,
+            getSurfaceParent: () => this.environment?.getSurfaceSample ? this.environment.group : null
         });
 
         // 'player' -> first-person rig drives the camera (default Phase 4 view);
@@ -381,18 +383,39 @@ export class App {
         this._syncDebugDomState();
     }
 
-    // Floating-origin rebase: when the ship strays past the float32 precision
-    // threshold, shift every absolute world-space position by the ship's current
-    // displacement so the ship lands back at (0,0,0). Relative geometry is
-    // unchanged; velocity/angular state are relative and need no adjustment.
-    _maybeRebaseOrigin() {
-        if (this.ship.position.lengthSq() < FLOAT_ORIGIN_THRESHOLD_SQ) return;
-        const offset = this.ship.position.clone();
-        this.ship.object3D.position.set(0, 0, 0);
+    // Floating-origin rebase: pin the active traversal entity near the scene
+    // origin. In flight/interior modes that is the ship; on foot it is the
+    // surface player feet while the parked ship shifts with the rest of the
+    // scene.
+    _maybeRebaseOrigin({ force = false } = {}) {
+        const surfaceActive = this.playerController.getState() === PLAYER_STATE.SURFACE;
+        const offset = surfaceActive
+            ? this.playerRig.object3D.getWorldPosition(new THREE.Vector3())
+            : this.ship.position.clone();
+        if (!force && offset.lengthSq() < FLOAT_ORIGIN_THRESHOLD_SQ) return false;
+
+        if (surfaceActive) {
+            this._moveObjectWorldBy(this.playerRig.object3D, offset.clone().negate());
+            this.ship.object3D.position.sub(offset);
+        } else {
+            this.ship.object3D.position.set(0, 0, 0);
+        }
         // Rebase runs in the active level's frame only (dormant ancestors keep
         // their frozen frame so an ascent can restore the ship there).
         this.scaleStack.rebaseOrigin(offset);
         this.gravityField.setAttractors(this.environment.getAttractors());
+        return true;
+    }
+
+    _moveObjectWorldBy(object, delta) {
+        const world = object.getWorldPosition(new THREE.Vector3()).add(delta);
+        const parent = object.parent;
+        if (parent) {
+            parent.updateWorldMatrix(true, false);
+            object.position.copy(parent.worldToLocal(world));
+        } else {
+            object.position.copy(world);
+        }
     }
 
     // Called by the scale stack whenever the active level changes (descend /
@@ -805,6 +828,7 @@ export class App {
             ? `<span class="warn">${scale.transition.toUpperCase()}…</span>`
             : `<span class="on">${scale.levelName}</span>`;
         lines.push(`<b>SCALE</b> ${scaleLabel} (tier ${scale.tier})`);
+        lines.push(`<b>ANCHOR</b> ${this.playerController.getState() === PLAYER_STATE.SURFACE ? 'PLAYER' : 'SHIP'}`);
 
         // Planetary tier: surface altitude + landing readout.
         const landing = this.environment.getLandingState?.(this.ship.position);
@@ -820,6 +844,15 @@ export class App {
                 const tag = landing.canLand ? '' : ' (gas — no touchdown)';
                 lines.push(`<b>ALT</b> ${altText}${tag}`);
             }
+        }
+
+        const surfaceEva = this.playerController.getSurfaceEvaState?.() ?? null;
+        if (surfaceEva) {
+            const altitude = surfaceEva.altitude ?? 0;
+            const footAlt = Math.abs(altitude) >= 1000
+                ? `${(altitude / 1000).toFixed(2)} km`
+                : `${altitude.toFixed(2)} m`;
+            lines.push(`<b>ON FOOT</b> <span class="on">SURFACE EVA</span>   <b>FEET</b> ${footAlt}`);
         }
 
         this.telemetryNode.innerHTML = lines.join('\n');
@@ -1016,6 +1049,17 @@ export class App {
                 return;
             }
 
+            // Phase 5: direct testing shortcut for inside <-> outside EVA.
+            if (event.code === 'KeyT') {
+                event.preventDefault();
+                if (!event.repeat && this.cameraMode === 'player') {
+                    this.playerController.teleportEvaToggle?.();
+                    this.playerController.updateCamera(this.camera);
+                    this._syncDebugDomState();
+                }
+                return;
+            }
+
             // Z toggles inertial dampeners (a flight assist). Movement keys fall
             // through to input.keys below so locomotion / ShipControls can read them.
             if (event.code === 'KeyZ') {
@@ -1133,6 +1177,10 @@ export class App {
         this.locomotion.setConfig({
             walkSpeed: this.postFxConfig.vrComfort?.walkSpeed ?? 3.2,
             runSpeed: Math.max((this.postFxConfig.vrComfort?.walkSpeed ?? 3.2) * 1.85, 1.4)
+        });
+        this.playerController.surfaceLocomotion?.setConfig?.({
+            walkSpeed: this.postFxConfig.vrComfort?.walkSpeed ?? 3.2,
+            runSpeed: Math.max((this.postFxConfig.vrComfort?.walkSpeed ?? 3.2) * 1.7, 1.4)
         });
         this.playerController.setComfortMode(this.displayMode === 'vr');
 
@@ -1323,6 +1371,37 @@ export class App {
             // Jump the ship to a given altitude over the sub-ship point for fast
             // LOD / precision verification on a quadtree planet.
             teleportAltitude: (metres) => this._teleportShipAltitude(metres),
+            teleportLatLon: (lat, lon, metres = 1000) =>
+                this.environment.teleportShipLatLon?.(this.ship, lat, lon, metres) ?? null,
+            findLandingSite: (kind = 'plain') =>
+                this.environment.findLandingSite?.(kind) ?? null,
+            teleportLandingSite: (kind = 'plain', metres = 1000) =>
+                this.environment.teleportLandingSite?.(this.ship, kind, metres) ?? null,
+            disembark: (options = {}) => {
+                const result = this.playerController.disembark?.(options) ?? false;
+                this.playerController.updateCamera(this.camera);
+                this._syncDebugDomState();
+                return result ? this.playerController.getDebugState() : false;
+            },
+            boardShip: () => {
+                const result = this.playerController.boardShip?.() ?? false;
+                this.playerController.updateCamera(this.camera);
+                this._syncDebugDomState();
+                return result ? this.playerController.getDebugState() : false;
+            },
+            teleportEvaToggle: () => {
+                const action = this.playerController.teleportEvaToggle?.() ?? false;
+                this.playerController.updateCamera(this.camera);
+                this._syncDebugDomState();
+                return { action, player: this.playerController.getDebugState() };
+            },
+            getSurfaceEvaState: () => this.playerController.getSurfaceEvaState?.() ?? null,
+            forceRebaseActiveAnchor: () => {
+                const rebased = this._maybeRebaseOrigin({ force: true });
+                this.playerController.updateCamera(this.camera);
+                this._syncDebugDomState();
+                return { rebased, anchor: this._getActiveAnchorState() };
+            },
             applyUniversePreset: (name) => this.applyUniversePreset(name),
             regenerateUniverse: () => this.regenerateUniverse(),
             getAudioState: () => this.audio.getDebugState({
@@ -1396,8 +1475,6 @@ export class App {
                 this._syncDebugDomState();
                 return this.shipControls.dampeners;
             },
-            // Apply a synthetic command for N seconds without a keyboard (used by
-            // automated checks): fly a leg, sample the resulting trajectory.
             sendShipCommand: (command, seconds = 1, step = 1 / 60) => {
                 const samples = [];
                 let elapsed = 0;
@@ -1504,6 +1581,10 @@ export class App {
             }
         };
 
+        // Short console alias — same object, easier to type during manual testing.
+        // Use __deepSpaceDebug or __deepSpaceApp for the full surfaces.
+        window.deepSpace = window.__deepSpaceDebug;
+
         this._syncDebugDomState();
     }
 
@@ -1552,6 +1633,8 @@ export class App {
             // Mirror the true-radius quadtree planet's live state (tile count, max
             // LOD, altitude, centre magnitude) for headless §4 precision checks.
             planet: this.environment?.getPlanetState?.(this.ship.position) ?? null,
+            activeAnchor: this._getActiveAnchorState(),
+            player: this.playerController.getDebugState?.() ?? null,
             pilotActive: this.shipControls.pilotActive,
             dampeners: this.shipControls.dampeners,
             hyperdriveEngaged: this.shipControls.hyperdriveEngaged,
@@ -1585,6 +1668,18 @@ export class App {
         }
 
         node.textContent = JSON.stringify(state);
+    }
+
+    _getActiveAnchorState() {
+        const surfaceActive = this.playerController.getState() === PLAYER_STATE.SURFACE;
+        const position = surfaceActive
+            ? this.playerRig.object3D.getWorldPosition(new THREE.Vector3())
+            : this.ship.position.clone();
+        return {
+            kind: surfaceActive ? 'player' : 'ship',
+            position: position.toArray(),
+            distanceFromOrigin: position.length()
+        };
     }
 }
 

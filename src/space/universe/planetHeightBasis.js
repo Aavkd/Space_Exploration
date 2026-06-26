@@ -15,14 +15,26 @@ import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 // what you touch — no raycasting the mesh.
 export class PlanetHeightBasis {
     // `seed` is the planet seed; `radius` is the true radius the coarse shape is
-    // re-expressed at. relief/seaLevel/baseFreq match the hero-sphere defaults so
-    // the silhouette is unchanged when a world is rebuilt at true scale.
-    constructor({ seed, radius, relief = 0.018, seaLevel = 0.5, baseFreq = 2.2 }) {
+    // re-expressed at. reliefMetres keeps true-radius mountains in real-world
+    // metre ranges; seaLevel/baseFreq preserve the deterministic land layout.
+    constructor({
+        seed,
+        radius,
+        relief = 0.018,
+        reliefMetres = null,
+        seaLevel = 0.5,
+        baseFreq = 2.2,
+        detailAmplitude = 0,
+        detailFreq = 180
+    }) {
         this.seed = seed;
         this.radius = radius;
-        this.relief = relief;
+        this.reliefMetres = Number.isFinite(reliefMetres) ? reliefMetres : radius * relief;
+        this.relief = this.reliefMetres / Math.max(radius, 1);
         this.seaLevel = seaLevel;
         this.baseFreq = baseFreq;
+        this.detailAmplitude = detailAmplitude;
+        this.detailFreq = detailFreq;
 
         // Identical derivation to PlanetaryContents (`'terrain'` sub-seed + an
         // offset drawn from the `'planetary'` rng stream) so a given planet seed
@@ -48,12 +60,23 @@ export class PlanetHeightBasis {
     }
 
     // World radius of the solid surface in unit direction `dir` from the planet
-    // centre, at true radius. The quadtree adds higher-frequency octaves only on
-    // near (deep-LOD) tiles on top of this coarse term; distant tiles use this
-    // alone, so the orbital silhouette is stable (§3.2).
+    // centre, at true radius. The coarse relief is metre-based; fine detail sits
+    // on top only over land so oceans remain flat and collision matches render.
     surfaceRadiusAt(dir) {
         const { land } = this.landAt(dir);
-        return this.radius * (1 + this.relief * land);
+        const coarse = this.radius + this.reliefMetres * land;
+        if (this.detailAmplitude <= 0 || land <= 0) return coarse;
+        return coarse + this.detailAt(dir) * this.detailAmplitude * Math.min(1, land * 1.35);
+    }
+
+    detailAt(dir) {
+        if (this.detailAmplitude <= 0) return 0;
+        const n = this._fbm(
+            dir.x * this.detailFreq + this._noiseOffset.z * 1.7,
+            dir.y * this.detailFreq + this._noiseOffset.x * 1.7,
+            dir.z * this.detailFreq + this._noiseOffset.y * 1.7
+        );
+        return (n - 0.5) * 2;
     }
 
     // Deterministic value-noise fbm (CPU-only), identical to

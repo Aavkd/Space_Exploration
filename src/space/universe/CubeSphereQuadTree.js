@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { TileStreamer } from './TileStreamer.js';
 
 // Continuous-LOD cube-sphere quadtree (docs/surface-eva-tier.md §3.1, §3.3).
 //
@@ -15,12 +16,14 @@ import * as THREE from 'three';
 // origin. This class only deals in planet-LOCAL float64 coordinates (centred at
 // the planet centre); it never sees the scene frame or the camera world pose.
 //
-// This slice generates tile geometry SYNCHRONOUSLY (cheap for a 17×17 grid).
-// Time-sliced async streaming + a bounded LRU cache are the next phase (§5, §14);
-// the determinism here (tiles are pure functions of face/lod/coords over the
-// shared height basis) is what makes that drop-in later.
+// Tile geometry generation now runs through TileStreamer under a per-frame ms
+// budget. Inactive meshes live in an LRU cache, and parents stay visible until
+// every replacement child is ready. Determinism comes from stable face/depth/x/y
+// tile keys over the shared height basis.
 
 const EPS = 1e-4; // finite-difference step in (u,v) for analytic-ish normals
+const MIN_SKIRT_DEPTH = 2;
+const MAX_SKIRT_DEPTH = 120;
 
 // Cube faces: forward = outward face normal, (right, up) span the face. A face
 // point (u,v) ∈ [-1,1]² maps to the cube point forward + u·right + v·up, then is
@@ -35,10 +38,13 @@ const FACES = [
 ];
 
 class QuadNode {
-    constructor(faceIndex, u0, u1, v0, v1, depth) {
+    constructor(faceIndex, u0, u1, v0, v1, depth, x = 0, y = 0) {
         this.faceIndex = faceIndex;
         this.u0 = u0; this.u1 = u1; this.v0 = v0; this.v1 = v1;
         this.depth = depth;
+        this.x = x;
+        this.y = y;
+        this.key = `${faceIndex}:${depth}:${x}:${y}`;
         this.children = null;
         this.mesh = null;
         // Planet-local position of the tile's centre on the base sphere — the
@@ -49,7 +55,17 @@ class QuadNode {
 }
 
 export class CubeSphereQuadTree {
-    constructor({ basis, palette, material, tileRes, errorThreshold, maxDepth, skirtFraction }) {
+    constructor({
+        basis,
+        palette,
+        material,
+        tileRes,
+        errorThreshold,
+        maxDepth,
+        skirtFraction,
+        streamingBudgetMs = 2.0,
+        cacheTiles = 384
+    }) {
         this.basis = basis;
         this.radius = basis.radius;
         this.palette = palette;
@@ -67,11 +83,15 @@ export class CubeSphereQuadTree {
         this.group.frustumCulled = false;
 
         this.roots = FACES.map((_, i) => new QuadNode(i, -1, 1, -1, 1, 0));
+        this.streamer = new TileStreamer({
+            group: this.group,
+            budgetMs: streamingBudgetMs,
+            maxCachedTiles: cacheTiles
+        });
 
         // Leaf tiles to render this frame, refreshed by update(). Each entry is a
         // QuadNode with a built mesh and a planet-local `origin`.
         this.leaves = [];
-        this._builtCount = 0;
 
         // Scratch reused across the (many) per-vertex samples.
         this._sa = new THREE.Vector3();
@@ -80,11 +100,19 @@ export class CubeSphereQuadTree {
         this._sd = new THREE.Vector3();
         this._tu = new THREE.Vector3();
         this._tv = new THREE.Vector3();
+
+        for (const root of this.roots) {
+            const { edgeMetres } = this._metrics(root, ZERO);
+            root.edgeMetres = edgeMetres;
+            const mesh = this.streamer.buildNow(root, () => this._buildTile(root));
+            mesh.frustumCulled = false;
+        }
     }
 
     // Walk the tree from the camera's PLANET-LOCAL position, subdividing/merging
     // by screen-space error, and refresh `this.leaves` with the visible tiles.
     update(cameraLocal) {
+        this.streamer.processBudget();
         this.leaves.length = 0;
         for (const root of this.roots) this._updateNode(root, cameraLocal);
         return this.leaves.length;
@@ -98,25 +126,41 @@ export class CubeSphereQuadTree {
 
         if (canSplit && closeness > this.errorThreshold) {
             if (!node.children) this._split(node);
-            this._hideMesh(node);
-            for (const child of node.children) this._updateNode(child, cameraLocal);
+            if (this._childrenReady(node, cameraLocal)) {
+                this._releaseMesh(node);
+                for (const child of node.children) this._updateNode(child, cameraLocal);
+                return;
+            }
+            this._hideChildren(node);
+            this._showNode(node, cameraLocal);
             return;
         }
 
         // Hysteresis band: already subdivided and not yet clearly out of range —
         // keep the children rather than merging, so we don't pop on the boundary.
         if (node.children && closeness > this.mergeThreshold) {
-            this._hideMesh(node);
-            for (const child of node.children) this._updateNode(child, cameraLocal);
+            if (this._childrenReady(node, cameraLocal)) {
+                this._releaseMesh(node);
+                for (const child of node.children) this._updateNode(child, cameraLocal);
+                return;
+            }
+            this._hideChildren(node);
+            this._showNode(node, cameraLocal);
             return;
         }
 
         // Leaf: collapse any children that dropped below the merge threshold, then
         // render this node.
-        if (node.children) this._collapse(node);
-        this._ensureMesh(node);
-        node.mesh.visible = true;
-        this.leaves.push(node);
+        if (node.children) {
+            if (this._ensureMesh(node, this._priority(node, cameraLocal))) {
+                this._collapse(node);
+                this._showNode(node, cameraLocal);
+                return;
+            }
+            for (const child of node.children) this._updateNode(child, cameraLocal);
+            return;
+        }
+        this._showNode(node, cameraLocal);
     }
 
     // On-sphere edge length of the tile, and the camera's distance to its nearest
@@ -147,17 +191,18 @@ export class CubeSphereQuadTree {
         const vm = (node.v0 + node.v1) * 0.5;
         const d = node.depth + 1;
         node.children = [
-            new QuadNode(node.faceIndex, node.u0, um, node.v0, vm, d),
-            new QuadNode(node.faceIndex, um, node.u1, node.v0, vm, d),
-            new QuadNode(node.faceIndex, node.u0, um, vm, node.v1, d),
-            new QuadNode(node.faceIndex, um, node.u1, vm, node.v1, d)
+            new QuadNode(node.faceIndex, node.u0, um, node.v0, vm, d, node.x * 2, node.y * 2),
+            new QuadNode(node.faceIndex, um, node.u1, node.v0, vm, d, node.x * 2 + 1, node.y * 2),
+            new QuadNode(node.faceIndex, node.u0, um, vm, node.v1, d, node.x * 2, node.y * 2 + 1),
+            new QuadNode(node.faceIndex, um, node.u1, vm, node.v1, d, node.x * 2 + 1, node.y * 2 + 1)
         ];
     }
 
     _collapse(node) {
         for (const child of node.children) {
             if (child.children) this._collapse(child);
-            this._disposeMesh(child);
+            this._releaseMesh(child);
+            this.streamer.cancel(child.key);
         }
         node.children = null;
     }
@@ -166,19 +211,39 @@ export class CubeSphereQuadTree {
         if (node.mesh) node.mesh.visible = false;
     }
 
-    _ensureMesh(node) {
-        if (node.mesh) return;
-        node.mesh = this._buildTile(node);
-        node.mesh.frustumCulled = false; // placement is camera-relative each frame
-        this.group.add(node.mesh);
-        this._builtCount++;
+    _hideChildren(node) {
+        if (!node.children) return;
+        for (const child of node.children) {
+            this._hideMesh(child);
+            this._hideChildren(child);
+        }
     }
 
-    _disposeMesh(node) {
-        if (!node.mesh) return;
-        this.group.remove(node.mesh);
-        node.mesh.geometry.dispose();
-        node.mesh = null;
+    _ensureMesh(node, priority = 0) {
+        return this.streamer.acquire(node, () => {
+            const mesh = this._buildTile(node);
+            mesh.frustumCulled = false; // placement is camera-relative each frame
+            return mesh;
+        }, priority);
+    }
+
+    _childrenReady(node, cameraLocal) {
+        let ready = true;
+        for (const child of node.children) {
+            if (!this._ensureMesh(child, this._priority(child, cameraLocal))) ready = false;
+        }
+        return ready;
+    }
+
+    _showNode(node, cameraLocal) {
+        if (!this._ensureMesh(node, this._priority(node, cameraLocal))) return false;
+        node.mesh.visible = true;
+        this.leaves.push(node);
+        return true;
+    }
+
+    _releaseMesh(node) {
+        this.streamer.release(node);
     }
 
     // Build a tile's geometry with vertices stored RELATIVE TO the tile centre on
@@ -212,7 +277,12 @@ export class CubeSphereQuadTree {
         const pos = new THREE.Vector3();
         const nrm = new THREE.Vector3();
         const color = new THREE.Color();
-        const skirtDepth = Math.max(node.edgeMetres * this.skirtFraction, this.radius * 1e-5);
+        const edgeMetres = node.edgeMetres || (this.radius * Math.PI * 0.5 / Math.max(1, 2 ** node.depth));
+        const skirtDepth = THREE.MathUtils.clamp(
+            edgeMetres * this.skirtFraction,
+            MIN_SKIRT_DEPTH,
+            MAX_SKIRT_DEPTH
+        );
 
         const writeVertex = (index, p, n, col) => {
             positions[index * 3] = p.x; positions[index * 3 + 1] = p.y; positions[index * 3 + 2] = p.z;
@@ -242,7 +312,7 @@ export class CubeSphereQuadTree {
                 const b = a + 1;
                 const c = a + gridN;
                 const d = c + 1;
-                indices.push(a, c, b, b, c, d);
+                indices.push(a, b, c, b, d, c);
             }
         }
 
@@ -291,7 +361,7 @@ export class CubeSphereQuadTree {
         geometry.setIndex(indices);
 
         const mesh = new THREE.Mesh(geometry, this.material);
-        mesh.name = `Tile:${node.faceIndex}:${node.depth}`;
+        mesh.name = `Tile:${node.key}`;
         return mesh;
     }
 
@@ -333,6 +403,8 @@ export class CubeSphereQuadTree {
             color.set(this.palette[0]).multiplyScalar(0.55 + n * 0.6);
         } else {
             color.set(this.palette[1]).lerp(TMP_HIGH.set(this.palette[2]), THREE.MathUtils.smoothstep(land, 0.45, 1));
+            const detail = this.basis.detailAt?.(dir) ?? 0;
+            color.multiplyScalar(0.94 + detail * 0.08);
         }
         const lat = Math.abs(dir.y);
         const icing = THREE.MathUtils.smoothstep(lat, 0.78, 0.95) + (land > 0.82 ? 0.6 : 0);
@@ -341,7 +413,10 @@ export class CubeSphereQuadTree {
     }
 
     getStats() {
-        return { leafCount: this.leaves.length, builtCount: this._builtCount };
+        return {
+            leafCount: this.leaves.length,
+            ...this.streamer.getStats()
+        };
     }
 
     dispose() {
@@ -349,9 +424,24 @@ export class CubeSphereQuadTree {
             if (root.children) this._collapse(root);
             this._disposeMesh(root);
         }
+        this.streamer.dispose();
         this.group.clear();
+    }
+
+    _disposeMesh(node) {
+        if (!node.mesh) return;
+        this.group.remove(node.mesh);
+        node.mesh.geometry.dispose();
+        node.mesh = null;
+    }
+
+    _priority(node, cameraLocal) {
+        const { edgeMetres, dist } = this._metrics(node, cameraLocal);
+        node.edgeMetres = edgeMetres;
+        return node.depth * 1000 + edgeMetres / Math.max(dist, 1);
     }
 }
 
 const TMP_HIGH = new THREE.Color();
 const TMP_ICE = new THREE.Color('#dcecff');
+const ZERO = new THREE.Vector3();

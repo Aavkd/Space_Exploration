@@ -331,7 +331,7 @@ Agreed order (per the design discussion):
    parent-bake end to end. **Done** — shipped as `ScaleStack` (§14).
 3. **Done — add the System tier** and wire in Part 9 bodies (stars/planets at real radius).
 4. **Done — add the Planetary / Orbit tier** (Tier 3): descend from a System into any planet; heroic-radius sphere with curved horizon, procedural heightfield terrain (terrestrial) or cloud-deck (gas); gravity lands the ship on the surface; approach-direction spawn/exit preserved.
-5. **Specced — planet surface: streaming flight + EVA.** Decisions locked in [surface-eva-tier.md](surface-eva-tier.md). **Note:** for landable terrestrial worlds this *replaces* the hero-sphere Planetary content (Tier 3) with a **continuous-LOD quadtree planet at true radius** — you fly seamlessly from orbit to surface (LOD resolving = the transition, **no veil**), terrain **streams under the ground-track** so you can fly anywhere over the planet, and EVA becomes an **on-foot control mode** rather than a stack descent. Gas giants keep the hero-sphere cloud deck. Requires true-radius precision (camera-relative tiles) + now-mandatory async generation — see that doc.
+5. **In progress — planet surface: streaming flight + EVA.** Spec at [surface-eva-tier.md](surface-eva-tier.md). **§12 phases 1–5 shipped; phases 1–2 browser-verified; phase 4 scripted browser smoke-verified:** true-radius quadtree planet (`QuadPlanetContents` / `CubeSphereQuadTree` / `PlanetHeightBasis`) with camera-relative precision + dynamic LOD + skirts, async tile streaming + LRU cache, ship collision/resting on the quadtree height field, and on-foot surface EVA (`SurfaceLocomotion`, rig reparent, player-anchor rebase, `T` EVA test toggle). Confirmed in-browser at R = 9,126,466 m. **Remaining phase:** polish/geomorph (phase 6). Gas giants keep the hero-sphere cloud deck.
 5. Layer the visual roadmap parts in as level contents/backdrops.
 
 Prove the **transition handoff on two tiers** before adding more — it is the
@@ -358,17 +358,22 @@ To lock down before implementation:
 
 ## 14 — Implementation Status
 
-> **Current update:** the Planetary / Orbit tier (Tier 3) is now live on top of
-> the Universe ↔ Galaxy ↔ System foundation. Approach any planet in a System at
-> PRECISION speed to descend into its own level, where it is rebuilt at a heroic
-> curved-horizon radius. Terrestrial worlds have a procedural heightfield surface
-> the ship can land on; gas giants are orbit-only (cloud deck, no touchdown).
-> Entry spawns the ship on the same side it approached from; exit re-emerges in
-> the System on the same side the ship flew away toward. The Surface / EVA tier
-> (Tier 4 — walk / EVA at 1 m scale) remains the next additive step.
+> **Current update:** the **true-radius quadtree planet (§12 phases 1–5) is
+> shipped; phases 1–2 are browser-verified; phase 4 has a scripted browser smoke
+> pass.** Landable terrestrial worlds route to
+> `QuadPlanetContents` — cube-sphere quadtree at true radius (R ≈ 3–9.5 × 10⁶ m),
+> camera-relative tile origins, float64 authoritative state, log depth, dynamic
+> LOD, skirts, async tile streaming, and `heightAt`-sampled ship contact/landing.
+> Confirmed in-browser: R = 9,126,466 m, ALT 1577.8 km, gravity
+> 5.81 m/s², SECTOR telemetry "terrestrial world (true radius)", no float swim.
+> Tile faceting visible at high-altitude coarse LOD — expected; geomorph is §12
+> phase 6 polish. Jitter isolation: camera-relative static error ≤ 3 µm at 2 m
+> altitude vs 185 mm naive absolute.
 
-> **Previously shipped:** Universe ↔ Galaxy (§12 step 2), then the System tier
-> and roadmap Part 9 vertical slice (§12 step 3).
+> **Previously shipped:** Universe ↔ Galaxy (§12 step 2) → System tier (§12
+> step 3) → Planetary / Orbit tier (§12 step 4): hero-radius planet, procedural
+> heightfield, gravity/landing, approach-direction spawn/exit. Gas giants are
+> orbit-only throughout.
 
 ### What's built
 
@@ -383,11 +388,16 @@ To lock down before implementation:
 | Star anchors | `src/space/universe/StarField.js` | Every non-background local star (`near` + `mid`) becomes a System descent anchor; camera-locked background stars remain backdrop only. |
 | POI / navigation balance | `src/space/Universe.js` | Nearest star systems appear in POIs, but stars are capped so nearby structures remain visible. |
 | App integration | `src/app/App.js` | `this.environment` follows the active level; rebase/gravity/nav routed through it; `SCALE` telemetry line; debug hooks. |
-| Planetary content provider | `src/space/universe/PlanetaryContents.js` | Tier 3 level: heroic-radius planet, procedural heightfield (terrestrial) or gas cloud deck, atmosphere, moons, rings, sun disc, backdrop, `collideShip` / `getLandingState`, `gravityReach`. |
+| Planetary content provider | `src/space/universe/PlanetaryContents.js` | Tier 3 level: heroic-radius planet, procedural heightfield (terrestrial) or gas cloud deck, atmosphere, moons, rings, sun disc, backdrop, `collideShip` / `getLandingState`, `gravityReach`. Retained for gas giants. |
 | Planet descent descriptor | `src/space/universe/PlanetBody.js` | `getDescentDescriptor(parentSeed)` — carries kind, palette, rings, systemRadius, landable flag, and childSeed so the Planetary level matches the impostor. |
 | System → planet candidates | `src/space/universe/SystemContents.js` | `getDescentCandidates` returns planet entry shells; entry radius derived from in-system planet radius. |
 | `planetHeroRadius` | `src/config/scaleTiers.js` | Maps in-system planet radius to heroic Planetary-level radius; drives both the mesh and the collision query. |
 | Approach-direction handoff | `src/space/scale/ScaleStack.js` | `approachDir` captured at descent; used by `createPlanetaryLevel` for entry spawn. Ascent re-emerges along the exit direction (ship offset from level centre). |
+| True-radius planet height basis | `src/space/universe/planetHeightBasis.js` | `PlanetHeightBasis`: shared coarse height function (identical `_fbm`/`_noiseSeed`/`_noiseOffset` derivation as `PlanetaryContents`) re-expressed at true radius — single source of truth so orbit shape == surface shape. |
+| True-radius cube-sphere quadtree | `src/space/universe/CubeSphereQuadTree.js` | 6-face quadtree: distance-driven subdivide/merge each frame, camera-relative tile vertex storage (precision §4), skirts to hide LOD cracks, biome vertex colours, ShaderMaterial with logdepthbuf. |
+| True-radius planet provider | `src/space/universe/QuadPlanetContents.js` | `QuadPlanetContents`: Universe-compatible provider for landable terrestrial worlds at true radius (R ≈ 3–9.5 × 10⁶ m). Camera-relative tile origins + float64 `_centerScene` + log depth (§4), radial gravity, `heightAt` terrain collision, `LANDED`/`ALT` landing state, and debug landing-site helpers. `runJitterTest()` — numerical precision validation. |
+| `planetTrueRadius`, `USE_QUAD_PLANET`, `QUAD_PLANET` | `src/config/scaleTiers.js` | True-radius formula, feature flag, and quadtree LOD config (tile res, error threshold, skirt fraction, max depth). |
+| Quad-planet level factory | `src/space/scale/Level.js` | `createQuadPlanetLevel()` — true-radius entry shells (region = R×1.8, exit = R×1.55, spawn = R×1.18). `createPlanetaryLevel` dispatches landable-terrestrial → quad, gas → hero. |
 
 ### How each §-mechanic landed
 
@@ -447,16 +457,7 @@ To lock down before implementation:
 
 ### Still deferred / known risks
 
-- **Planet surface — streaming flight + EVA** — **Decisions locked; build spec at
-  [surface-eva-tier.md](surface-eva-tier.md).** For landable terrestrial worlds the
-  hero-sphere Planetary content is **replaced** by a **continuous-LOD quadtree planet
-  at true radius**: fly seamlessly orbit→surface (no veil — LOD *is* the transition),
-  terrain streams under the ship's ground-track so you can fly the whole planet at low
-  altitude, then walk on it at true 1 m scale (EVA as an on-foot control mode). The
-  shared height basis (`surfaceRadiusAt`, `_fbm`/`_noiseSeed`/`_noiseOffset`) becomes
-  the quadtree's coarse term so orbit shape == surface shape. Gas giants keep the
-  hero sphere (cloud deck, orbit-only). Pulls true-radius precision (camera-relative
-  tiles) and async tile streaming (§10) into scope.
+- **Planet surface polish** — §12 phase 6 remains: geomorph/determinism polish, atmosphere/biome tuning, and instanced surface detail.
 - **System depth/content** — stars and planets exist, but belts, moons, comets,
   and richer system ecology are still future work (planet descent is now live).
 - **True backdrop bake / IBL** (§7) — currently just hides the parent group.

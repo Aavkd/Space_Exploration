@@ -35,14 +35,22 @@ import { CubeSphereQuadTree } from './CubeSphereQuadTree.js';
 // the real float32 placement math under camera-relative vs naive-absolute
 // schemes and reports the residual error in metres.
 //
-// DEFERRED to later phases (§5, §8, §14): dynamic streaming queue + LRU cache
-// (this slice generates tiles synchronously), fine-octave surface detail,
-// atmosphere/biome polish, ship landing tuning, and on-foot EVA. The coarse
-// height term and the precision pass built here are the seam those build on.
+// DEFERRED to later phases (§8, §14): fine-octave surface detail,
+// atmosphere/biome polish, and on-foot EVA. The coarse height term, precision
+// pass, async tile streamer, and ship-vs-terrain contact are the foundation
+// those build on.
 
-const SHIP_CLEARANCE = 20;     // rest the hull slightly above the ground
+const FALLBACK_SHIP_CLEARANCE = 2.8; // origin-to-landing-footprint fallback
 const LANDED_SPEED = 12;       // |v| below which contact reads as "landed"
 const GROUND_FRICTION = 2.4;   // tangential damping while touching down (per second)
+const LANDING_EPSILON = 0.25;  // telemetry tolerance around the hull clearance
+const NORMAL_SAMPLE_METRES = 80;
+const TOUCHDOWN_ALIGN_RATE = 7.5;
+const UP = new THREE.Vector3(0, 1, 0);
+const RIGHT = new THREE.Vector3(1, 0, 0);
+const LOCAL_FORWARD = new THREE.Vector3(0, 0, -1);
+const LOCAL_RIGHT = new THREE.Vector3(1, 0, 0);
+const SHIP_CLEARANCE_EXPORT = FALLBACK_SHIP_CLEARANCE;
 
 const froundV = (v) => new THREE.Vector3(Math.fround(v.x), Math.fround(v.y), Math.fround(v.z));
 // float32 add of two vectors (operands rounded, sum rounded) — mimics the GPU.
@@ -88,9 +96,11 @@ export class QuadPlanetContents {
         this.basis = new PlanetHeightBasis({
             seed,
             radius: this.radius,
-            relief: QUAD_PLANET.relief,
+            reliefMetres: QUAD_PLANET.reliefMetres,
             seaLevel: QUAD_PLANET.seaLevel,
-            baseFreq: QUAD_PLANET.baseFreq
+            baseFreq: QUAD_PLANET.baseFreq,
+            detailAmplitude: QUAD_PLANET.detailAmplitude,
+            detailFreq: QUAD_PLANET.detailFreq
         });
 
         this._material = this._createTileMaterial();
@@ -101,7 +111,9 @@ export class QuadPlanetContents {
             tileRes: QUAD_PLANET.tileRes,
             errorThreshold: QUAD_PLANET.errorThreshold,
             maxDepth: QUAD_PLANET.maxDepth,
-            skirtFraction: QUAD_PLANET.skirtFraction
+            skirtFraction: QUAD_PLANET.skirtFraction,
+            streamingBudgetMs: QUAD_PLANET.streamingBudgetMs,
+            cacheTiles: QUAD_PLANET.cacheTiles
         });
         this.group.add(this.quadtree.group);
 
@@ -111,9 +123,24 @@ export class QuadPlanetContents {
         this._dir = new THREE.Vector3();
         this._d = new THREE.Vector3();
         this._tan = new THREE.Vector3();
+        this._normal = new THREE.Vector3();
+        this._u = new THREE.Vector3();
+        this._v = new THREE.Vector3();
+        this._forward = new THREE.Vector3();
+        this._right = new THREE.Vector3();
+        this._back = new THREE.Vector3();
+        this._basis = new THREE.Matrix4();
+        this._targetQuat = new THREE.Quaternion();
+        this._pa = new THREE.Vector3();
+        this._pb = new THREE.Vector3();
+        this._pc = new THREE.Vector3();
+        this._pd = new THREE.Vector3();
 
         this._time = 0;
         this._lastAltitude = Infinity;
+        this._lastClearance = Infinity;
+        this._lastShipClearance = FALLBACK_SHIP_CLEARANCE;
+        this._contactSpeed = Infinity;
         this._contact = false;
         this._lastLeafCount = 0;
         this._lastMaxDepth = 0;
@@ -139,6 +166,34 @@ export class QuadPlanetContents {
     // what you touch.
     heightAt(dir) {
         return this.basis.surfaceRadiusAt(dir);
+    }
+
+    get shipClearance() {
+        return SHIP_CLEARANCE_EXPORT;
+    }
+
+    getSurfaceSample(position, target = null) {
+        const out = target ?? {};
+        const toPoint = this._d.copy(position).sub(this._centerScene);
+        if (toPoint.lengthSq() < 1e-8) toPoint.set(0.42, 0.55, 0.72);
+        const dist = toPoint.length();
+        const dir = (out.direction ??= new THREE.Vector3()).copy(toPoint).multiplyScalar(1 / dist);
+        const surfaceR = this.heightAt(dir);
+        const point = (out.point ??= new THREE.Vector3()).copy(this._centerScene).addScaledVector(dir, surfaceR);
+        const normal = (out.normal ??= new THREE.Vector3());
+        this._surfaceNormalAt(dir, normal);
+        const up = (out.up ??= new THREE.Vector3()).copy(dir);
+        out.altitude = dist - surfaceR;
+        out.radius = surfaceR;
+        out.slopeDeg = THREE.MathUtils.radToDeg(
+            Math.acos(THREE.MathUtils.clamp(normal.dot(up), -1, 1))
+        );
+        return out;
+    }
+
+    projectToSurface(position, clearance = 0, target = new THREE.Vector3()) {
+        const sample = this.getSurfaceSample(position);
+        return target.copy(this._centerScene).addScaledVector(sample.direction, sample.radius + clearance);
     }
 
     update(shipPosition, dt, cameraPosition) {
@@ -179,43 +234,66 @@ export class QuadPlanetContents {
         if (dist < 1e-3) return;
 
         const dir = this._dir.copy(toShip).multiplyScalar(1 / dist);
-        const surfaceR = this.heightAt(dir) + SHIP_CLEARANCE;
+        const surfaceR = this.heightAt(dir);
+        const shipClearance = this._shipClearance(ship);
+        const contactR = surfaceR + shipClearance;
         this._lastAltitude = dist - surfaceR;
+        this._lastClearance = dist - contactR;
 
-        if (this._lastAltitude >= 0) {
+        if (this._lastClearance >= 0) {
             this._contact = false;
+            this._contactSpeed = Infinity;
             return;
         }
 
-        ship.position.copy(this._centerScene).addScaledVector(dir, surfaceR);
+        ship.position.copy(this._centerScene).addScaledVector(dir, contactR);
+        this._lastAltitude = shipClearance;
+        this._lastClearance = 0;
 
         const vel = ship.velocity;
         const radial = vel.dot(dir);
         if (radial < 0) vel.addScaledVector(dir, -radial); // zero the inward component
 
-        this._tan.copy(vel).addScaledVector(dir, -vel.dot(dir));
+        // The terrain is a radial height field, so the altitude constraint is
+        // radial. Also respect the local surface normal so a fast sideways skim
+        // into a mountain face sheds its into-ground component instead of
+        // tunnelling through the next frame.
+        const normal = this._surfaceNormalAt(dir, this._normal);
+        this._alignShipToSurface(ship, normal, dt);
+        const intoGround = vel.dot(normal);
+        if (intoGround < 0) vel.addScaledVector(normal, -intoGround);
+
+        this._tan.copy(vel).addScaledVector(normal, -vel.dot(normal));
         vel.addScaledVector(this._tan, -Math.min(1, dt * GROUND_FRICTION));
+        this._contactSpeed = vel.length();
         this._contact = true;
     }
 
     getLandingState(shipPosition = null) {
         let altitude = this._lastAltitude;
+        let clearance = this._lastClearance;
+        const shipClearance = this._lastShipClearance ?? FALLBACK_SHIP_CLEARANCE;
         if (shipPosition) {
             const toShip = this._d.copy(shipPosition).sub(this._centerScene);
             const dist = toShip.length();
             if (dist > 1e-3) {
                 const dir = this._dir.copy(toShip).multiplyScalar(1 / dist);
-                altitude = dist - (this.heightAt(dir) + SHIP_CLEARANCE);
+                const surfaceR = this.heightAt(dir);
+                altitude = dist - surfaceR;
+                clearance = altitude - shipClearance;
             }
         }
+        const settled = this._contact && this._contactSpeed <= LANDED_SPEED;
         return {
             tier: 'planetary',
             name: this.name,
             kind: this.kind,
             canLand: this.landable,
             altitude,
+            clearance,
             contact: this._contact,
-            landed: this.landable && this._contact && altitude < SHIP_CLEARANCE
+            contactSpeed: this._contactSpeed,
+            landed: this.landable && settled && clearance <= LANDING_EPSILON
         };
     }
 
@@ -282,7 +360,7 @@ export class QuadPlanetContents {
         this.runtimeConfig = { ...this.runtimeConfig, ...config };
         const lighting = config.lighting ?? {};
         this._material.uniforms.uSunColor.value.copy(this.sunColor);
-        this._material.uniforms.uAmbient.value = THREE.MathUtils.clamp(0.12 + (lighting.ambient ?? 0), 0.06, 0.4);
+        this._material.uniforms.uAmbient.value = THREE.MathUtils.clamp(0.22 + (lighting.ambient ?? 0), 0.16, 0.48);
     }
 
     setVisualGlow({ sceneGlow = 1, landmarkGlow = 1 } = {}) {
@@ -296,14 +374,93 @@ export class QuadPlanetContents {
     // Jump the ship to `metres` altitude above the surface under its current
     // bearing (or a default direction if it sits at the centre), zeroing velocity
     // — a fast way to validate LOD/precision at a chosen altitude (§13).
-    teleportShipAltitude(ship, metres = 1000) {
+    teleportShipAltitude(ship, metres = 1000, direction = null) {
         const toShip = this._d.copy(ship.position).sub(this._centerScene);
-        if (toShip.lengthSq() < 1e-6) toShip.set(0.42, 0.55, 0.72);
+        if (direction?.isVector3) {
+            toShip.copy(direction);
+        } else if (toShip.lengthSq() < 1e-6) {
+            toShip.set(0.42, 0.55, 0.72);
+        }
         const dir = toShip.normalize();
-        const target = this.heightAt(dir) + SHIP_CLEARANCE + Math.max(0, metres);
+        const shipClearance = this._shipClearance(ship);
+        const target = this.heightAt(dir) + shipClearance + Math.max(0, metres);
         ship.position.copy(this._centerScene).addScaledVector(dir, target);
         ship.velocity.set(0, 0, 0);
+        this._contact = false;
+        this._contactSpeed = Infinity;
+        this._lastAltitude = shipClearance + Math.max(0, metres);
+        this._lastClearance = Math.max(0, metres);
         return this.getPlanetState(ship.position);
+    }
+
+    teleportShipLatLon(ship, latDeg = 0, lonDeg = 0, metres = 1000) {
+        const lat = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(latDeg, -89.999, 89.999));
+        const lon = THREE.MathUtils.degToRad(lonDeg);
+        const cosLat = Math.cos(lat);
+        const dir = this._tmp.set(
+            cosLat * Math.cos(lon),
+            Math.sin(lat),
+            cosLat * Math.sin(lon)
+        ).normalize();
+        const planet = this.teleportShipAltitude(ship, metres, dir);
+        return {
+            landing: this.getLandingState(ship.position),
+            planet
+        };
+    }
+
+    teleportLandingSite(ship, kind = 'plain', metres = 1000) {
+        const site = this.findLandingSite(kind);
+        const planet = this.teleportShipAltitude(ship, metres, site.direction);
+        return {
+            site: { ...site, direction: site.direction.toArray() },
+            landing: this.getLandingState(ship.position),
+            planet
+        };
+    }
+
+    findLandingSite(kind = 'plain', samples = 2048) {
+        const wantMountain = kind === 'mountain' || kind === 'mountainside';
+        let best = null;
+        let bestScore = -Infinity;
+        const golden = Math.PI * (3 - Math.sqrt(5));
+
+        for (let i = 0; i < samples; i++) {
+            const y = 1 - (2 * (i + 0.5)) / samples;
+            const r = Math.sqrt(Math.max(0, 1 - y * y));
+            const theta = i * golden;
+            const dir = this._tmp.set(Math.cos(theta) * r, y, Math.sin(theta) * r).normalize();
+            const { land } = this.basis.landAt(dir);
+            const surfaceR = this.heightAt(dir);
+            const slopeDeg = this._slopeDegrees(dir);
+            const elevation = surfaceR - this.radius;
+            const lat = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)));
+            const lon = THREE.MathUtils.radToDeg(Math.atan2(dir.z, dir.x));
+
+            let score;
+            if (wantMountain) {
+                score = land * 3 + slopeDeg * 0.16 + elevation / Math.max(this.basis.reliefMetres, 1);
+                if (land < 0.35) score -= 5;
+            } else {
+                score = -slopeDeg * 0.35 - Math.abs(land - 0.16) * 2 + (land > 0.02 ? 0.7 : -1.5);
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = {
+                    kind: wantMountain ? 'mountain' : 'plain',
+                    direction: dir.clone(),
+                    lat,
+                    lon,
+                    land,
+                    elevation,
+                    slopeDeg,
+                    surfaceRadius: surfaceR
+                };
+            }
+        }
+
+        return best;
     }
 
     // --- §13 debug / telemetry surface --------------------------------------
@@ -316,16 +473,77 @@ export class QuadPlanetContents {
         const dir = this._dir.copy(toShip).multiplyScalar(dist > 1e-6 ? 1 / dist : 0);
         const lat = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)));
         const lon = THREE.MathUtils.radToDeg(Math.atan2(dir.z, dir.x));
+        const tileStats = this.quadtree.getStats();
         return {
             radiusTrue: this.radius,
             centreMagnitude: this._centerScene.length(),
             altitude: dist - this.heightAt(dir),
+            clearance: dist - this.heightAt(dir) - (this._lastShipClearance ?? FALLBACK_SHIP_CLEARANCE),
             subShipLat: lat,
             subShipLon: lon,
             leafTiles: this._lastLeafCount,
             maxLodDepth: this._lastMaxDepth,
-            builtTiles: this.quadtree.getStats().builtCount
+            builtTiles: tileStats.totalBuilt,
+            ...tileStats
         };
+    }
+
+    _slopeDegrees(dir) {
+        const normal = this._surfaceNormalAt(dir, this._normal);
+        return THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(normal.dot(dir), -1, 1)));
+    }
+
+    _surfaceNormalAt(dir, target) {
+        const ref = Math.abs(dir.y) < 0.92 ? UP : RIGHT;
+        this._u.copy(ref).cross(dir);
+        if (this._u.lengthSq() < 1e-10) this._u.set(1, 0, 0).cross(dir);
+        this._u.normalize();
+        this._v.copy(dir).cross(this._u).normalize();
+
+        const eps = THREE.MathUtils.clamp(NORMAL_SAMPLE_METRES / this.radius, 1e-6, 1e-4);
+        this._surfacePoint(this._pa.copy(dir).addScaledVector(this._u, eps).normalize(), this._pa);
+        this._surfacePoint(this._pb.copy(dir).addScaledVector(this._u, -eps).normalize(), this._pb);
+        this._surfacePoint(this._pc.copy(dir).addScaledVector(this._v, eps).normalize(), this._pc);
+        this._surfacePoint(this._pd.copy(dir).addScaledVector(this._v, -eps).normalize(), this._pd);
+
+        const tu = this._pa.sub(this._pb);
+        const tv = this._pc.sub(this._pd);
+        target.copy(tu).cross(tv).normalize();
+        if (target.dot(dir) < 0) target.negate();
+        if (!Number.isFinite(target.x)) target.copy(dir);
+        return target;
+    }
+
+    _surfacePoint(dir, target) {
+        return target.copy(dir).multiplyScalar(this.heightAt(dir));
+    }
+
+    _shipClearance(ship) {
+        const clearance = ship?.getLandingClearance?.() ?? FALLBACK_SHIP_CLEARANCE;
+        this._lastShipClearance = clearance;
+        return clearance;
+    }
+
+    _alignShipToSurface(ship, normal, dt) {
+        if (!ship?.object3D || dt <= 0) return;
+
+        this._forward.copy(LOCAL_FORWARD).applyQuaternion(ship.object3D.quaternion);
+        this._forward.addScaledVector(normal, -this._forward.dot(normal));
+        if (this._forward.lengthSq() < 1e-8) {
+            this._forward.copy(LOCAL_RIGHT).applyQuaternion(ship.object3D.quaternion);
+            this._forward.addScaledVector(normal, -this._forward.dot(normal));
+        }
+        if (this._forward.lengthSq() < 1e-8) this._forward.copy(this._u);
+        this._forward.normalize();
+
+        this._back.copy(this._forward).negate();
+        this._right.copy(normal).cross(this._back);
+        if (this._right.lengthSq() < 1e-8) return;
+        this._right.normalize();
+        this._back.copy(this._right).cross(normal).normalize();
+        this._basis.makeBasis(this._right, normal, this._back);
+        this._targetQuat.setFromRotationMatrix(this._basis);
+        ship.object3D.quaternion.slerp(this._targetQuat, 1 - Math.exp(-TOUCHDOWN_ALIGN_RATE * dt));
     }
 
     // The flat-horizon jitter test (docs/surface-eva-tier.md §4, §11). For each
@@ -429,10 +647,11 @@ export class QuadPlanetContents {
 
     _createTileMaterial() {
         return new THREE.ShaderMaterial({
+            side: THREE.DoubleSide,
             uniforms: {
                 uSunDir: { value: this.sunDir.clone() },
                 uSunColor: { value: this.sunColor.clone() },
-                uAmbient: { value: 0.14 }
+                uAmbient: { value: 0.22 }
             },
             vertexShader: `
                 #include <common>
@@ -440,8 +659,11 @@ export class QuadPlanetContents {
                 attribute vec3 aColor;
                 varying vec3 vColor;
                 varying vec3 vWorldNormal;
+                varying vec3 vWorldPos;
                 void main() {
                     vColor = aColor;
+                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = worldPos.xyz;
                     vWorldNormal = normalize(mat3(modelMatrix) * normal);
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                     #include <logdepthbuf_vertex>
@@ -452,13 +674,24 @@ export class QuadPlanetContents {
                 #include <logdepthbuf_pars_fragment>
                 varying vec3 vColor;
                 varying vec3 vWorldNormal;
+                varying vec3 vWorldPos;
                 uniform vec3 uSunDir;
                 uniform vec3 uSunColor;
                 uniform float uAmbient;
+                float hash31(vec3 p) {
+                    p = fract(p * 0.1031);
+                    p += dot(p, p.yzx + 33.33);
+                    return fract((p.x + p.y) * p.z);
+                }
                 void main() {
                     float ndl = max(dot(normalize(vWorldNormal), normalize(uSunDir)), 0.0);
                     float day = uAmbient + smoothstep(0.0, 0.25, ndl) * (0.85 + ndl * 0.4);
-                    gl_FragColor = vec4(vColor * day * uSunColor, 1.0);
+                    vec3 cell = floor(vWorldPos * 0.65);
+                    float grain = hash31(cell);
+                    float micro = 0.74 + grain * 0.46;
+                    float pebble = smoothstep(0.84, 1.0, grain) * 0.22;
+                    vec3 terrainColor = vColor * (micro + pebble);
+                    gl_FragColor = vec4(terrainColor * day * uSunColor, 1.0);
                     #include <logdepthbuf_fragment>
                 }
             `

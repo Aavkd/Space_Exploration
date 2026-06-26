@@ -134,13 +134,22 @@ export const QUAD_PLANET = Object.freeze({
     // radially inward to hide cracks between adjacent LOD levels (§3.3). Cheap
     // first cut; geomorph/edge-stitch is deferred (§14).
     skirtFraction: 0.5,
-    // Coarse terrain shape, re-expressed at true radius (shared with the hero
-    // sphere's basis so orbit shape == surface shape, §2). relief = max mountain
-    // height as a fraction of radius; seaLevel = fbm threshold below which the
-    // surface is flat ocean; baseFreq = continent-scale noise frequency.
-    relief: 0.018,
+    // Main-thread streaming budget for terrain geometry generation. One tile is
+    // allowed to finish even if it slightly exceeds the budget; additional tiles
+    // wait for later frames.
+    streamingBudgetMs: 2.0,
+    // Inactive generated tiles retained for repeated passes before their
+    // geometry is disposed.
+    cacheTiles: 384,
+    // Coarse terrain shape at true radius. Relief is expressed in real metres so
+    // a 6-9 Mm planet gets kilometre-scale mountains, not radius-fraction walls.
+    // seaLevel = fbm threshold below which the surface is flat ocean;
+    // baseFreq = continent-scale noise frequency.
+    reliefMetres: 8_000,
     seaLevel: 0.5,
     baseFreq: 2.2,
+    detailAmplitude: 85,
+    detailFreq: 260,
     // Camera-far multiple of the true radius, so the whole limb + a standoff are
     // inside the frustum. The log depth buffer keeps the 0.1 m near plane usable
     // alongside this (§4).
