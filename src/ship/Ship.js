@@ -104,6 +104,10 @@ export class Ship {
         return this.physics.speed;
     }
 
+    getLandingClearance() {
+        return this.dimensions?.landingClearance ?? 2.8;
+    }
+
     setGravityField(gravityField) {
         this.gravityField = gravityField;
     }

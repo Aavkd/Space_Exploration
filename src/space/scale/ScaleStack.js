@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DESCENT } from '../../config/scaleTiers.js';
+import { DESCENT, SCALE_TIERS } from '../../config/scaleTiers.js';
 import { createChildLevel } from './Level.js';
 
 // Total wall-clock length of a descend/ascend transition, and the point in that
@@ -58,6 +58,7 @@ export class ScaleStack {
         // Keep the active level animating even mid-transition so the swap reveals
         // a living scene, not a frozen one.
         this.active.update(ctx.shipPosition, ctx.dt, ctx.cameraPosition);
+        this._updateDormantAncestors(ctx);
 
         if (this.transition) {
             this._advanceTransition(ctx);
@@ -236,7 +237,8 @@ export class ScaleStack {
         // rescaled by the unit ratio so apparent motion stays continuous
         // (§8.3-8.4). Galaxy starts at the origin; System starts at a scenic
         // standoff from its star.
-        this._reparentShip(child.entryPosition?.clone?.() ?? new THREE.Vector3(0, 0, 0), fromScale, child.unitScale);
+        const frameRotation = child.universe.getChildFrameQuaternion?.() ?? null;
+        this._reparentShip(child.entryPosition?.clone?.() ?? new THREE.Vector3(0, 0, 0), fromScale, child.unitScale, frameRotation);
         child.origin.set(0, 0, 0);
 
         this._resetDescentBlocks();
@@ -260,15 +262,21 @@ export class ScaleStack {
         // velocity that earned the ascent) stays consistent across the boundary.
         const breadcrumb = leaving.breadcrumb;
         let target;
+        let frameRotation = null;
         if (breadcrumb) {
             const exitDir = this.ship.object3D.position.clone().sub(leaving.origin);
             if (exitDir.lengthSq() < 1e-6) exitDir.set(0, 0, 1);
             exitDir.normalize();
-            target = breadcrumb.position.clone().addScaledVector(exitDir, breadcrumb.entryRadius * ASCEND_SHELL_MARGIN);
+            frameRotation = leaving.universe.getParentFrameQuaternion?.() ?? null;
+            const parentExitDir = leaving.universe.toParentFrameDirection?.(exitDir.clone()) ?? exitDir;
+            const currentParent = this._findCurrentParentCandidate(parent, breadcrumb);
+            const parentPosition = currentParent?.position?.clone?.() ?? breadcrumb.position.clone();
+            const entryRadius = currentParent?.entryRadius ?? breadcrumb.entryRadius;
+            target = parentPosition.addScaledVector(parentExitDir.normalize(), entryRadius * ASCEND_SHELL_MARGIN);
         } else {
             target = new THREE.Vector3(0, 0, 0);
         }
-        this._reparentShip(target, leaving.unitScale, parent.unitScale);
+        this._reparentShip(target, leaving.unitScale, parent.unitScale, frameRotation);
 
         this._resetDescentBlocks();
         this.lastEvent = `ascend:${parent.name}`;
@@ -279,9 +287,14 @@ export class ScaleStack {
 
     // Carry orientation unchanged, rescale velocity by the ratio of the level
     // being left to the one being entered, and place the ship at `target`.
-    _reparentShip(target, fromUnitScale, targetUnitScale) {
+    _reparentShip(target, fromUnitScale, targetUnitScale, frameRotation = null) {
         const ratio = (fromUnitScale || 1) / (targetUnitScale || 1);
         this.ship.velocity.multiplyScalar(ratio);
+        if (frameRotation) {
+            this.ship.velocity.applyQuaternion(frameRotation);
+            this.ship.angularVelocity?.applyQuaternion?.(frameRotation);
+            this.ship.object3D.quaternion.premultiply(frameRotation);
+        }
         this.ship.object3D.position.copy(target);
         // Gravity for the entered level is rebuilt by App via onActiveChange.
     }
@@ -293,6 +306,21 @@ export class ScaleStack {
     _resetDescentBlocks() {
         this._blockedDescentKeys.clear();
         this._descentBlocksInitialized = false;
+    }
+
+    _updateDormantAncestors(ctx) {
+        if (this.depth < 1) return;
+        const active = this.active;
+        const parent = this.stack[this.stack.length - 2];
+        if (active.tier !== SCALE_TIERS.planetary.tier || parent.tier !== SCALE_TIERS.system.tier) return;
+        parent.update(ctx.shipPosition, ctx.dt, ctx.cameraPosition);
+    }
+
+    _findCurrentParentCandidate(parent, breadcrumb) {
+        if (!breadcrumb?.id || !parent?.getDescentCandidates) return null;
+        return parent
+            .getDescentCandidates(new THREE.Vector3(), Infinity)
+            .find((candidate) => candidate.id === breadcrumb.id && candidate.kind === breadcrumb.kind) ?? null;
     }
 }
 

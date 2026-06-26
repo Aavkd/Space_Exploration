@@ -23,7 +23,24 @@ export class DesktopPostFxPipeline {
         this.config = config;
 
         const size = this._getSize();
-        this.composer = new EffectComposer(renderer);
+        // The renderer is created with logarithmicDepthBuffer:true (App.js §4),
+        // but EffectComposer allocates its own WebGLRenderTarget internally if
+        // none is supplied — and that default RT does NOT inherit the log-depth
+        // flag. At true planet scale (~6.4 Mm radius) the standard depth buffer
+        // collapses the entire terrain to a near-zero z-range, producing the
+        // horizontal banding / z-fighting seen on the surface. Fix: supply an
+        // explicit RT with the same flag. WebGL2 MSAA (4×) is added at no extra
+        // cost here; bloom's internal ping-pong RTs never use depth so they are
+        // unaffected.
+        const composerRT = new THREE.WebGLRenderTarget(size.x, size.y, {
+            depthBuffer: true,
+            stencilBuffer: false,
+            type: THREE.HalfFloatType,
+            // MSAA only available in WebGL2; falls back to 0 (no MSAA) on WebGL1.
+            samples: renderer.capabilities.isWebGL2 ? 4 : 0,
+            logarithmicDepthBuffer: true
+        });
+        this.composer = new EffectComposer(renderer, composerRT);
         this.renderPass = new RenderPass(scene, camera);
         this.bloomPass = new UnrealBloomPass(size, 1.2, 0.8, 0.1);
         this.warpPass = new ShaderPass(WarpSpeedShader);
@@ -118,6 +135,10 @@ export class DesktopPostFxPipeline {
     }
 
     resize(width, height) {
+        // Keep the explicit log-depth RT in sync; composer.setSize alone does
+        // not resize an externally-supplied render target.
+        this.composer.renderTarget1?.setSize(width, height);
+        this.composer.renderTarget2?.setSize(width, height);
         this.composer.setSize(width, height);
         const pixelRatio = this.renderer.getPixelRatio();
         const resolution = new THREE.Vector2(width * pixelRatio, height * pixelRatio);
@@ -146,6 +167,9 @@ export class DesktopPostFxPipeline {
 
     dispose() {
         this.autoExposure.dispose();
+        // Dispose the explicit log-depth render target we supplied to the composer.
+        this.composer?.renderTarget1?.dispose();
+        this.composer?.renderTarget2?.dispose();
         this.composer?.dispose?.();
     }
 

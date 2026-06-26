@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { StarBody } from './StarBody.js';
-import { PlanetBody, planetPalette } from './PlanetBody.js';
+import { PlanetBody } from './PlanetBody.js';
+import { createPlanetDescriptor, TERRESTRIAL_TYPES } from './planetPresets.js';
 import { DebrisField } from './DebrisField.js';
 import { starBodyRadius } from './starColor.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
@@ -45,10 +46,12 @@ export class SystemContents {
         this.planets = [];
         this.star = null;
         this.debrisField = null;
+        this._time = 0;
         this._create();
     }
 
     update(shipPosition, dt) {
+        this._time += dt ?? 0;
         this.star?.update(dt, shipPosition);
         for (const planet of this.planets) planet.update(dt);
         this.debrisField?.update(shipPosition, dt);
@@ -102,7 +105,8 @@ export class SystemContents {
                 radius: planet.radius,
                 entryRadius,
                 descriptor,
-                childSeed: descriptor.childSeed
+                childSeed: descriptor.childSeed,
+                parentSystem: this._createParentSystemSnapshot(planet)
             });
         }
         return candidates;
@@ -141,7 +145,13 @@ export class SystemContents {
             system: {
                 name: this.anchor.name,
                 planets: this.planets.length,
-                starRadius: this.star.radius
+                starRadius: this.star.radius,
+                planetTypes: this.planets.map((planet) => ({
+                    name: planet.name,
+                    kind: planet.kind,
+                    type: planet.type,
+                    radius: planet.radius
+                }))
             }
         };
     }
@@ -186,26 +196,39 @@ export class SystemContents {
     }
 
     _createPlanets(starRadius) {
-        const planetCount = 4 + Math.floor(this._rng() * 4);
+        const planetCount = TERRESTRIAL_TYPES.length + Math.floor(this._rng() * 3);
         let orbit = starRadius * 3.2 + randomRange(this._rng, 6500, 10500);
         let guaranteedRing = false;
 
         for (let i = 0; i < planetCount; i++) {
-            const gas = i > 1 && this._rng() < 0.48;
+            const forcedType = i < TERRESTRIAL_TYPES.length ? TERRESTRIAL_TYPES[i] : null;
+            const gas = !forcedType && this._rng() < 0.55;
+            const kind = gas ? 'gas' : 'terrestrial';
             const radius = gas
                 ? randomRange(this._rng, 2200, 4700)
                 : randomRange(this._rng, 720, 1850);
             const hasRings = gas && (!guaranteedRing || this._rng() < 0.5);
             guaranteedRing = guaranteedRing || hasRings;
+            const name = `${gas ? 'Gas giant' : typeLabel(forcedType ?? 'world')} ${i + 1}`;
+            const descriptor = createPlanetDescriptor({
+                seed: this.seed,
+                index: i,
+                name,
+                kind,
+                type: forcedType,
+                systemRadius: radius,
+                hasRings,
+                starProfile: this.anchor
+            });
             const planet = new PlanetBody({
-                name: `${gas ? 'Gas giant' : 'World'} ${i + 1}`,
-                kind: gas ? 'gas' : 'terrestrial',
+                name,
+                kind,
                 radius,
                 orbitRadius: orbit,
                 orbitSpeed: randomRange(this._rng, 0.004, 0.018) * (this._rng() < 0.5 ? -1 : 1),
                 spinSpeed: randomRange(this._rng, 0.04, 0.18),
                 phase: this._rng() * Math.PI * 2,
-                palette: planetPalette(gas ? 'gas' : 'terrestrial', i + Math.floor(this._rng() * 3)),
+                descriptor,
                 hasRings
             });
             planet.pivot.rotation.x = randomRange(this._rng, -0.09, 0.09);
@@ -226,6 +249,101 @@ export class SystemContents {
             regionRadius: this.regionRadius
         });
         this.group.add(this.debrisField.group);
+    }
+
+    _createParentSystemSnapshot(selectedPlanet) {
+        const systemOrigin = this.group.getWorldPosition(new THREE.Vector3());
+        const starPosition = this.star.getWorldPosition(new THREE.Vector3()).sub(systemOrigin);
+        const selectedPosition = selectedPlanet.getWorldPosition(new THREE.Vector3()).sub(systemOrigin);
+
+        return {
+            name: this.anchor.name,
+            seed: this.seed,
+            systemTime: this._time,
+            star: {
+                name: this.star.name,
+                position: starPosition.toArray(),
+                radius: this.star.radius,
+                color: `#${this.star.color.getHexString()}`,
+                temperatureK: this.star.temperatureK,
+                luminosity: this.star.luminosity
+            },
+            selected: this._planetEphemeris(selectedPlanet, selectedPosition),
+            bodies: this.planets
+                .filter((planet) => planet !== selectedPlanet)
+                .map((planet) => this._planetEphemeris(
+                    planet,
+                    planet.getWorldPosition(new THREE.Vector3()).sub(systemOrigin)
+                ))
+        };
+    }
+
+    _planetEphemeris(planet, position) {
+        return {
+            id: planet.name,
+            name: planet.name,
+            kind: planet.kind,
+            type: planet.type,
+            radius: planet.radius,
+            color: skyColorForPlanet(planet),
+            hasRings: planet.hasRings,
+            ring: this._ringSnapshot(planet),
+            moons: this._moonEphemerides(planet),
+            position: position.toArray(),
+            orbitRadius: planet.orbitRadius,
+            orbitSpeed: planet.orbitSpeed,
+            spinSpeed: planet.spinSpeed,
+            spinPhase: planet.mesh?.rotation?.y ?? 0,
+            orbitRotation: [
+                planet.pivot.rotation.x,
+                planet.pivot.rotation.y,
+                planet.pivot.rotation.z,
+                planet.pivot.rotation.order
+            ]
+        };
+    }
+
+    _ringSnapshot(planet) {
+        if (!planet.hasRings) return null;
+        const palette = planet.palette ?? {};
+        return {
+            color: new THREE.Color(palette.accent ?? palette.highland ?? planet.paletteArray?.[2] ?? '#d8c38a').getHexString(),
+            innerScale: 1.55,
+            outerScale: 2.55,
+            opacity: 0.42,
+            tilt: Math.PI * 0.08
+        };
+    }
+
+    _moonEphemerides(planet) {
+        const rng = createSeededRandom(deriveSeed(this.seed, `system-moons:${planet.name}`));
+        const count = planet.kind === 'gas'
+            ? 2 + Math.floor(rng() * 3)
+            : Math.floor(rng() * 3);
+        const moons = [];
+        for (let i = 0; i < count; i++) {
+            const radius = randomRange(rng, planet.radius * 0.055, planet.radius * (planet.kind === 'gas' ? 0.16 : 0.12));
+            const orbitRadius = randomRange(rng, planet.radius * 2.0, planet.radius * (planet.kind === 'gas' ? 4.4 : 3.2));
+            const color = new THREE.Color().setHSL(0, 0, randomRange(rng, 0.45, 0.74));
+            moons.push({
+                id: `${planet.name}:moon:${i + 1}`,
+                name: `${planet.name} moon ${i + 1}`,
+                kind: 'moon',
+                radius,
+                color: `#${color.getHexString()}`,
+                orbitRadius,
+                orbitSpeed: randomRange(rng, 0.018, 0.072) * (rng() < 0.5 ? -1 : 1),
+                spinSpeed: randomRange(rng, 0.025, 0.12),
+                spinPhase: rng() * Math.PI * 2,
+                orbitRotation: [
+                    randomRange(rng, -0.42, 0.42),
+                    rng() * Math.PI * 2,
+                    randomRange(rng, -0.35, 0.35),
+                    'XYZ'
+                ]
+            });
+        }
+        return moons;
     }
 
     _createBackdrop() {
@@ -262,9 +380,27 @@ export class SystemContents {
     }
 }
 
+function typeLabel(type) {
+    switch (type) {
+        case 'temperate': return 'Temperate world';
+        case 'ice': return 'Ice world';
+        case 'desert': return 'Desert world';
+        case 'volcanic': return 'Volcanic world';
+        case 'barren': return 'Barren moon';
+        case 'toxic': return 'Toxic world';
+        default: return 'World';
+    }
+}
+
 function randomUnitVector(rng, target) {
     const z = rng() * 2 - 1;
     const a = rng() * Math.PI * 2;
     const r = Math.sqrt(Math.max(0, 1 - z * z));
     return target.set(Math.cos(a) * r, z, Math.sin(a) * r);
+}
+
+function skyColorForPlanet(planet) {
+    const palette = planet.palette ?? {};
+    const color = palette.accent ?? palette.highland ?? palette.midland ?? palette.lowland ?? '#d8c38a';
+    return new THREE.Color(color).getHexString();
 }

@@ -7,6 +7,7 @@ export const SHIP_DIMENSIONS = Object.freeze({
     length: 34,
     width: 13.6,
     height: 7.4,
+    landingClearance: 2.8,
     deckHeight: 0,
     eyeHeight: 0.8,
     mainCeilingHeight: 2.7,

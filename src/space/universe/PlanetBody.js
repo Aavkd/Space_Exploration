@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import { deriveSeed } from './rng.js';
-
-const TERRESTRIAL = [
-    ['#406080', '#8fb37a', '#d8c38a'],
-    ['#8c6d58', '#c7a87b', '#4d3c36'],
-    ['#254b6e', '#d7e6ef', '#5c9a66']
-];
+import {
+    createPlanetSurfaceModel,
+    normalizePlanetDescriptor,
+    paletteToLegacyArray,
+    planetPaletteArray
+} from './planetPresets.js';
 
 const GAS = [
     ['#d8b37d', '#8d5f43', '#f3dcac'],
@@ -22,28 +22,41 @@ export class PlanetBody {
         orbitSpeed = 0.018,
         spinSpeed = 0.1,
         phase = 0,
-        palette = TERRESTRIAL[0],
+        palette = null,
+        descriptor = null,
         hasRings = false
     } = {}) {
+        this.descriptor = normalizePlanetDescriptor({
+            ...(descriptor ?? {}),
+            name,
+            kind,
+            palette: descriptor?.palette ?? palette,
+            hasRings,
+            systemRadius: radius,
+            landable: descriptor?.landable ?? kind === 'terrestrial'
+        });
         this.name = name;
-        this.kind = kind;
+        this.kind = this.descriptor.kind;
+        this.type = this.descriptor.type;
         this.radius = radius;
         this.orbitRadius = orbitRadius;
         this.orbitSpeed = orbitSpeed;
         this.spinSpeed = spinSpeed;
         this.phase = phase;
-        this.hasRings = hasRings;
-        this.palette = palette;
+        this.hasRings = this.descriptor.hasRings ?? hasRings;
+        this.palette = this.descriptor.palette;
+        this.paletteArray = this.descriptor.paletteArray ?? paletteToLegacyArray(this.palette);
         this.pivot = new THREE.Group();
         this.pivot.name = `Orbit:${name}`;
         this.body = new THREE.Group();
         this.body.name = `PlanetBody:${name}`;
         this.body.position.set(orbitRadius, 0, 0);
 
-        this.mesh = this._createMesh(palette);
+        this.mesh = this._createMesh();
         this.body.add(this.mesh);
-        if (kind === 'terrestrial') this.body.add(this._createClouds());
-        if (hasRings) this.body.add(this._createRings(palette));
+        if (this.kind === 'terrestrial') this.body.add(this._createSystemAtmosphere());
+        if (this.kind === 'terrestrial' && this.descriptor.clouds?.enabled) this.body.add(this._createClouds());
+        if (this.hasRings) this.body.add(this._createRings());
 
         this.pivot.rotation.y = phase;
         this.pivot.add(this.body);
@@ -64,6 +77,7 @@ export class PlanetBody {
         return {
             type: this.kind === 'gas' ? 'gas giant' : 'planet',
             name: this.name,
+            planetType: this.type,
             position: this.getWorldPosition(),
             radius: this.radius
         };
@@ -78,37 +92,107 @@ export class PlanetBody {
         };
     }
 
-    // Seed-derived summary the Planetary level is rebuilt from (§5). Carries the
-    // visual identity the player saw in the System (kind, palette, rings) plus
-    // the in-system radius the heroic Planetary radius is derived from, so the
-    // world you approach matches the world you enter. `landable` gates touchdown:
-    // terrestrial worlds have a solid surface; gas giants are a cloud deck only.
+    // Seed-derived summary the Planetary level is rebuilt from. Carries typed
+    // planet identity plus the legacy palette array while migration is underway.
     getDescentDescriptor(parentSeed) {
         return {
+            ...this.descriptor,
             name: this.name,
             kind: this.kind,
             palette: this.palette,
+            paletteArray: this.paletteArray,
             hasRings: this.hasRings,
             systemRadius: this.radius,
             landable: this.kind === 'terrestrial',
-            childSeed: deriveSeed(parentSeed, `planet:${this.name}`)
+            childSeed: this.descriptor.childSeed ?? deriveSeed(parentSeed, `planet:${this.name}`)
         };
     }
 
-    _createMesh(palette) {
+    _createMesh() {
         const geometry = new THREE.SphereGeometry(this.radius, 64, 32);
         if (this.kind === 'gas') {
-            return new THREE.Mesh(geometry, createGasMaterial(palette));
+            return new THREE.Mesh(geometry, createGasMaterial(this.paletteArray));
         }
-        return new THREE.Mesh(geometry, createTerrestrialMaterial(palette));
+        return this._createTerrestrialPreview(geometry);
+    }
+
+    _createTerrestrialPreview(geometry) {
+        const model = createPlanetSurfaceModel(this.descriptor, {
+            radius: this.radius,
+            seed: this.descriptor.childSeed ?? this.descriptor.seed
+        });
+        const position = geometry.attributes.position;
+        const colors = new Float32Array(position.count * 3);
+        const materialData = new Float32Array(position.count * 3);
+        const dir = new THREE.Vector3();
+        const sample = {};
+
+        for (let i = 0; i < position.count; i++) {
+            dir.set(position.getX(i), position.getY(i), position.getZ(i)).normalize();
+            model.sampleAt(dir, sample);
+            const r = this.radius + (sample.height - this.radius) * 0.018;
+            position.setXYZ(i, dir.x * r, dir.y * r, dir.z * r);
+            const previewColor = previewColorForType(this.type, dir, sample, this.palette);
+            colors[i * 3] = previewColor.r;
+            colors[i * 3 + 1] = previewColor.g;
+            colors[i * 3 + 2] = previewColor.b;
+            materialData[i * 3] = sample.roughnessHint ?? 0.7;
+            materialData[i * 3 + 1] = previewEmissiveForType(this.type, dir, sample);
+            materialData[i * 3 + 2] = sample.normalizedElevation ?? 0;
+        }
+
+        geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('aMaterialData', new THREE.BufferAttribute(materialData, 3));
+        geometry.computeVertexNormals();
+
+        return new THREE.Mesh(geometry, createTerrestrialMaterial());
+    }
+
+    _createSystemAtmosphere() {
+        const atmosphere = this.descriptor.atmosphere ?? {};
+        const density = atmosphere.density ?? 0.2;
+        const geometry = new THREE.SphereGeometry(this.radius * (1.035 + density * 0.03), 48, 24);
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                uColor: { value: new THREE.Color(atmosphere.color ?? '#7fb6ff') },
+                uIntensity: { value: 0.32 + density * 0.65 }
+            },
+            vertexShader: `
+                varying vec3 vNormal;
+                varying vec3 vViewDir;
+                void main() {
+                    vec4 wp = modelMatrix * vec4(position, 1.0);
+                    vNormal = normalize(mat3(modelMatrix) * normal);
+                    vViewDir = normalize(cameraPosition - wp.xyz);
+                    gl_Position = projectionMatrix * viewMatrix * wp;
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vNormal;
+                varying vec3 vViewDir;
+                uniform vec3 uColor;
+                uniform float uIntensity;
+                void main() {
+                    float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 2.0);
+                    gl_FragColor = vec4(uColor * rim * uIntensity, rim * uIntensity);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.BackSide
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = `SystemAtmosphere:${this.type}`;
+        return mesh;
     }
 
     _createClouds() {
         const geometry = new THREE.SphereGeometry(this.radius * 1.012, 48, 24);
         const material = new THREE.MeshPhongMaterial({
-            color: 0xffffff,
+            color: new THREE.Color(this.descriptor.clouds?.color ?? '#ffffff'),
             transparent: true,
-            opacity: 0.18,
+            opacity: this.descriptor.clouds?.opacity ?? 0.18,
             depthWrite: false
         });
         const clouds = new THREE.Mesh(geometry, material);
@@ -116,9 +200,9 @@ export class PlanetBody {
         return clouds;
     }
 
-    _createRings(palette) {
+    _createRings() {
         const geometry = new THREE.RingGeometry(this.radius * 1.55, this.radius * 2.55, 96, 8);
-        const color = new THREE.Color(palette[2] ?? '#d8c38a');
+        const color = new THREE.Color(this.palette.accent ?? this.palette.highland ?? '#d8c38a');
         const material = new THREE.MeshBasicMaterial({
             color,
             transparent: true,
@@ -136,8 +220,8 @@ export class PlanetBody {
 }
 
 export function planetPalette(kind, index) {
-    const palettes = kind === 'gas' ? GAS : TERRESTRIAL;
-    return palettes[index % palettes.length];
+    if (kind === 'gas') return GAS[index % GAS.length];
+    return planetPaletteArray(kind, index);
 }
 
 function createGasMaterial(palette) {
@@ -167,8 +251,6 @@ function createGasMaterial(palette) {
             uniform vec3 uB;
             uniform vec3 uC;
 
-            float hash(float n) { return fract(sin(n) * 43758.5453123); }
-
             void main() {
                 float lat = normalize(vLocal).y;
                 float bands = sin(lat * 34.0) * 0.5 + 0.5;
@@ -183,61 +265,77 @@ function createGasMaterial(palette) {
     });
 }
 
-function createTerrestrialMaterial(palette) {
-    const ocean = new THREE.Color(palette[0]);
-    const land = new THREE.Color(palette[1]);
-    const desert = new THREE.Color(palette[2]);
+function createTerrestrialMaterial() {
     return new THREE.ShaderMaterial({
-        uniforms: {
-            uOcean: { value: ocean },
-            uLand: { value: land },
-            uDesert: { value: desert }
-        },
         vertexShader: `
+            attribute vec3 aColor;
+            attribute vec3 aMaterialData;
             varying vec3 vNormal;
-            varying vec3 vLocal;
+            varying vec3 vColor;
+            varying vec3 vMaterialData;
 
             void main() {
                 vNormal = normalize(normalMatrix * normal);
-                vLocal = position;
+                vColor = aColor;
+                vMaterialData = aMaterialData;
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
         `,
         fragmentShader: `
             varying vec3 vNormal;
-            varying vec3 vLocal;
-            uniform vec3 uOcean;
-            uniform vec3 uLand;
-            uniform vec3 uDesert;
-
-            float hash(vec3 p) {
-                p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
-                p *= 17.0;
-                return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-            }
-
-            float noise(vec3 p) {
-                vec3 i = floor(p);
-                vec3 f = fract(p);
-                f = f * f * (3.0 - 2.0 * f);
-                return mix(
-                    mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
-                        mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
-                    mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
-                        mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y),
-                    f.z
-                );
-            }
+            varying vec3 vColor;
+            varying vec3 vMaterialData;
 
             void main() {
-                vec3 p = normalize(vLocal) * 4.2;
-                float n = noise(p) * 0.55 + noise(p * 2.3 + 8.0) * 0.45;
-                vec3 col = n > 0.54 ? mix(uLand, uDesert, smoothstep(0.62, 0.9, n)) : uOcean;
-                float ice = smoothstep(0.72, 0.92, abs(normalize(vLocal).y));
-                col = mix(col, vec3(0.86, 0.94, 1.0), ice * 0.75);
                 float light = 0.34 + max(dot(normalize(vNormal), normalize(vec3(-0.5, 0.35, 0.8))), 0.0) * 0.84;
-                gl_FragColor = vec4(col * light, 1.0);
+                vec3 emissive = vColor * vMaterialData.y * 0.8;
+                gl_FragColor = vec4(vColor * light + emissive, 1.0);
             }
         `
     });
+}
+
+function previewColorForType(type, dir, sample, palette) {
+    const color = new THREE.Color().copy(sample.color);
+    const lat = Math.abs(dir.y);
+    const band = Math.sin((dir.x * 11.0 + dir.z * 9.0 + dir.y * 4.0) * Math.PI);
+    switch (type) {
+        case 'temperate':
+            if (sample.isLiquid) color.set(palette.water ?? '#1d5f91').multiplyScalar(1.18);
+            else color.lerp(new THREE.Color(sample.normalizedElevation > 0.68 || lat > 0.78 ? palette.snow : palette.lowland), 0.48);
+            break;
+        case 'ice':
+            color.set(lat > 0.55 ? palette.snow : palette.lowland);
+            if (band > 0.72 || sample.material === 'dark rock') color.lerp(new THREE.Color(palette.rock), 0.62);
+            color.lerp(new THREE.Color(palette.accent), 0.18);
+            break;
+        case 'desert':
+            color.set(palette.lowland).lerp(new THREE.Color(palette.midland), sample.normalizedElevation * 0.65);
+            if (band > 0.45) color.lerp(new THREE.Color(palette.highland), 0.35);
+            break;
+        case 'volcanic':
+            color.set(palette.rock).lerp(new THREE.Color(palette.midland), Math.max(0, sample.normalizedElevation) * 0.42);
+            if (previewEmissiveForType(type, dir, sample) > 0.1) color.lerp(new THREE.Color(palette.emissive), 0.72);
+            break;
+        case 'barren':
+            color.set(palette.midland).lerp(new THREE.Color(palette.highland), Math.max(0, sample.normalizedElevation) * 0.55);
+            if (band > 0.62 || sample.biome?.includes('crater')) color.lerp(new THREE.Color(palette.rock), 0.38);
+            break;
+        case 'toxic':
+            color.set(sample.isLiquid ? palette.water : palette.lowland).lerp(new THREE.Color(palette.accent), sample.isLiquid ? 0.36 : 0.22);
+            if (band > 0.58) color.lerp(new THREE.Color(palette.highland), 0.35);
+            break;
+        default:
+            break;
+    }
+    return color.multiplyScalar(1.1);
+}
+
+function previewEmissiveForType(type, dir, sample) {
+    if (type === 'volcanic') {
+        const cracks = Math.sin((dir.x * 23.0 + dir.z * 17.0 + dir.y * 5.0) * Math.PI);
+        return Math.max(sample.emissiveStrength ?? 0, cracks > 0.82 ? 0.72 : 0);
+    }
+    if (type === 'toxic' && sample.isLiquid) return 0.12;
+    return sample.emissiveStrength ?? 0;
 }
