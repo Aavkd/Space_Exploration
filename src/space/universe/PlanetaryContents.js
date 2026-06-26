@@ -3,6 +3,17 @@ import { planetPalette } from './PlanetBody.js';
 import { normalizePlanetDescriptor } from './planetPresets.js';
 import { planetHeroRadius } from '../../config/scaleTiers.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
+import {
+    atmosphereUniforms,
+    buildProjectedSystemSky,
+    childFrameQuaternion,
+    evaluateParentSystemSnapshot,
+    parentFrameQuaternion,
+    parentToPlanetLocalDirection,
+    planetLocalToParentDirection,
+    projectedSkyTelemetry,
+    updateProjectedSystemSky
+} from './ParentSystemProjection.js';
 
 // --- Tier 3 (Planetary / Orbit) -------------------------------------------
 //
@@ -35,6 +46,7 @@ const RELIEF = 0.045;             // mountain height as a fraction of planet rad
 const SEA_LEVEL = 0.5;            // fbm threshold below which terrain is flat ocean
 const TERRAIN_DETAIL = 6;         // icosphere subdivisions (20 * 4^6 ≈ 82k tris)
 const BASE_FREQ = 2.2;            // continent-scale noise frequency
+const SKY_DISTANCE_SCALE = 2.65;
 
 export class PlanetaryContents {
     constructor({ seed, descriptor, regionRadius, parentSystem = null }) {
@@ -67,6 +79,8 @@ export class PlanetaryContents {
         this._d = new THREE.Vector3();
         this._dir = new THREE.Vector3();
         this._tan = new THREE.Vector3();
+        this._skyOrigin = new THREE.Vector3();
+        this._skyState = {};
 
         this.moons = [];
         this._spin = this.kind === 'gas'; // only the non-collidable gas deck spins
@@ -82,6 +96,7 @@ export class PlanetaryContents {
             randomRange(this._rng, -1, 1)
         ).normalize();
         this.sunColor = new THREE.Color('#fff2d6');
+        if (this.parentSystem?.star?.color) this.sunColor.set(this.parentSystem.star.color);
 
         this._create();
     }
@@ -93,7 +108,7 @@ export class PlanetaryContents {
         return this.regionRadius * 1.15;
     }
 
-    update(shipPosition, dt) {
+    update(shipPosition, dt, cameraPosition = shipPosition) {
         this._time += dt;
         if (this._spin && this.body) this.body.rotation.y += dt * 0.02;
         if (this.clouds) this.clouds.rotation.y += dt * 0.012;
@@ -102,6 +117,7 @@ export class PlanetaryContents {
             moon.pivot.rotation.y += dt * moon.orbitSpeed;
             moon.mesh.rotation.y += dt * moon.spinSpeed;
         }
+        this._updateParentSystemLightingAndSky(cameraPosition ?? shipPosition);
     }
 
     rebaseOrigin(offset) {
@@ -258,7 +274,7 @@ export class PlanetaryContents {
             counts: this.getCounts(),
             currentNode: this.getCurrentNode(),
             landing: this.getLandingState(shipPosition),
-            planet: { name: this.name, kind: this.kind, radius: this.radius }
+            planet: this.getPlanetState(shipPosition)
         };
     }
 
@@ -266,7 +282,7 @@ export class PlanetaryContents {
         this.runtimeConfig = { ...this.runtimeConfig, ...config };
         const lighting = config.lighting ?? {};
         if (this.sun) {
-            this.sun.intensity = (lighting.intensity ?? 2.35) * 1.35;
+            this.sun.intensity = (lighting.intensity ?? 3.6) * 1.45 * Math.max(0.9, this.parentSystem?.star?.luminosity ?? 1);
             this.sun.color.copy(this.sunColor);
         }
     }
@@ -280,6 +296,36 @@ export class PlanetaryContents {
 
     setRelativisticState() {
         // No starfield warp inside a planetary theatre.
+    }
+
+    getPlanetState(shipPosition = null) {
+        const center = this.group.getWorldPosition(this._c);
+        const ship = shipPosition ?? center;
+        const toShip = this._d.copy(ship).sub(center);
+        const dist = toShip.length();
+        return {
+            name: this.name,
+            kind: this.kind,
+            radius: this.radius,
+            altitude: dist - this.radius,
+            parentSystemSky: projectedSkyTelemetry(this.systemSky, this._skyState)
+        };
+    }
+
+    getParentFrameQuaternion(target = new THREE.Quaternion()) {
+        return parentFrameQuaternion(this.parentSystem?.selected, this._time, target);
+    }
+
+    getChildFrameQuaternion(target = new THREE.Quaternion()) {
+        return childFrameQuaternion(this.parentSystem?.selected, this._time, target);
+    }
+
+    fromParentFrameDirection(direction, target = direction) {
+        return parentToPlanetLocalDirection(direction, this.parentSystem?.selected, this._time, target);
+    }
+
+    toParentFrameDirection(direction, target = direction) {
+        return planetLocalToParentDirection(direction, this.parentSystem?.selected, this._time, target);
     }
 
     // --- Construction -------------------------------------------------------
@@ -306,7 +352,13 @@ export class PlanetaryContents {
         this.sun.target.position.set(0, 0, 0);
         this.group.add(this.sun, this.sun.target);
 
-        this.group.add(this._createSunDisc());
+        this.systemSky = buildProjectedSystemSky({
+            parentSystem: this.parentSystem,
+            sunColor: this.sunColor,
+            planetScale: 0.88,
+            moonScale: 0.9
+        });
+        this.group.add(this.systemSky.group);
         this.group.add(this._createBackdrop());
     }
 
@@ -354,7 +406,7 @@ export class PlanetaryContents {
             uniforms: {
                 uSunDir: { value: this.sunDir.clone() },
                 uSunColor: { value: this.sunColor.clone() },
-                uAmbient: { value: 0.16 }
+                uAmbient: { value: 0.38 }
             },
             vertexShader: `
                 attribute vec3 aColor;
@@ -375,8 +427,10 @@ export class PlanetaryContents {
                 void main() {
                     float ndl = max(dot(normalize(vWorldNormal), normalize(uSunDir)), 0.0);
                     // Soft terminator so the day/night edge is a band, not a line.
-                    float day = uAmbient + smoothstep(0.0, 0.25, ndl) * (0.85 + ndl * 0.4);
-                    gl_FragColor = vec4(vColor * day * uSunColor, 1.0);
+                    float skyFill = 0.24 * smoothstep(-0.35, 0.45, dot(normalize(vWorldNormal), normalize(uSunDir)));
+                    float day = uAmbient + skyFill + smoothstep(-0.04, 0.42, ndl) * (1.15 + ndl * 0.68);
+                    vec3 sunlight = mix(vec3(1.0), uSunColor, 0.72);
+                    gl_FragColor = vec4(vColor * day * sunlight, 1.0);
                 }
             `
         });
@@ -417,7 +471,8 @@ export class PlanetaryContents {
                     vec3 col = mix(uA, uB, bands);
                     col = mix(col, uC, smoothstep(0.2, 0.5, abs(lat)) * 0.35) + uC * storm * 0.4;
                     float ndl = max(dot(normalize(vWorldNormal), normalize(uSunDir)), 0.0);
-                    gl_FragColor = vec4(col * (0.22 + ndl), 1.0);
+                    float skyFill = 0.24 * smoothstep(-0.35, 0.45, dot(normalize(vWorldNormal), normalize(uSunDir)));
+                    gl_FragColor = vec4(col * (0.38 + skyFill + smoothstep(-0.04, 0.42, ndl) * (1.1 + ndl * 0.5)), 1.0);
                 }
             `
         });
@@ -431,10 +486,10 @@ export class PlanetaryContents {
             ? new THREE.Color(this.palette[1]).lerp(new THREE.Color('#ffffff'), 0.2)
             : new THREE.Color('#7fb6ff');
         const geometry = new THREE.SphereGeometry(this.radius * 1.035, 64, 32);
+        const horizonUniforms = atmosphereUniforms({ color: `#${tint.getHexString()}`, density: 1 }, this.sunDir);
         const material = new THREE.ShaderMaterial({
             uniforms: {
-                uColor: { value: tint },
-                uSunDir: { value: this.sunDir.clone() },
+                ...horizonUniforms,
                 uIntensity: { value: 1 },
                 uTime: { value: 0 }
             },
@@ -452,13 +507,22 @@ export class PlanetaryContents {
                 varying vec3 vWorldNormal;
                 varying vec3 vViewDir;
                 uniform vec3 uColor;
+                uniform vec3 uDayColor;
+                uniform vec3 uSunsetColor;
+                uniform vec3 uNightColor;
                 uniform vec3 uSunDir;
                 uniform float uIntensity;
                 void main() {
                     vec3 N = normalize(vWorldNormal);
                     float rim = pow(1.0 - abs(dot(N, normalize(vViewDir))), 3.0);
-                    float day = 0.35 + 0.65 * max(dot(N, normalize(uSunDir)), 0.0);
-                    gl_FragColor = vec4(uColor * rim * day * uIntensity * 1.6, rim * day);
+                    float sunDot = dot(N, normalize(uSunDir));
+                    float day = smoothstep(-0.10, 0.26, sunDot);
+                    float sunset = smoothstep(-0.30, 0.04, sunDot) * (1.0 - smoothstep(0.06, 0.34, sunDot));
+                    float night = 1.0 - smoothstep(-0.44, -0.08, sunDot);
+                    vec3 tint = mix(uNightColor, uDayColor, day);
+                    tint = mix(tint, uSunsetColor, sunset * 0.68);
+                    float haze = 0.42 + day * 1.12 + night * 0.20;
+                    gl_FragColor = vec4(tint * rim * haze * uIntensity * 2.0, rim * haze);
                 }
             `,
             transparent: true,
@@ -532,14 +596,39 @@ export class PlanetaryContents {
         }
     }
 
-    _createSunDisc() {
-        const mesh = new THREE.Mesh(
-            new THREE.SphereGeometry(this.regionRadius * 0.018, 24, 12),
-            new THREE.MeshBasicMaterial({ color: 0xfff6df })
-        );
-        mesh.position.copy(this.sunDir).multiplyScalar(this.regionRadius * 0.95);
-        mesh.name = 'PlanetarySun';
-        return mesh;
+    _updateParentSystemLightingAndSky(cameraPosition = null) {
+        const state = evaluateParentSystemSnapshot(this.parentSystem, this._time, this._skyState);
+        this.sunDir.copy(state.sunDirLocal);
+
+        this._updateMaterialSun(this.body?.material);
+        this._updateMaterialSun(this.clouds?.material);
+        if (this.atmosphere?.material?.uniforms?.uSunDir) {
+            this.atmosphere.material.uniforms.uSunDir.value.copy(this.sunDir);
+        }
+
+        if (this.sun) {
+            this.sun.position.copy(this.sunDir).multiplyScalar(this.regionRadius);
+            this.sun.color.copy(this.sunColor);
+            this.sun.intensity = (this.runtimeConfig.lighting?.intensity ?? 3.6) * 1.45 * Math.max(0.9, this.parentSystem?.star?.luminosity ?? 1);
+        }
+
+        if (!this.systemSky) return;
+        this._skyOrigin.copy(cameraPosition ?? this.group.getWorldPosition(this._c));
+        updateProjectedSystemSky(this.systemSky, {
+            parentSystem: this.parentSystem,
+            elapsedTime: this._time,
+            skyOrigin: this._skyOrigin,
+            skyDistance: this.regionRadius * SKY_DISTANCE_SCALE,
+            sunColor: this.sunColor,
+            systemState: state,
+            occluderCenter: this.group.getWorldPosition(this._c),
+            occluderRadius: this.radius
+        });
+    }
+
+    _updateMaterialSun(material) {
+        if (material?.uniforms?.uSunDir) material.uniforms.uSunDir.value.copy(this.sunDir);
+        if (material?.uniforms?.uSunColor) material.uniforms.uSunColor.value.copy(this.sunColor);
     }
 
     _createBackdrop() {

@@ -237,7 +237,8 @@ export class ScaleStack {
         // rescaled by the unit ratio so apparent motion stays continuous
         // (§8.3-8.4). Galaxy starts at the origin; System starts at a scenic
         // standoff from its star.
-        this._reparentShip(child.entryPosition?.clone?.() ?? new THREE.Vector3(0, 0, 0), fromScale, child.unitScale);
+        const frameRotation = child.universe.getChildFrameQuaternion?.() ?? null;
+        this._reparentShip(child.entryPosition?.clone?.() ?? new THREE.Vector3(0, 0, 0), fromScale, child.unitScale, frameRotation);
         child.origin.set(0, 0, 0);
 
         this._resetDescentBlocks();

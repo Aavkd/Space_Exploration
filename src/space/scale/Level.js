@@ -241,9 +241,10 @@ export function createPlanetaryLevel(candidate) {
     // planet from in the System frame, dropped just above the (now huge) surface
     // so arrival is continuous with the approach rather than a teleport to a
     // canned standoff. Falls back to a scenic angle for scripted/debug descents.
-    const approach = candidate.approachDir && candidate.approachDir.lengthSq() > 1e-6
+    const approachParent = candidate.approachDir && candidate.approachDir.lengthSq() > 1e-6
         ? candidate.approachDir.clone().normalize()
         : new THREE.Vector3(0, 0.35, 1).normalize();
+    const approach = contents.fromParentFrameDirection?.(approachParent.clone()) ?? approachParent;
     const standoff = heroRadius * 1.25;
     const entryPosition = approach.multiplyScalar(standoff);
 
@@ -285,9 +286,10 @@ export function createQuadPlanetLevel(candidate) {
         parentSystem: candidate.parentSystem
     });
 
-    const approach = candidate.approachDir && candidate.approachDir.lengthSq() > 1e-6
+    const approachParent = candidate.approachDir && candidate.approachDir.lengthSq() > 1e-6
         ? candidate.approachDir.clone().normalize()
         : new THREE.Vector3(0, 0.35, 1).normalize();
+    const approach = contents.fromParentFrameDirection?.(approachParent.clone()) ?? approachParent;
     // Spawn in low orbit: a fraction of the radius above the surface, so the LOD
     // is already resolving terrain on arrival and gravity draws the ship down.
     const entryPosition = approach.multiplyScalar(trueRadius * 1.18);

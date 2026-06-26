@@ -46,10 +46,12 @@ export class SystemContents {
         this.planets = [];
         this.star = null;
         this.debrisField = null;
+        this._time = 0;
         this._create();
     }
 
     update(shipPosition, dt) {
+        this._time += dt ?? 0;
         this.star?.update(dt, shipPosition);
         for (const planet of this.planets) planet.update(dt);
         this.debrisField?.update(shipPosition, dt);
@@ -257,6 +259,7 @@ export class SystemContents {
         return {
             name: this.anchor.name,
             seed: this.seed,
+            systemTime: this._time,
             star: {
                 name: this.star.name,
                 position: starPosition.toArray(),
@@ -283,6 +286,9 @@ export class SystemContents {
             type: planet.type,
             radius: planet.radius,
             color: skyColorForPlanet(planet),
+            hasRings: planet.hasRings,
+            ring: this._ringSnapshot(planet),
+            moons: this._moonEphemerides(planet),
             position: position.toArray(),
             orbitRadius: planet.orbitRadius,
             orbitSpeed: planet.orbitSpeed,
@@ -295,6 +301,49 @@ export class SystemContents {
                 planet.pivot.rotation.order
             ]
         };
+    }
+
+    _ringSnapshot(planet) {
+        if (!planet.hasRings) return null;
+        const palette = planet.palette ?? {};
+        return {
+            color: new THREE.Color(palette.accent ?? palette.highland ?? planet.paletteArray?.[2] ?? '#d8c38a').getHexString(),
+            innerScale: 1.55,
+            outerScale: 2.55,
+            opacity: 0.42,
+            tilt: Math.PI * 0.08
+        };
+    }
+
+    _moonEphemerides(planet) {
+        const rng = createSeededRandom(deriveSeed(this.seed, `system-moons:${planet.name}`));
+        const count = planet.kind === 'gas'
+            ? 2 + Math.floor(rng() * 3)
+            : Math.floor(rng() * 3);
+        const moons = [];
+        for (let i = 0; i < count; i++) {
+            const radius = randomRange(rng, planet.radius * 0.055, planet.radius * (planet.kind === 'gas' ? 0.16 : 0.12));
+            const orbitRadius = randomRange(rng, planet.radius * 2.0, planet.radius * (planet.kind === 'gas' ? 4.4 : 3.2));
+            const color = new THREE.Color().setHSL(0, 0, randomRange(rng, 0.45, 0.74));
+            moons.push({
+                id: `${planet.name}:moon:${i + 1}`,
+                name: `${planet.name} moon ${i + 1}`,
+                kind: 'moon',
+                radius,
+                color: `#${color.getHexString()}`,
+                orbitRadius,
+                orbitSpeed: randomRange(rng, 0.018, 0.072) * (rng() < 0.5 ? -1 : 1),
+                spinSpeed: randomRange(rng, 0.025, 0.12),
+                spinPhase: rng() * Math.PI * 2,
+                orbitRotation: [
+                    randomRange(rng, -0.42, 0.42),
+                    rng() * Math.PI * 2,
+                    randomRange(rng, -0.35, 0.35),
+                    'XYZ'
+                ]
+            });
+        }
+        return moons;
     }
 
     _createBackdrop() {

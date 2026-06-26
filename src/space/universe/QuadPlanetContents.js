@@ -4,6 +4,17 @@ import { planetTrueRadius, QUAD_PLANET } from '../../config/scaleTiers.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 import { createPlanetSurfaceModel, normalizePlanetDescriptor, paletteToLegacyArray } from './planetPresets.js';
 import { CubeSphereQuadTree } from './CubeSphereQuadTree.js';
+import {
+    atmosphereUniforms,
+    buildProjectedSystemSky,
+    childFrameQuaternion,
+    evaluateParentSystemSnapshot,
+    parentFrameQuaternion,
+    parentToPlanetLocalDirection,
+    planetLocalToParentDirection,
+    projectedSkyTelemetry,
+    updateProjectedSystemSky
+} from './ParentSystemProjection.js';
 
 // --- Tier 3 rework / Tier 4: true-radius quadtree planet ------------------
 //
@@ -52,7 +63,6 @@ const LOCAL_FORWARD = new THREE.Vector3(0, 0, -1);
 const LOCAL_RIGHT = new THREE.Vector3(1, 0, 0);
 const SHIP_CLEARANCE_EXPORT = FALLBACK_SHIP_CLEARANCE;
 const SKY_DISTANCE_SCALE = 2.7;
-const MAX_SKY_BODIES = 10;
 
 const froundV = (v) => new THREE.Vector3(Math.fround(v.x), Math.fround(v.y), Math.fround(v.z));
 // float32 add of two vectors (operands rounded, sum rounded) — mimics the GPU.
@@ -138,13 +148,8 @@ export class QuadPlanetContents {
         this._pb = new THREE.Vector3();
         this._pc = new THREE.Vector3();
         this._pd = new THREE.Vector3();
-        this._selectedParentPos = new THREE.Vector3();
-        this._bodyParentPos = new THREE.Vector3();
-        this._relParent = new THREE.Vector3();
-        this._skyDir = new THREE.Vector3();
         this._skyOrigin = new THREE.Vector3();
-        this._parentFrameQuat = new THREE.Quaternion();
-        this._orbitEuler = new THREE.Euler();
+        this._skyState = {};
 
         this._time = 0;
         this._lastAltitude = Infinity;
@@ -155,11 +160,15 @@ export class QuadPlanetContents {
         this._lastLeafCount = 0;
         this._lastMaxDepth = 0;
         this._lastCamera = new THREE.Vector3();
-        this._skyBodies = [];
         this.sunLight = this._createSunLight();
         this.group.add(this.sunLight, this.sunLight.target);
-        this.systemSky = this._createSystemSky();
-        if (this.systemSky) this.group.add(this.systemSky);
+        this.systemSky = buildProjectedSystemSky({
+            parentSystem: this.parentSystem,
+            sunColor: this.sunColor,
+            planetScale: 1,
+            moonScale: 1
+        });
+        if (this.systemSky?.group) this.group.add(this.systemSky.group);
     }
 
     // Gravity reach the App widens its field to while this level is active, so a
@@ -380,9 +389,9 @@ export class QuadPlanetContents {
         this.runtimeConfig = { ...this.runtimeConfig, ...config };
         const lighting = config.lighting ?? {};
         this._material.uniforms.uSunColor.value.copy(this.sunColor);
-        this._material.uniforms.uAmbient.value = THREE.MathUtils.clamp(0.22 + (lighting.ambient ?? 0), 0.16, 0.48);
+        this._material.uniforms.uAmbient.value = THREE.MathUtils.clamp(0.40 + (lighting.ambient ?? 0), 0.30, 0.72);
         if (this.sunLight) {
-            this.sunLight.intensity = (lighting.intensity ?? 2.35) * Math.max(0.8, this.parentSystem?.star?.luminosity ?? 1);
+            this.sunLight.intensity = (lighting.intensity ?? 3.6) * Math.max(0.9, this.parentSystem?.star?.luminosity ?? 1);
         }
     }
 
@@ -395,11 +404,19 @@ export class QuadPlanetContents {
     }
 
     getParentFrameQuaternion(target = new THREE.Quaternion()) {
-        return target.setFromAxisAngle(UP, this._selectedSpinAngle());
+        return parentFrameQuaternion(this.parentSystem?.selected, this._time, target);
+    }
+
+    getChildFrameQuaternion(target = new THREE.Quaternion()) {
+        return childFrameQuaternion(this.parentSystem?.selected, this._time, target);
+    }
+
+    fromParentFrameDirection(direction, target = direction) {
+        return parentToPlanetLocalDirection(direction, this.parentSystem?.selected, this._time, target);
     }
 
     toParentFrameDirection(direction, target = direction) {
-        return target.copy(direction).applyQuaternion(this.getParentFrameQuaternion(this._parentFrameQuat)).normalize();
+        return planetLocalToParentDirection(direction, this.parentSystem?.selected, this._time, target);
     }
 
     // Jump the ship to `metres` altitude above the surface under its current
@@ -532,13 +549,7 @@ export class QuadPlanetContents {
             leafTiles: this._lastLeafCount,
             maxLodDepth: this._lastMaxDepth,
             builtTiles: tileStats.totalBuilt,
-            parentSystemSky: {
-                system: this.parentSystem?.name ?? null,
-                star: this.parentSystem?.star?.name ?? null,
-                sunDir: this.sunDir.toArray(),
-                selectedSpinDeg: THREE.MathUtils.radToDeg(this._selectedSpinAngle()),
-                projectedBodies: this._skyBodies.length
-            },
+            parentSystemSky: projectedSkyTelemetry(this.systemSky, this._skyState),
             ...tileStats
         };
     }
@@ -706,7 +717,7 @@ export class QuadPlanetContents {
             uniforms: {
                 uSunDir: { value: this.sunDir.clone() },
                 uSunColor: { value: this.sunColor.clone() },
-                uAmbient: { value: 0.22 }
+                uAmbient: { value: 0.40 }
             },
             vertexShader: `
                 #include <common>
@@ -744,7 +755,8 @@ export class QuadPlanetContents {
                 }
                 void main() {
                     float ndl = max(dot(normalize(vWorldNormal), normalize(uSunDir)), 0.0);
-                    float day = uAmbient + smoothstep(0.0, 0.25, ndl) * (0.85 + ndl * 0.4);
+                    float skyFill = 0.26 * smoothstep(-0.35, 0.45, dot(normalize(vWorldNormal), normalize(uSunDir)));
+                    float day = uAmbient + skyFill + smoothstep(-0.04, 0.42, ndl) * (1.18 + ndl * 0.72);
                     vec3 cell = floor(vWorldPos * 0.65);
                     float grain = hash31(cell);
                     float rough = clamp(vMaterialData.x, 0.0, 1.0);
@@ -753,7 +765,8 @@ export class QuadPlanetContents {
                     float slopeShade = mix(1.0, 0.78, clamp(vMaterialData.z / 48.0, 0.0, 1.0));
                     vec3 terrainColor = vColor * (micro + pebble) * slopeShade;
                     vec3 emissive = vColor * vMaterialData.y * (1.4 + grain * 0.5);
-                    gl_FragColor = vec4(terrainColor * day * uSunColor + emissive, 1.0);
+                    vec3 sunlight = mix(vec3(1.0), uSunColor, 0.72);
+                    gl_FragColor = vec4(terrainColor * day * sunlight + emissive, 1.0);
                     #include <logdepthbuf_fragment>
                 }
             `
@@ -761,53 +774,15 @@ export class QuadPlanetContents {
     }
 
     _createSunLight() {
-        const light = new THREE.DirectionalLight(this.sunColor, 3.0 * Math.max(0.8, this.parentSystem?.star?.luminosity ?? 1));
+        const light = new THREE.DirectionalLight(this.sunColor, 4.2 * Math.max(0.9, this.parentSystem?.star?.luminosity ?? 1));
         light.name = 'PlanetaryParentStarLight';
         light.target.name = 'PlanetaryParentStarLightTarget';
         return light;
     }
 
-    _createSystemSky() {
-        const group = new THREE.Group();
-        group.name = 'ProjectedParentSystemSky';
-
-        const sunMaterial = new THREE.SpriteMaterial({
-            map: discTexture(),
-            color: this.sunColor,
-            transparent: true,
-            opacity: 1,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            depthTest: true,
-            fog: false
-        });
-        this.sunSprite = new THREE.Sprite(sunMaterial);
-        this.sunSprite.name = `ProjectedSun:${this.parentSystem?.star?.name ?? 'Parent star'}`;
-        group.add(this.sunSprite);
-
-        const bodies = (this.parentSystem?.bodies ?? []).slice(0, MAX_SKY_BODIES);
-        for (const body of bodies) {
-            const material = new THREE.SpriteMaterial({
-                map: discTexture(),
-                color: colorFromHex(body.color, '#d8c38a'),
-                transparent: true,
-                opacity: body.kind === 'gas' ? 0.95 : 0.82,
-                depthWrite: false,
-                depthTest: true,
-                fog: false
-            });
-            const sprite = new THREE.Sprite(material);
-            sprite.name = `ProjectedSystemBody:${body.name}`;
-            sprite.userData.body = body;
-            group.add(sprite);
-            this._skyBodies.push(sprite);
-        }
-
-        return group;
-    }
-
     _updateSystemLightingAndSky(cameraPosition = this._lastCamera) {
-        this._updateSunDirection();
+        const state = evaluateParentSystemSnapshot(this.parentSystem, this._time, this._skyState);
+        this.sunDir.copy(state.sunDirLocal);
         this._material.uniforms.uSunDir.value.copy(this.sunDir);
         this._material.uniforms.uSunColor.value.copy(this.sunColor);
         if (this.atmosphere?.material?.uniforms?.uSunDir) {
@@ -822,88 +797,30 @@ export class QuadPlanetContents {
         if (!this.systemSky) return;
         const skyDistance = this.radius * SKY_DISTANCE_SCALE;
         this._skyOrigin.copy(cameraPosition ?? this._lastCamera);
-        this.sunSprite.position.copy(this._skyOrigin).addScaledVector(this.sunDir, skyDistance);
-        const sunAngular = THREE.MathUtils.clamp(
-            ((this.parentSystem?.star?.radius ?? this.radius * 0.02) / Math.max(this._parentStarDistance(), 1)) * 9.5,
-            0.028,
-            0.095
-        );
-        const sunScale = skyDistance * sunAngular;
-        this.sunSprite.scale.setScalar(sunScale);
-        this.sunSprite.material.color.copy(this.sunColor);
-
-        for (const sprite of this._skyBodies) {
-            const body = sprite.userData.body;
-            const rel = this._bodyRelativeToSelected(body, this._relParent);
-            const distance = rel.length();
-            if (distance < 1e-6) {
-                sprite.visible = false;
-                continue;
-            }
-            this._parentToPlanetLocalDirection(rel, this._skyDir);
-            sprite.position.copy(this._skyOrigin).addScaledVector(this._skyDir, skyDistance * 0.96);
-            const angular = THREE.MathUtils.clamp((body.radius / distance) * 4.2, 0.008, body.kind === 'gas' ? 0.052 : 0.036);
-            sprite.scale.setScalar(skyDistance * angular);
-            sprite.visible = true;
-        }
-    }
-
-    _updateSunDirection() {
-        if (!this.parentSystem?.star || !this.parentSystem?.selected) return;
-        this._bodyParentPosition(this.parentSystem.selected, this._selectedParentPos);
-        this._vectorFromArray(this.parentSystem.star.position, this._bodyParentPos);
-        this._relParent.copy(this._bodyParentPos).sub(this._selectedParentPos);
-        this._parentToPlanetLocalDirection(this._relParent, this.sunDir);
-    }
-
-    _bodyRelativeToSelected(body, target) {
-        this._bodyParentPosition(this.parentSystem.selected, this._selectedParentPos);
-        this._bodyParentPosition(body, this._bodyParentPos);
-        return target.copy(this._bodyParentPos).sub(this._selectedParentPos);
-    }
-
-    _parentStarDistance() {
-        if (!this.parentSystem?.star || !this.parentSystem?.selected) return this.radius * 30;
-        this._bodyParentPosition(this.parentSystem.selected, this._selectedParentPos);
-        this._vectorFromArray(this.parentSystem.star.position, this._bodyParentPos);
-        return this._bodyParentPos.distanceTo(this._selectedParentPos);
-    }
-
-    _parentToPlanetLocalDirection(parentVector, target) {
-        target.copy(parentVector);
-        if (target.lengthSq() < 1e-10) return target.copy(this.sunDir);
-        target.normalize();
-        return target.applyAxisAngle(UP, -this._selectedSpinAngle()).normalize();
+        updateProjectedSystemSky(this.systemSky, {
+            parentSystem: this.parentSystem,
+            elapsedTime: this._time,
+            skyOrigin: this._skyOrigin,
+            skyDistance,
+            sunColor: this.sunColor,
+            systemState: state,
+            occluderCenter: this._centerScene,
+            occluderRadius: this.radius
+        });
     }
 
     _selectedSpinAngle() {
-        const selected = this.parentSystem?.selected;
-        return (selected?.spinPhase ?? 0) + (selected?.spinSpeed ?? 0) * this._time;
-    }
-
-    _bodyParentPosition(body, target) {
-        if (Number.isFinite(body?.orbitRadius) && Array.isArray(body?.orbitRotation)) {
-            const [x = 0, y = 0, z = 0, order = 'XYZ'] = body.orbitRotation;
-            this._orbitEuler.set(x, y + (body.orbitSpeed ?? 0) * this._time, z, order);
-            return target.set(body.orbitRadius, 0, 0).applyEuler(this._orbitEuler);
-        }
-        return this._vectorFromArray(body?.position, target);
-    }
-
-    _vectorFromArray(value, target) {
-        return Array.isArray(value)
-            ? target.fromArray(value)
-            : target.set(0, 0, 0);
+        return this._skyState?.selectedSpinAngle ?? 0;
     }
 
     _createAtmosphere() {
         const atmosphere = this.descriptor?.atmosphere;
         if (!atmosphere || (atmosphere.density ?? 0) <= 0.02) return null;
         const geometry = new THREE.SphereGeometry(this.radius * (1.012 + atmosphere.density * 0.035), 64, 32);
+        const horizonUniforms = atmosphereUniforms(atmosphere, this.sunDir);
         const material = new THREE.ShaderMaterial({
             uniforms: {
-                uColor: { value: new THREE.Color(atmosphere.color ?? '#7fb6ff') },
-                uSunDir: { value: this.sunDir.clone() },
+                ...horizonUniforms,
                 uDensity: { value: atmosphere.density ?? 0.35 },
                 uRimStrength: { value: atmosphere.rimStrength ?? 1.0 }
             },
@@ -921,15 +838,24 @@ export class QuadPlanetContents {
                 varying vec3 vWorldNormal;
                 varying vec3 vViewDir;
                 uniform vec3 uColor;
+                uniform vec3 uDayColor;
+                uniform vec3 uSunsetColor;
+                uniform vec3 uNightColor;
                 uniform vec3 uSunDir;
                 uniform float uDensity;
                 uniform float uRimStrength;
                 void main() {
                     vec3 N = normalize(vWorldNormal);
                     float rim = pow(1.0 - abs(dot(N, normalize(vViewDir))), 2.4);
-                    float day = 0.28 + 0.72 * max(dot(N, normalize(uSunDir)), 0.0);
-                    float alpha = rim * day * uDensity * 0.65;
-                    gl_FragColor = vec4(uColor * rim * day * uRimStrength, alpha);
+                    float sunDot = dot(N, normalize(uSunDir));
+                    float day = smoothstep(-0.10, 0.26, sunDot);
+                    float sunset = smoothstep(-0.30, 0.04, sunDot) * (1.0 - smoothstep(0.06, 0.34, sunDot));
+                    float night = 1.0 - smoothstep(-0.42, -0.06, sunDot);
+                    vec3 tint = mix(uNightColor, uDayColor, day);
+                    tint = mix(tint, uSunsetColor, sunset * 0.72);
+                    float haze = 0.42 + day * 1.18 + night * 0.22;
+                    float alpha = rim * haze * uDensity * 0.82;
+                    gl_FragColor = vec4(tint * rim * haze * uRimStrength * 1.25, alpha);
                 }
             `,
             transparent: true,
@@ -951,43 +877,14 @@ export class QuadPlanetContents {
             this.atmosphere.material.dispose();
         }
         if (this.systemSky) {
-            for (const child of this.systemSky.children) {
-                child.material?.dispose?.();
-            }
+            disposeProjectedSky(this.systemSky.group);
         }
     }
 }
 
-let DISC_TEXTURE = null;
-
-function discTexture() {
-    if (DISC_TEXTURE) return DISC_TEXTURE;
-    if (typeof document === 'undefined') {
-        const data = new Uint8Array([255, 255, 255, 255]);
-        DISC_TEXTURE = new THREE.DataTexture(data, 1, 1);
-        DISC_TEXTURE.needsUpdate = true;
-        return DISC_TEXTURE;
-    }
-
-    const size = 64;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    const gradient = ctx.createRadialGradient(size * 0.5, size * 0.5, 0, size * 0.5, size * 0.5, size * 0.5);
-    gradient.addColorStop(0.0, 'rgba(255,255,255,1)');
-    gradient.addColorStop(0.58, 'rgba(255,255,255,0.94)');
-    gradient.addColorStop(0.82, 'rgba(255,255,255,0.32)');
-    gradient.addColorStop(1.0, 'rgba(255,255,255,0)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, size, size);
-    DISC_TEXTURE = new THREE.CanvasTexture(canvas);
-    DISC_TEXTURE.colorSpace = THREE.SRGBColorSpace;
-    return DISC_TEXTURE;
-}
-
-function colorFromHex(value, fallback = '#ffffff') {
-    if (!value) return new THREE.Color(fallback);
-    const text = String(value);
-    return new THREE.Color(text.startsWith('#') ? text : `#${text}`);
+function disposeProjectedSky(root) {
+    root?.traverse?.((object) => {
+        object.geometry?.dispose?.();
+        object.material?.dispose?.();
+    });
 }

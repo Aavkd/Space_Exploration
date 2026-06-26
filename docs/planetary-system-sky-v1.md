@@ -44,7 +44,7 @@ Manual validation on 2026-06-26 confirmed:
 Still pending:
 
 - Confirm sibling planets are readable from representative surface/orbit camera angles.
-- Confirm ascent back to System tier preserves the apparent sun and sibling-body directions closely enough during normal play.
+- Confirm ascent back to System tier preserves the apparent sun and sibling-body directions closely enough during normal play. -> not realy I tested ascending looking straight at the sun, and when entering system tier, this was not the case anymore
 - Tune projected disc sizing and brightness after sibling-body visibility is confirmed.
 
 ## Coordinate Model
