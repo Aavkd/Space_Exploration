@@ -132,7 +132,8 @@ export class SystemContents {
         return {
             name: this.anchor.name,
             theme: 'stellar system',
-            radius: this.regionRadius
+            radius: this.regionRadius,
+            rpg: this.anchor.rpg ?? null
         };
     }
 
@@ -144,6 +145,7 @@ export class SystemContents {
             attractors: this.getAttractors().length,
             system: {
                 name: this.anchor.name,
+                rpg: this.anchor.rpg ?? null,
                 planets: this.planets.length,
                 starRadius: this.star.radius,
                 planetTypes: this.planets.map((planet) => ({

@@ -34,6 +34,7 @@ import { DiegeticStatusPanel } from '../ui/DiegeticStatusPanel.js';
 import { UniverseNavigation } from '../ui/UniverseNavigation.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
+import { createRpgRuntime } from '../rpg/index.js';
 
 // Rebase the world origin when the ship exceeds this distance from (0,0,0).
 // 1 000 units → float32 precision < 0.0002 units, imperceptible on any surface.
@@ -223,6 +224,8 @@ export class App {
             environment: this.environment
         });
         this.xrVisualEffects.resize(window.innerWidth, window.innerHeight, this.renderer.getPixelRatio());
+        this.rpg = createRpgRuntime();
+        this.commsPanelOpen = false;
 
         this._createTelemetryHud();
         this._bindEvents();
@@ -298,6 +301,7 @@ export class App {
         this._updateSpeedFx(dt, xrActive);
 
         this._updateTelemetry();
+        this._updateCommsPanel();
         this.universeNavigation.update({
             shipPosition: this.ship.position,
             camera: this.camera,
@@ -334,6 +338,7 @@ export class App {
         if (buttons.triangle.justPressed && this.cameraMode === 'player') {
             const action = this.playerController.interact();
             if (action) {
+                if (action === 'openComms') this._openCommsPanel();
                 this.input.gamepad.pulse({ duration: 90, weak: 0.25, strong: 0.45 });
                 this._syncDebugDomState();
             }
@@ -430,7 +435,21 @@ export class App {
         this.gravityField.maxDistance = level.universe.gravityReach ?? 70000;
         this.gravityField.setAttractors(level.universe.getAttractors());
         this._applyUniverseRuntimeConfig();
+        this._syncActiveRpgSystem();
         this._syncDebugDomState();
+    }
+
+    _syncActiveRpgSystem() {
+        if (!this.rpg || !this.scaleStack) return;
+        this.rpg.setActiveNamedSystem(this._findActiveRpgNamedSystemId());
+    }
+
+    _findActiveRpgNamedSystemId() {
+        for (let i = this.scaleStack.stack.length - 1; i >= 0; i--) {
+            const rpg = this.scaleStack.stack[i]?.universe?.anchor?.rpg;
+            if (rpg?.namedSystemId) return rpg.namedSystemId;
+        }
+        return null;
     }
 
     // Debug: jump the ship to a given altitude over a quadtree planet, then rebase
@@ -547,6 +566,7 @@ export class App {
         if (this.cameraMode !== 'player') return false;
         const action = this.playerController.interact();
         if (action) {
+            if (action === 'openComms') this._openCommsPanel();
             this.xr.pulse({ duration: 80, strength: 0.34 });
             this._syncDebugDomState();
         }
@@ -772,6 +792,243 @@ export class App {
         document.body.appendChild(prompt);
         this.promptNode = prompt.querySelector('[data-prompt]');
         this.promptContainer = prompt;
+
+        this._createCommsPanel();
+    }
+
+    _createCommsPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'cockpit-comms-panel';
+        panel.innerHTML = `
+            <style>
+                #cockpit-comms-panel {
+                    position: fixed;
+                    right: 18px;
+                    top: 72px;
+                    width: min(420px, calc(100vw - 36px));
+                    max-height: calc(100vh - 116px);
+                    overflow: auto;
+                    padding: 14px;
+                    background: rgba(3, 9, 20, 0.9);
+                    border: 1px solid rgba(135, 210, 255, 0.42);
+                    border-radius: 4px;
+                    color: #dff0ff;
+                    font: 13px/1.45 "Consolas", "Courier New", monospace;
+                    letter-spacing: 0;
+                    text-shadow: 0 0 10px rgba(120, 180, 255, 0.45);
+                    box-shadow: 0 0 28px rgba(70, 150, 255, 0.16);
+                    pointer-events: auto;
+                    z-index: 12;
+                    display: none;
+                }
+                #cockpit-comms-panel .comms-head {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    margin-bottom: 10px;
+                }
+                #cockpit-comms-panel .comms-title {
+                    color: #9bdcff;
+                    font-size: 13px;
+                    font-weight: bold;
+                    letter-spacing: 0.06em;
+                    text-transform: uppercase;
+                }
+                #cockpit-comms-panel .comms-subtle {
+                    color: rgba(210, 232, 255, 0.68);
+                    font-size: 12px;
+                }
+                #cockpit-comms-panel .comms-contact {
+                    margin: 10px 0;
+                    padding: 10px;
+                    border: 1px solid rgba(135, 210, 255, 0.22);
+                    border-radius: 4px;
+                    background: rgba(15, 35, 62, 0.42);
+                }
+                #cockpit-comms-panel .comms-speaker {
+                    color: #74ffb0;
+                    font-weight: bold;
+                    margin-bottom: 6px;
+                }
+                #cockpit-comms-panel .comms-text {
+                    margin: 8px 0 12px;
+                    color: #e9f5ff;
+                }
+                #cockpit-comms-panel button {
+                    color: #dff0ff;
+                    background: rgba(36, 74, 112, 0.72);
+                    border: 1px solid rgba(155, 220, 255, 0.42);
+                    border-radius: 4px;
+                    padding: 7px 9px;
+                    font: inherit;
+                    text-align: left;
+                    cursor: pointer;
+                }
+                #cockpit-comms-panel button:hover,
+                #cockpit-comms-panel button:focus {
+                    background: rgba(54, 105, 150, 0.88);
+                    outline: none;
+                }
+                #cockpit-comms-panel .comms-close {
+                    min-width: 32px;
+                    text-align: center;
+                    padding: 5px 8px;
+                }
+                #cockpit-comms-panel .comms-actions {
+                    display: grid;
+                    gap: 8px;
+                    margin-top: 10px;
+                }
+                #cockpit-comms-panel .comms-status {
+                    margin-top: 10px;
+                    color: #ffcf8c;
+                }
+            </style>
+            <div data-comms-content></div>
+        `;
+        document.body.appendChild(panel);
+        this.commsPanel = panel;
+        this.commsContentNode = panel.querySelector('[data-comms-content]');
+        panel.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-comms-action]');
+            if (!target) return;
+            event.preventDefault();
+            const action = target.dataset.commsAction;
+            const id = target.dataset.commsId;
+            if (action === 'close') this._closeCommsPanel();
+            else if (action === 'start') this._startCommsConversation(id);
+            else if (action === 'choose') this._chooseCommsDialogue(id);
+        });
+    }
+
+    _openCommsPanel(contactId = null) {
+        this.commsPanelOpen = true;
+        if (contactId) this.rpg.startConversation(contactId);
+        this._exitPointerLock();
+        this._updateCommsPanel();
+        this._syncDebugDomState();
+        return this.rpg.getCommsState();
+    }
+
+    _closeCommsPanel() {
+        this.commsPanelOpen = false;
+        this.rpg.exitConversation();
+        this._updateCommsPanel();
+        this._syncDebugDomState();
+        return this.rpg.getCommsState();
+    }
+
+    _startCommsConversation(contactId) {
+        const state = this.rpg.startConversation(contactId);
+        this.commsPanelOpen = true;
+        this._updateCommsPanel();
+        this._syncDebugDomState();
+        return state;
+    }
+
+    _chooseCommsDialogue(choiceId) {
+        const state = this.rpg.chooseDialogue(choiceId);
+        this.commsPanelOpen = true;
+        this._updateCommsPanel();
+        this._syncDebugDomState();
+        return state;
+    }
+
+    _handleCommsKeydown(event) {
+        if (!this.commsPanelOpen) return false;
+        if (event.code === 'Escape' || event.code === 'KeyC') {
+            event.preventDefault();
+            this._closeCommsPanel();
+            return true;
+        }
+        if (event.code === 'Enter') {
+            const state = this.rpg.getCommsState();
+            const first = state.availableContacts[0];
+            if (!state.activeContact && first) {
+                event.preventDefault();
+                this._startCommsConversation(first.id);
+                return true;
+            }
+        }
+        if (/^Digit[1-9]$/.test(event.code)) {
+            const index = Number(event.code.slice(5)) - 1;
+            const choice = this.rpg.getCommsState().visibleChoices[index];
+            if (choice) {
+                event.preventDefault();
+                this._chooseCommsDialogue(choice.id);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    _updateCommsPanel() {
+        if (!this.commsPanel || !this.commsContentNode) return;
+        this.commsPanel.style.display = this.commsPanelOpen ? 'block' : 'none';
+        if (!this.commsPanelOpen) return;
+
+        const state = this.rpg.getCommsState();
+        const active = state.activeContact;
+        const available = state.availableContacts;
+        const systemLabel = state.activeNamedSystemId ?? 'no authored system';
+        const lines = [
+            '<div class="comms-head">',
+            '<div>',
+            '<div class="comms-title">Cockpit Comms</div>',
+            `<div class="comms-subtle">Context: ${escapeHtml(systemLabel)}</div>`,
+            '</div>',
+            '<button class="comms-close" data-comms-action="close" title="Close comms">X</button>',
+            '</div>'
+        ];
+
+        if (!active) {
+            if (available.length === 0) {
+                lines.push('<div class="comms-status">No reachable contacts on this frequency.</div>');
+            } else {
+                lines.push('<div class="comms-subtle">Reachable contacts</div>');
+                for (const contact of available) {
+                    lines.push(
+                        '<div class="comms-contact">',
+                        `<div class="comms-speaker">${escapeHtml(contact.name)}</div>`,
+                        `<div class="comms-subtle">${escapeHtml(contact.title)} / ${escapeHtml(contact.factionId)}</div>`,
+                        '<div class="comms-actions">',
+                        `<button data-comms-action="start" data-comms-id="${escapeHtml(contact.id)}">Open hail</button>`,
+                        '</div>',
+                        '</div>'
+                    );
+                }
+                lines.push('<div class="comms-subtle">Press Enter to hail the first contact.</div>');
+            }
+            this.commsContentNode.innerHTML = lines.join('');
+            return;
+        }
+
+        lines.push(
+            '<div class="comms-contact">',
+            `<div class="comms-speaker">${escapeHtml(active.name)}</div>`,
+            `<div class="comms-subtle">${escapeHtml(active.title)} / ${escapeHtml(active.factionId)}</div>`,
+            `<div class="comms-text">${escapeHtml(active.node.text)}</div>`,
+            '</div>'
+        );
+
+        lines.push('<div class="comms-actions">');
+        state.visibleChoices.forEach((choice, index) => {
+            lines.push(
+                `<button data-comms-action="choose" data-comms-id="${escapeHtml(choice.id)}">`,
+                `${index + 1}. ${escapeHtml(choice.label)}`,
+                '</button>'
+            );
+        });
+        lines.push('</div>');
+
+        const llm = state.llmFlavor;
+        lines.push(
+            '<div class="comms-status">',
+            `LLM flavor gate: ${llm.enabled ? 'stub enabled' : 'disabled'} / ${escapeHtml(llm.source)} / no authority`,
+            '</div>'
+        );
+        this.commsContentNode.innerHTML = lines.join('');
     }
 
     _updateTelemetry() {
@@ -957,6 +1214,8 @@ export class App {
         window.addEventListener('keydown', (event) => {
             this._unlockAudioFromGesture();
 
+            if (this._handleCommsKeydown(event)) return;
+
             if (event.code === 'F2') {
                 event.preventDefault();
                 this.postPanel.toggle();
@@ -1043,7 +1302,8 @@ export class App {
             if (event.code === 'KeyC') {
                 event.preventDefault();
                 if (!event.repeat && this.cameraMode === 'player') {
-                    this.playerController.interact();
+                    const action = this.playerController.interact();
+                    if (action === 'openComms') this._openCommsPanel();
                     this._syncDebugDomState();
                 }
                 return;
@@ -1097,7 +1357,7 @@ export class App {
         this.canvas.addEventListener('pointerdown', () => this._unlockAudioFromGesture(), { passive: true });
         this.canvas.addEventListener('click', () => {
             this._unlockAudioFromGesture();
-            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible) {
+            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen) {
                 this.canvas.requestPointerLock?.();
             }
         });
@@ -1337,6 +1597,87 @@ export class App {
             getActivePreset: () => this.activePreset,
             getUniverseState: () => this.environment.getDebugState(this.ship.position),
             getUniverseConfig: () => structuredClone(this.universeConfig),
+            getRpgState: () => this.rpg.getState(),
+            getActiveNamedSystem: () => this.rpg.getActiveNamedSystem(),
+            resetRpgState: () => {
+                const state = this.rpg.reset();
+                this._syncDebugDomState();
+                return state;
+            },
+            rpg: {
+                getState: () => this.rpg.getState(),
+                getNamedSystem: (id) => this.rpg.getNamedSystem(id),
+                getActiveNamedSystem: () => this.rpg.getActiveNamedSystem(),
+                getContacts: () => this.rpg.getContacts(),
+                getCommsState: () => this.rpg.getCommsState(),
+                getMissions: () => this.rpg.getMissions(),
+                getMission: (id) => this.rpg.getMission(id),
+                offerMission: (id) => {
+                    const result = this.rpg.offerMission(id);
+                    this._updateCommsPanel();
+                    this._syncDebugDomState();
+                    return result;
+                },
+                acceptMission: (id) => {
+                    const result = this.rpg.acceptMission(id);
+                    this._updateCommsPanel();
+                    this._syncDebugDomState();
+                    return result;
+                },
+                failMission: (id, outcomeId) => {
+                    const result = this.rpg.failMission(id, outcomeId);
+                    this._updateCommsPanel();
+                    this._syncDebugDomState();
+                    return result;
+                },
+                resolveMission: (id, branchId) => {
+                    const result = this.rpg.resolveMission(id, branchId);
+                    this._updateCommsPanel();
+                    this._syncDebugDomState();
+                    return result;
+                },
+                openComms: (contactId = null) => this._openCommsPanel(contactId),
+                chooseComms: (choiceId) => this._chooseCommsDialogue(choiceId),
+                closeComms: () => this._closeCommsPanel(),
+                setCommsLlmFlavorEnabled: (enabled) => {
+                    const state = this.rpg.setCommsLlmFlavorEnabled(enabled);
+                    this._updateCommsPanel();
+                    this._syncDebugDomState();
+                    return state;
+                },
+                getFaction: (id) => this.rpg.getFaction(id),
+                getReputation: (id) => this.rpg.getReputation(id),
+                setReputation: (id, value, reason) => {
+                    const event = this.rpg.setReputation(id, value, reason);
+                    this._syncDebugDomState();
+                    return event;
+                },
+                adjustReputation: (id, delta, reason) => {
+                    const event = this.rpg.adjustReputation(id, delta, reason);
+                    this._syncDebugDomState();
+                    return event;
+                },
+                appendEvent: (type, payload) => {
+                    const event = this.rpg.appendEvent(type, payload);
+                    this._syncDebugDomState();
+                    return event;
+                },
+                save: () => {
+                    const state = this.rpg.save();
+                    this._syncDebugDomState();
+                    return state;
+                },
+                reload: () => {
+                    const state = this.rpg.reload();
+                    this._syncDebugDomState();
+                    return state;
+                },
+                reset: () => {
+                    const state = this.rpg.reset();
+                    this._syncDebugDomState();
+                    return state;
+                }
+            },
             getDebrisState: () => ({
                 hazard: {
                     ...this.debrisHazardState,
@@ -1652,6 +1993,12 @@ export class App {
                 : null,
             xr: this.xr?.getDebugState?.(),
             renderPipeline: this.renderPipeline?.getState?.(),
+            rpg: this.rpg
+                ? {
+                    ...this.rpg.getSummary(),
+                    comms: this.rpg.getCommsState()
+                }
+                : null,
             gamepad: this.input.gamepad.getDebugState(),
             shipAnchors: this.ship.getAnchorNames(),
             anchorValidation: this.ship.validateAnchors(),
@@ -1696,4 +2043,13 @@ function mergeConfig(target, source) {
 function replaceConfig(target, source) {
     for (const key of Object.keys(target)) delete target[key];
     mergeConfig(target, structuredClone(source));
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
 }

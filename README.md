@@ -13,6 +13,7 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
 - Desktop post-FX stack plus a custom WebXR render path for bloom, retro pixel treatment, scanlines, color depth, and speed-scaled warp.
 - Hyperdrive-responsive star-field aberration and Doppler/beaming, tunable from the F2 `Relativistic Stars` group.
 - DualSense / standard gamepad support, WebXR controller support, and runtime debug hooks.
+- RPG foundation with a deterministic Port Meridian cockpit comms contact and local save-backed conversation state.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -54,7 +55,7 @@ Notes:
 | `W` / `A` / `S` / `D` | Walk / strafe or EVA float |
 | `Shift` | Run on foot |
 | `R` / `F` | EVA up / down |
-| `C` | Contextual interact: take controls, leave controls, exit airlock, re-enter ship |
+| `C` | Contextual interact: take controls, open cockpit comms, leave controls, exit airlock, re-enter ship |
 | `T` | Teleport/toggle inside-outside EVA for testing |
 | `V` | Return to the first-person player camera |
 
@@ -109,6 +110,7 @@ src/
   player/          Walking, piloting, EVA, and camera rig
   postprocessing/  Custom shaders
   rendering/       Desktop and XR render pipelines, panels, HUD helpers
+  rpg/             RPG state, persistence, registries, contacts, missions, and comms runtime
   ship/            Ship entity, physics, controls, model loading, interior
   space/           Procedural universe facade, gravity, and landmarks
   ui/              Diegetic HUD and navigation markers
@@ -128,6 +130,9 @@ window.__deepSpaceDebug.getRenderPipelineState();
 window.__deepSpaceDebug.getUniverseState();
 window.__deepSpaceDebug.toggleHyperdrive();
 window.__deepSpaceDebug.applyUniversePreset('dense_cluster');
+window.__deepSpaceDebug.rpg.adjustReputation('commonwealth', 0.25, 'manual-test');
+window.__deepSpaceDebug.rpg.getCommsState();
+window.__deepSpaceDebug.rpg.getMission('port_meridian_route_packet');
 ```
 
 ## Documentation map

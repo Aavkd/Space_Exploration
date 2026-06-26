@@ -20,7 +20,8 @@ export class UniverseNavigation {
             const toPoi = poi.position.clone().sub(shipPosition).normalize();
             const bearing = signedBearing(forward, toPoi);
             const arrow = bearing > 18 ? '>' : bearing < -18 ? '<' : '^';
-            return `${arrow} ${poi.name} ${formatDistance(poi.distance)}`;
+            const rpgTag = poi.rpg ? ' [RPG]' : '';
+            return `${arrow} ${poi.name}${rpgTag} ${formatDistance(poi.distance)}`;
         });
         this.element.querySelector('[data-nav]').textContent = lines.join('\n');
     }
@@ -30,6 +31,7 @@ export class UniverseNavigation {
             markers: this.markers.map((poi) => ({
                 type: poi.type,
                 name: poi.name,
+                rpg: poi.rpg ?? null,
                 distance: poi.distance
             }))
         };

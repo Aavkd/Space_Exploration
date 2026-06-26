@@ -3,6 +3,7 @@ import { gaussian, randomRange } from './rng.js';
 import { randomPointInSphere } from './CosmicWeb.js';
 import { blackbody, sampleStarTemperature, sampleLuminosity, starImpostorRadius } from './starColor.js';
 import { sampleGalaxyDiskPoint } from './galaxyShape.js';
+import { NAMED_SYSTEM_DEFINITIONS } from '../../rpg/registries.js';
 
 // Inside a galaxy, how far each rendered star's colour is pulled from its raw
 // blackbody tint toward the galaxy's own inner/outer palette, so the dominant
@@ -23,6 +24,7 @@ export class StarField {
         this.layers = {};
         this.heroLights = [];
         this.systemAnchors = [];
+        this.authoredSystemAnchors = [];
         // Inside a galaxy level the config carries the parent galaxy's descriptor.
         // When present, the near/mid stars trace that galaxy's disk + arms instead
         // of the generic cosmic-web scatter, so the resolved stars populate the
@@ -80,6 +82,8 @@ export class StarField {
     // only built for stars that pass the shortlist/exclusion gate. The single
     // sqrt is deferred to the small returned set.
     getSystemPOIs({ position = null, maxDistance = Infinity, limit = Infinity, excludeWithin = [] } = {}) {
+        if (Number.isFinite(limit) && limit <= 0) return [];
+
         const results = [];
         const boundedNearest = Boolean(position) && Number.isFinite(limit);
         const maxDistanceSq = maxDistance === Infinity ? Infinity : maxDistance * maxDistance;
@@ -88,10 +92,7 @@ export class StarField {
         for (const star of this.systemAnchors) {
             // Every local star layer shares the same rebase offset, so the world
             // position is just the layer offset added to the stored local point.
-            const offset = this.layers[star.layerName]?.position;
-            const wx = star.localPosition.x + (offset ? offset.x : 0);
-            const wy = star.localPosition.y + (offset ? offset.y : 0);
-            const wz = star.localPosition.z + (offset ? offset.z : 0);
+            const { wx, wy, wz } = this._systemAnchorWorldPosition(star);
 
             let distanceSq = 0;
             if (position) {
@@ -144,11 +145,25 @@ export class StarField {
         }));
     }
 
+    getAuthoredSystemPOIs({ position = new THREE.Vector3() } = {}) {
+        return this.authoredSystemAnchors.map((star) => {
+            const { wx, wy, wz } = this._systemAnchorWorldPosition(star);
+            const dx = wx - position.x;
+            const dy = wy - position.y;
+            const dz = wz - position.z;
+            const poi = this._makeSystemPOI(star, wx, wy, wz, dx * dx + dy * dy + dz * dz);
+            poi.distance = Math.sqrt(poi._distanceSq);
+            delete poi._distanceSq;
+            return poi;
+        });
+    }
+
     _create() {
         if (!this.config.stars.enabled) return;
         this.layers.near = this._createLayer('near', this.config.stars.nearCount, 80000, true);
         this.layers.mid = this._createLayer('mid', this.config.stars.midCount, this.config.global.regionRadius * 0.82, true);
         this.layers.background = this._createLayer('background', this.config.stars.bgCount, 420000, false);
+        this._createAuthoredSystemAnchors();
         this.group.add(...Object.values(this.layers));
     }
 
@@ -379,6 +394,37 @@ export class StarField {
         return sampled.position.clampLength(20000, radius);
     }
 
+    _createAuthoredSystemAnchors() {
+        if (this._galaxyDescriptor) return;
+
+        for (const system of Object.values(NAMED_SYSTEM_DEFINITIONS)) {
+            if (!Array.isArray(system.position) || !system.seed) continue;
+
+            const luminosity = system.star?.luminosity ?? 1;
+            const anchor = {
+                type: 'star',
+                name: system.navigationLabel ?? system.name ?? system.id,
+                layerName: this.layers.near ? 'near' : null,
+                localPosition: new THREE.Vector3().fromArray(system.position),
+                color: new THREE.Color(system.star?.color ?? '#ffd89a'),
+                temperatureK: system.star?.temperatureK ?? 5800,
+                intensity: luminosity,
+                systemRadius: starImpostorRadius(luminosity),
+                childSeed: system.seed,
+                isAuthored: true,
+                rpg: {
+                    namedSystemId: system.id,
+                    name: system.name ?? system.id,
+                    role: system.role,
+                    startingTier: system.startingTier,
+                    startingFactionId: system.startingFactionId
+                }
+            };
+            this.systemAnchors.push(anchor);
+            this.authoredSystemAnchors.push(anchor);
+        }
+    }
+
     _makeSystemPOI(star, wx, wy, wz, distanceSq) {
         return {
             type: 'star',
@@ -388,7 +434,19 @@ export class StarField {
             color: star.color.clone(),
             temperatureK: star.temperatureK,
             luminosity: star.intensity,
+            childSeed: star.childSeed,
+            isAuthored: Boolean(star.isAuthored),
+            rpg: star.rpg ? { ...star.rpg } : null,
             _distanceSq: distanceSq
+        };
+    }
+
+    _systemAnchorWorldPosition(star) {
+        const offset = this.layers[star.layerName]?.position;
+        return {
+            wx: star.localPosition.x + (offset ? offset.x : 0),
+            wy: star.localPosition.y + (offset ? offset.y : 0),
+            wz: star.localPosition.z + (offset ? offset.z : 0)
         };
     }
 

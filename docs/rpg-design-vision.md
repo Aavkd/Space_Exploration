@@ -1,6 +1,6 @@
 # Deep Space VR — RPG Design Vision
 
-> **Status:** Pre-implementation design document. No code exists for these systems yet.
+> **Status:** Design source of truth. Phase 11A local RPG state spine, Phase 11B authored system anchor, Phase 11C cockpit comms/contact slice, and Phase 11D first mission loop are implemented.
 > **Purpose:** Capture the intended RPG layer architecture so it can be developed incrementally without losing design intent.
 > **Last updated:** 2026-06-26 (rounds 1–4 locked, worldbuilding session open)
 
@@ -80,6 +80,8 @@ The procedural universe (already implemented) is the substrate. The RPG layer ad
 ### 3.2 Named Systems (Design Intent, Lore TBD)
 
 Named systems are defined by a **fixed seed override**, a **purpose role**, and a **dominant civilization tier**. Specific lore, names, and visual identity are to be designed in the worldbuilding document.
+
+**Implemented MVP anchor:** `entry_hub` currently appears in the root procedural universe as `Port Meridian`, using fixed position `[12000, 1400, -18000]` and fixed child system seed `rpg-entry-hub-v1`. It is exposed through the existing POI/navigation layer and reports active RPG metadata after scale descent. The first comms contact, `Harbormaster Vale`, is reachable only while this authored system is active. The first comms mission, `A Clean Copy`, lets the player route one piece of intel to Port Meridian traffic control or the Index archive channel, mutating reputation and persistent world flags. This remains placeholder authored content for proving the architecture; bespoke station meshes, broader NPC rosters, and multi-step missions are still deferred.
 
 Each named system should have:
 - A defined **role** (trade hub / hostile territory / mystery / faction HQ / Tier 4 contact point / etc.)
@@ -176,6 +178,8 @@ Tier 4 entities do **not** follow the standard NPC model. They are simulation-le
 | Trade | At designated trade points | Economy system (see §6) |
 
 **Dialogue system: Hybrid (locked).** Authored key beats and mission-critical dialogue are scripted. All other NPC conversation is LLM-driven — NPCs respond to anything the player says, contextually. The Phase 09 voice AI is the infrastructure for the LLM layer. Key authored beats take priority and can interrupt or redirect open LLM dialogue.
+
+**Current implementation note:** Phase 11C proves the deterministic comms/contact path, and Phase 11D adds the first deterministic mission consequence path. The LLM flavor lane exists only as a disabled-by-default stub (`source: 'stub'`) and cannot mutate contact, mission, reputation, or world state. Live voice/LLM service integration remains deferred.
 
 ---
 
@@ -384,13 +388,16 @@ All RPG interactions happen at a **physical location** in the world. There are n
 
 | RPG Feature | Depends On |
 |---|---|
+| RPG state spine | Phase 11A local state module in `src/rpg/` — implemented |
+| Cockpit comms contact slice | Phase 11C `commsStation`, `RpgRuntime` comms APIs, and authored contact data - implemented |
+| First mission consequence loop | Phase 11D `RpgRuntime` mission APIs and `port_meridian_route_packet` comms branch - implemented |
 | Crew NPC voice dialogue | Phase 09 Voice AI |
 | Surface NPC presence | Planet surface system + NPC spawn/placement |
 | Boarding encounters | Untethered EVA (currently tethered only) |
 | Ship combat | Weapon system (not yet built) |
 | Surface combat | On-foot combat system (not yet built) |
 | Galaxy map / navigation | Universe procedural system (Phase 07) |
-| Save / load persistent state | Persistent world state system (not yet built) |
+| Save / load persistent state | Phase 11A local `localStorage` RPG state exists; full persistent world state and slots still deferred |
 | Faction patrols | Ship AI / autonomous agent system (not yet built) |
 | Save / load (multiple slots) | Backend service (planned) + local serialization layer |
 | Post-ascension simulation influence | God-phase simulation layer (not yet built) |

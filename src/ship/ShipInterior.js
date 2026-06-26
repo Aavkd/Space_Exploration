@@ -82,6 +82,7 @@ export const SHIP_WALKABLE_VOLUMES = Object.freeze([
 export const REQUIRED_SHIP_ANCHORS = Object.freeze([
     'cockpitSeat',
     'pilotControls',
+    'commsStation',
     'exitAirlock',
     'interiorSpawn',
     'exteriorSpawn',
@@ -102,6 +103,13 @@ export const SHIP_ANCHORS = Object.freeze({
         position: [0, 1.1, -13.15],
         forward: [0, 0, -1],
         interactionRadius: 1.2
+    },
+    commsStation: {
+        role: 'Cockpit comms station for RPG contact hails.',
+        zone: 'cockpit',
+        position: [2.25, 1.05, -11.75],
+        forward: [-0.35, 0, -1],
+        interactionRadius: 0.9
     },
     exitAirlock: {
         role: 'Interior side of the airlock exit interaction.',

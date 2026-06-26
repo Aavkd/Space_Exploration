@@ -161,17 +161,31 @@ export class Universe {
             .map((poi) => ({ ...poi, distance: shipPosition.distanceTo(poi.position) }))
             .sort((a, b) => a.distance - b.distance);
 
+        const authoredSystems = this.starField.getAuthoredSystemPOIs({ position: shipPosition });
         const starLimit = Math.max(1, Math.min(4, Math.floor(limit * 0.35)));
-        const stars = this.starField.getSystemPOIs({
-            position: shipPosition,
-            limit: starLimit,
-            maxDistance: this.config.global.regionRadius
-        });
+        const proceduralStarLimit = Math.max(0, starLimit - authoredSystems.length);
+        const stars = proceduralStarLimit > 0
+            ? this.starField.getSystemPOIs({
+                position: shipPosition,
+                limit: proceduralStarLimit,
+                maxDistance: this.config.global.regionRadius
+            }).filter((star) => !star.isAuthored)
+            : [];
 
-        const structureLimit = Math.max(1, limit - stars.length);
-        return [...structures.slice(0, structureLimit), ...stars]
+        const systemPois = [
+            ...authoredSystems,
+            ...stars
+        ].slice(0, starLimit);
+        const structureLimit = Math.max(1, limit - systemPois.length);
+        return [...structures.slice(0, structureLimit), ...systemPois]
             .sort((a, b) => a.distance - b.distance)
             .slice(0, limit);
+    }
+
+    getAuthoredSystemPOIs(shipPosition = new THREE.Vector3()) {
+        return this.starField.getAuthoredSystemPOIs({
+            position: shipPosition
+        });
     }
 
     getCounts() {
@@ -198,7 +212,12 @@ export class Universe {
             seed: this.config.global.seed,
             counts: this.getCounts(),
             currentNode: this.getCurrentNode(shipPosition),
-            attractors: this.getAttractors().length
+            attractors: this.getAttractors().length,
+            authoredSystems: this.getAuthoredSystemPOIs(shipPosition).map((system) => ({
+                name: system.name,
+                distance: system.distance,
+                rpg: system.rpg
+            }))
         };
     }
 

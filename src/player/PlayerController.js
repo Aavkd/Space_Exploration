@@ -57,6 +57,7 @@ export class PlayerController {
         this.anchorPoints = this._cacheAnchors([
             'pilotControls',
             'cockpitSeat',
+            'commsStation',
             'exitAirlock',
             'interiorSpawn',
             'exteriorSpawn'
@@ -119,6 +120,8 @@ export class PlayerController {
             case 'takeControls':
                 this._enterPiloting();
                 break;
+            case 'openComms':
+                return action;
             case 'leaveControls':
                 this._leaveControls();
                 break;
@@ -240,6 +243,7 @@ export class PlayerController {
         if (this.state === PLAYER_STATE.PILOTING) return 'leaveControls';
 
         if (this.state === PLAYER_STATE.WALKING) {
+            if (this._near('commsStation')) return 'openComms';
             if (this._near('pilotControls')) return 'takeControls';
             if (this._near('exitAirlock')) return this._canSurfaceDisembark() ? 'disembarkSurface' : 'exitAirlock';
             return null;
@@ -268,6 +272,8 @@ export class PlayerController {
         switch (this.getContextualAction()) {
             case 'takeControls':
                 return 'Press C / Triangle - take the controls';
+            case 'openComms':
+                return 'Press C / Triangle - open cockpit comms';
             case 'leaveControls':
                 return 'Press C / Triangle - leave the controls';
             case 'exitAirlock':

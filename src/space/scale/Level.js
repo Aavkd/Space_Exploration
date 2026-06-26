@@ -124,12 +124,14 @@ function createSystemCandidate({ star, parentSeed }) {
         color: star.color,
         temperatureK: star.temperatureK,
         luminosity: star.luminosity,
+        isAuthored: Boolean(star.isAuthored),
+        rpg: star.rpg ? { ...star.rpg } : null,
         entryRadius: THREE.MathUtils.clamp(
             (star.luminosity ?? 1) * DESCENT.systemEntryRadiusScale,
             DESCENT.systemEntryRadiusMin,
             DESCENT.systemEntryRadiusMax
         ),
-        childSeed: deriveSeed(parentSeed, `system:${star.name}`)
+        childSeed: star.childSeed ?? deriveSeed(parentSeed, `system:${star.name}`)
     };
 }
 

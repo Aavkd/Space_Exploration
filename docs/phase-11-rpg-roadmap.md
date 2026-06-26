@@ -1,6 +1,6 @@
 # Phase 11 - RPG Roadmap
 
-> **Status:** Planning locked for first implementation slice.
+> **Status:** Phase 11A, 11B, 11C, and 11D implemented; Phase 11E is the next RPG slice.
 > **Last updated:** 2026-06-26.
 > **Companion docs:** `rpg-design-vision.md`, `worldbuilding.md`, `phase-09-voice-ai-assistant.md`.
 
@@ -47,17 +47,33 @@ Rendering, flight, scale transitions, voice, and UI should consume this state th
 
 ## Phase 11A - RPG State Spine
 
+**Implementation status:** Complete as of 2026-06-26.
+
 Objective: create the minimal data and persistence layer needed by every future RPG feature.
 
 Deliverables:
 
-- `src/rpg/` module boundary.
-- `RpgState` model with schema/version number.
-- Local save/load adapter.
-- Event log with append-only deterministic events.
-- Faction registry with reputation values.
-- Named system registry with placeholder authored system IDs.
-- Debug access through `window.__deepSpaceDebug`.
+- `src/rpg/` module boundary. **Implemented.**
+- `RpgState` model with schema/version number. **Implemented with version `1`.**
+- Local save/load adapter. **Implemented with `localStorage` key `deep-space-vr:rpg-state:v1`.**
+- Event log with append-only deterministic events. **Implemented with sequential `event-000001` IDs.**
+- Faction registry with reputation values. **Implemented with the six locked Tier 2 factions.**
+- Named system registry with placeholder authored system IDs. **Implemented with the ten MVP role IDs.**
+- Debug access through `window.__deepSpaceDebug`. **Implemented under `window.__deepSpaceDebug.rpg`.**
+
+Debug API:
+
+```js
+window.__deepSpaceDebug.rpg.getState();
+window.__deepSpaceDebug.rpg.getFaction('commonwealth');
+window.__deepSpaceDebug.rpg.getReputation('commonwealth');
+window.__deepSpaceDebug.rpg.adjustReputation('commonwealth', 0.25, 'manual-test');
+window.__deepSpaceDebug.rpg.appendEvent('debug.test', { ok: true });
+window.__deepSpaceDebug.rpg.reload();
+window.__deepSpaceDebug.rpg.reset();
+```
+
+The compact RPG summary is also mirrored into `#deep-space-debug-state` as `rpg`, including version, reputation values, event count, and named-system count.
 
 Acceptance criteria:
 
@@ -67,6 +83,12 @@ Acceptance criteria:
 - Reloading the page restores the local RPG state.
 - Save data includes a version number for future migrations.
 
+Known limits:
+
+- No comms UI, missions, contacts, bespoke authored-system content, or simulation ticks exist yet.
+- There is one implicit local save only; multiple save slots and backend migration remain deferred.
+- Corrupt or unsupported save data falls back to a fresh state and logs a warning.
+
 Suggested tests:
 
 - Unit-style browser/debug test for state creation.
@@ -75,21 +97,23 @@ Suggested tests:
 
 ## Phase 11B - Authored System Anchor
 
+**Implementation status:** Complete as of 2026-06-26.
+
 Objective: make one authored system reachable in the existing procedural universe.
 
 Deliverables:
 
-- One MVP named system definition, using placeholder names if needed.
-- Fixed seed override or deterministic placement hook.
-- System metadata exposed through existing POI/navigation surfaces.
-- RPG metadata available when the player enters the system.
+- One MVP named system definition, using placeholder names if needed. **Implemented as `entry_hub` / `Port Meridian`.**
+- Fixed seed override or deterministic placement hook. **Implemented with fixed root-universe position `[12000, 1400, -18000]` and child seed `rpg-entry-hub-v1`.**
+- System metadata exposed through existing POI/navigation surfaces. **Implemented through `Universe.getAuthoredSystemPOIs()`, `Universe.getPOIs()`, and `[RPG]` navigation markers.**
+- RPG metadata available when the player enters the system. **Implemented through system debug state, current-node RPG payloads, and `window.__deepSpaceDebug.rpg.getActiveNamedSystem()`.**
 
 Acceptance criteria:
 
-- The authored system appears consistently across runs.
-- The player can navigate to it using existing universe markers.
-- Entering the system exposes its RPG metadata in debug state.
-- The system still behaves like a normal scale-stack system for flight, gravity, and descent/ascent.
+- The authored system appears consistently across runs. **Verified by browser smoke test.**
+- The player can navigate to it using existing universe markers. **Implemented; `Port Meridian [RPG]` is reserved a navigation slot.**
+- Entering the system exposes its RPG metadata in debug state. **Verified by forced descent smoke test; active named system becomes `entry_hub`.**
+- The system still behaves like a normal scale-stack system for flight, gravity, and descent/ascent. **Implemented by injecting the anchor into the standard star-system descent candidate flow.**
 
 Suggested tests:
 
@@ -97,25 +121,54 @@ Suggested tests:
 - Debug state shows active named system ID.
 - Existing procedural systems still spawn normally.
 
+Implementation notes:
+
+- `entry_hub` now carries display name, navigation label, fixed position, fixed system seed, and star profile in `src/rpg/registries.js`.
+- Root `StarField` injects authored named-system anchors into the same `systemAnchors` list used by procedural systems. Galaxy-level star fields do not receive root authored anchors.
+- `Universe.getPOIs()` reserves room for authored systems so the first RPG anchor is discoverable through the existing navigation overlay.
+- `SystemContents.getCurrentNode()` and `getDebugState()` expose the RPG payload after descent.
+- `RpgRuntime` tracks `activeNamedSystemId` as transient runtime context; it is not persisted into local save data.
+- Browser smoke test on 2026-06-26 loaded the app through local static server, confirmed no console/page errors, found `Port Meridian` in `getUniverseState().authoredSystems`, and confirmed forced descent exposes `entry_hub` as the active named system.
+
+Known limits:
+
+- The authored system does not yet add bespoke planets, stations, POIs, NPCs, comms, or missions. Those remain Phase 11C and later.
+- The first anchor uses placeholder naming and a fixed root-space position; final lore names and broader authored placement rules can be revised later.
+- The authored star is currently represented through navigation/POI data, not a unique visible star mesh distinct from the normal star field.
+
 ## Phase 11C - Cockpit Comms Interaction
+
+**Implementation status:** Complete as of 2026-06-26.
 
 Objective: add the first physical RPG interaction point: cockpit comms.
 
 Deliverables:
 
-- A comms station interaction trigger in the ship/cockpit flow.
-- Minimal comms UI or diegetic panel state.
-- One contact NPC reachable only in the authored system.
-- Deterministic authored dialogue choices for mission-critical beats.
-- Optional LLM flavor text path, gated so it cannot mutate mission state directly.
+- A comms station interaction trigger in the ship/cockpit flow. **Implemented as the `commsStation` ship anchor and `openComms` contextual action.**
+- Minimal comms UI or diegetic panel state. **Implemented as the `Cockpit Comms` DOM panel owned by `App`.**
+- One contact NPC reachable only in the authored system. **Implemented as `port_meridian_harbormaster` / `Harbormaster Vale`, available only in `entry_hub`.**
+- Deterministic authored dialogue choices for mission-critical beats. **Implemented through authored contact dialogue nodes and choices.**
+- Optional LLM flavor text path, gated so it cannot mutate mission state directly. **Implemented as a disabled-by-default stub with no backend calls.**
+
+Debug API:
+
+```js
+window.__deepSpaceDebug.rpg.getContacts();
+window.__deepSpaceDebug.rpg.getCommsState();
+window.__deepSpaceDebug.rpg.openComms();
+window.__deepSpaceDebug.rpg.openComms('port_meridian_harbormaster');
+window.__deepSpaceDebug.rpg.chooseComms('ask_port_meridian');
+window.__deepSpaceDebug.rpg.closeComms();
+window.__deepSpaceDebug.rpg.setCommsLlmFlavorEnabled(true);
+```
 
 Acceptance criteria:
 
-- Player can enter the authored system and use cockpit comms.
-- Contact appears only when context rules allow it.
-- Player can start, continue, and exit the conversation.
-- Authored choices are deterministic and visible in debug state.
-- LLM output, if enabled, is treated as presentation/flavor, not authority.
+- Player can enter the authored system and use cockpit comms. **Implemented.**
+- Contact appears only when context rules allow it. **Implemented; no contacts are reachable outside `entry_hub`.**
+- Player can start, continue, and exit the conversation. **Implemented; conversation node state persists in the local RPG save.**
+- Authored choices are deterministic and visible in debug state. **Implemented through `getCommsState()` and the mirrored debug JSON.**
+- LLM output, if enabled, is treated as presentation/flavor, not authority. **Implemented as a stub `{ enabled, source: 'stub', text: null }`; no live LLM calls are made.**
 
 Suggested tests:
 
@@ -123,7 +176,24 @@ Suggested tests:
 - Contact available inside the authored system.
 - Conversation state survives leaving and reopening comms.
 
+Implementation notes:
+
+- `src/rpg/contacts.js` defines the first comms contact and authored dialogue tree.
+- `RpgRuntime` owns contact availability, active comms state, deterministic dialogue choices, and the LLM flavor gate.
+- RPG save version remains `1`; contact and comms fields are additive and older v1 saves sanitize forward with defaults.
+- `#deep-space-debug-state.rpg.comms` mirrors available contacts, active contact, current node, visible choices, and LLM flavor gate state.
+- The comms panel can be opened through the cockpit comms station, `C` / Triangle / XR select, or debug hooks.
+
+Known limits:
+
+- Phase 11C does not create missions, reputation consequences, world flags, voice playback, or live LLM/service calls.
+- `Harbormaster Vale` is placeholder first-slice content and can be renamed or rewritten when final Port Meridian lore is authored.
+- The comms station is an abstract cockpit anchor and DOM panel, not a bespoke GLB terminal mesh.
+- Gamepad/XR can open the panel, but deterministic choice selection is currently keyboard/click-first.
+
 ## Phase 11D - First Mission Loop
+
+**Implementation status:** Complete as of 2026-06-26.
 
 Objective: implement one complete mission with a consequence.
 
@@ -139,30 +209,57 @@ This proves consequence without needing combat, cargo, economy, or surface conte
 
 Deliverables:
 
-- Mission definition format.
-- Mission state machine: unavailable, offered, accepted, resolved, failed.
-- One authored contact.
-- One mission with two deterministic resolution branches.
-- Reputation mutation for at least two factions.
-- World-state flag mutation.
-- Event log entries for offer, accept, resolve, and consequence.
+- Mission definition format. **Implemented in `src/rpg/missions.js`.**
+- Mission state machine: unavailable, offered, accepted, resolved, failed. **Implemented in `RpgRuntime`.**
+- One authored contact. **Implemented through `port_meridian_harbormaster`.**
+- One mission with two deterministic resolution branches. **Implemented as `port_meridian_route_packet` / `A Clean Copy`.**
+- Reputation mutation for at least two factions. **Implemented for `commonwealth` and `index`.**
+- World-state flag mutation. **Implemented under `worldFlags` with `port_meridian.*` keys.**
+- Event log entries for offer, accept, resolve, and consequence. **Implemented with `mission.offered`, `mission.accepted`, `mission.resolved`, and `mission.consequence`.**
+
+Debug API:
+
+```js
+window.__deepSpaceDebug.rpg.getMissions();
+window.__deepSpaceDebug.rpg.getMission('port_meridian_route_packet');
+window.__deepSpaceDebug.rpg.offerMission('port_meridian_route_packet');
+window.__deepSpaceDebug.rpg.acceptMission('port_meridian_route_packet');
+window.__deepSpaceDebug.rpg.resolveMission('port_meridian_route_packet', 'commonwealth');
+window.__deepSpaceDebug.rpg.resolveMission('port_meridian_route_packet', 'index');
+window.__deepSpaceDebug.rpg.failMission('port_meridian_route_packet', 'declined');
+```
 
 Acceptance criteria:
 
-- Mission can be offered through cockpit comms.
-- Player can accept or decline.
-- Player can resolve the mission through a deterministic choice.
-- Reputation changes immediately and persists after reload.
-- World-state flags persist after reload.
-- Reopening comms reflects the resolved outcome.
+- Mission can be offered through cockpit comms. **Implemented through `ask_work`, which offers the mission and opens the offer node.**
+- Player can accept or decline. **Implemented through `accept_route_packet` and `decline_route_packet`.**
+- Player can resolve the mission through a deterministic choice. **Implemented through `resolve_route_commonwealth` and `resolve_route_index`.**
+- Reputation changes immediately and persists after reload. **Implemented through persisted faction reputation deltas.**
+- World-state flags persist after reload. **Implemented through persisted `worldFlags`.**
+- Reopening comms reflects the resolved outcome. **Implemented by moving the contact conversation to the branch-specific resolved node.**
 
 Suggested tests:
 
-- Fresh save: mission is offered.
-- Decline path: state is remembered.
-- Resolve path A: faction reputation and world flag match expected values.
-- Resolve path B: different faction reputation and world flag match expected values.
-- Reload after resolution: contact dialogue reflects the chosen outcome.
+- Fresh save: mission is offered. **Covered by RPG runtime smoke test through `ask_work`.**
+- Decline path: state is remembered. **Covered by RPG runtime smoke test; mission status becomes `failed` with outcome `declined`.**
+- Resolve path A: faction reputation and world flag match expected values. **Covered by RPG runtime smoke test; Commonwealth +0.18, Index -0.08, owner `commonwealth`.**
+- Resolve path B: different faction reputation and world flag match expected values. **Covered by RPG runtime smoke test; Index +0.18, Commonwealth -0.08, owner `index`.**
+- Reload after resolution: contact dialogue reflects the chosen outcome. **Implemented through persisted mission/contact conversation state; browser reload validation remains part of Phase 11E.**
+
+Implementation notes:
+
+- `src/rpg/missions.js` defines mission IDs, legal statuses, branch consequences, reputation deltas, and world flag mutations.
+- RPG save version remains `1`; mission fields are additive and older v1 saves sanitize forward with default mission state.
+- `RpgRuntime` exposes explicit mission helpers for debugging and scripted validation, while comms dialogue choices use the same helpers through deterministic `missionAction` metadata.
+- The first mission starts unavailable, becomes offered when the player asks Harbormaster Vale for work, can be accepted or declined, and resolves immediately through one of two deterministic data-routing choices.
+- Consequences are intentionally small but persistent: reputation changes, route-packet owner flags, and deterministic event log entries.
+
+Known limits:
+
+- The mission is a single comms-only proof of consequence; it does not require cargo, docking, travel, timers, combat, economy, rewards, or surface POIs.
+- Decline is represented by the existing `failed` mission status with outcome `declined`; a distinct declined status can be added later if the content model needs it.
+- There is no bespoke Index contact yet. The Index branch is represented as an archive channel inside Harbormaster Vale's authored comms flow.
+- Browser reload validation and broader hardening are deferred to Phase 11E.
 
 ## Phase 11E - Validation And Hardening
 
@@ -254,4 +351,3 @@ These do not block Phase 11A-E:
 - Save slot UX.
 - How mission authored dialogue is stored: JS modules, JSON, or service-backed content.
 - Whether local RPG save data should eventually move to the voice service SQLite, a separate backend, or browser storage plus export/import.
-
