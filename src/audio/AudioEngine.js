@@ -5,6 +5,7 @@ import { AudioBus } from './AudioBus.js';
 import { CuePlayer } from './CuePlayer.js';
 import { LoopLayer } from './LoopLayer.js';
 import { ShipComputer } from './ShipComputer.js';
+import { PlaylistPlayer } from './PlaylistPlayer.js';
 
 export class AudioEngine {
     constructor({ camera, preset = AUDIO_PRESET } = {}) {
@@ -28,6 +29,7 @@ export class AudioEngine {
         });
         this.cues = new CuePlayer({ engine: this });
         this.shipComputer = new ShipComputer({ engine: this, preset: this.preset });
+        this.playlistPlayer = new PlaylistPlayer(this);
     }
 
     async resumeFromUserGesture() {
@@ -158,6 +160,9 @@ export class AudioEngine {
         for (const layer of this.loops.values()) layer.stop({ fadeSeconds });
         this.cues.stopAll();
         this.shipComputer.stopAll();
+        if (this.playlistPlayer) {
+            this.playlistPlayer.stop();
+        }
     }
 
     getBusInput(name) {

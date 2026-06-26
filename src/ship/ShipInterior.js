@@ -87,7 +87,8 @@ export const REQUIRED_SHIP_ANCHORS = Object.freeze([
     'exitAirlock',
     'interiorSpawn',
     'exteriorSpawn',
-    'cameraDebugMount'
+    'cameraDebugMount',
+    'radioStation'
 ]);
 
 export const SHIP_ANCHORS = Object.freeze({
@@ -118,6 +119,13 @@ export const SHIP_ANCHORS = Object.freeze({
         position: [-1.2, 0.70, -11.2],
         forward: [0.35, 0, -1],
         interactionRadius: 0.9
+    },
+    radioStation: {
+        role: 'Radio station console for listening to music and frequency tuning.',
+        zone: 'circulation',
+        position: [-1.3, 0.5, -7.5],
+        forward: [1, 0, 0],
+        interactionRadius: 1.0
     },
     exitAirlock: {
         role: 'Interior side of the airlock exit interaction.',

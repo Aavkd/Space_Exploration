@@ -26,6 +26,19 @@ python -m http.server 5177
 
 Then open [http://localhost:5177/](http://localhost:5177/).
 
+## Custom Radio & Music Transceiver
+
+The walkable ship interior features a diegetic radio transceiver console (RX-90) located in the walkway corridor. In addition to default static channels and celestial signals, players can load their own music playlists.
+
+### Adding Custom Music Stations:
+1. Create a subdirectory under `assets/audio/custom_radios/` (e.g. `assets/audio/custom_radios/RetroWave/`).
+2. Drop your `.mp3` or `.wav` music tracks inside that subdirectory.
+3. Run the manifest generator from the project root:
+   ```powershell
+   node sync-music.js
+   ```
+4. Boot the game. The custom directories will be loaded dynamically, sorted, and mapped to unique, deterministic FM frequencies (between 88.0 MHz and 108.0 MHz) on the receiver dial.
+
 ## Voice Service
 
 The Phase 09 voice assistant service lives in [services/voice-ai/README.md](/D:/Documents/PROJECTS/DEEP_SPACE_VR/services/voice-ai/README.md).
@@ -146,6 +159,7 @@ window.__deepSpaceDebug.rpg.getMission('port_meridian_route_packet');
 - [docs/phase-07-procedural-universe.md](docs/phase-07-procedural-universe.md) - procedural universe architecture
 - [docs/phase-08-ship-speed-and-hyperdrive.md](docs/phase-08-ship-speed-and-hyperdrive.md) - speed regime and hyperdrive design
 - [docs/phase-11-rpg-roadmap.md](docs/phase-11-rpg-roadmap.md) - RPG implementation roadmap and first comms mission slice
+- [docs/phase-12-radio-transceiver.md](docs/phase-12-radio-transceiver.md) - radio transceiver system, custom music folders, and cosmic beacons
 
 ## Current caveats
 

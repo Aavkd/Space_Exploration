@@ -100,7 +100,10 @@ export class AudioDirector {
             this.audio.stopLoop('rocketFiring', { fadeSeconds: 0.25 });
         }
 
-        const musicGain = (pilot ? 0.06 : 0.045) + speedFactor * 0.04;
+        let musicGain = (pilot ? 0.06 : 0.045) + speedFactor * 0.04;
+        if (state.radioPower) {
+            musicGain = 0; // Duck background music completely when radio is active
+        }
         this.audio.setLoopGain('musicAmbient', getGain('musicAmbient', 0.42) * musicGain, 1.2);
     }
 

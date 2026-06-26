@@ -32,6 +32,7 @@ import { XRExperience } from '../xr/XRExperience.js';
 import { XRVisualEffects } from '../xr/XRVisualEffects.js';
 import { DiegeticStatusPanel } from '../ui/DiegeticStatusPanel.js';
 import { DiegeticNavigationPanel } from '../ui/DiegeticNavigationPanel.js';
+import { DiegeticRadioPanel } from '../ui/DiegeticRadioPanel.js';
 import { UniverseNavigation } from '../ui/UniverseNavigation.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
@@ -220,6 +221,17 @@ export class App {
                 marker.visible = false;
             }
         }
+
+        this.diegeticRadioPanel = new DiegeticRadioPanel();
+        const radioAnchor = this.ship.getAnchor('radioStation');
+        if (radioAnchor) {
+            radioAnchor.add(this.diegeticRadioPanel.object3D);
+            this.diegeticRadioPanel.object3D.position.set(0, 0, -0.4);
+            const marker = radioAnchor.getObjectByName('radioStationMarker');
+            if (marker) {
+                marker.visible = false;
+            }
+        }
         this.xr = new XRExperience({
             renderer: this.renderer,
             scene: this.scene,
@@ -240,12 +252,23 @@ export class App {
         this.commsPanelOpen = false;
         this.selectedNavigationTarget = null;
         this.navigationPanelOpen = false;
+        this.radioOpen = false;
+        this.radioPower = true;
+        this.radioVolume = 0.5;
+        this.activeRadioStationIndex = 0;
+        this.radioStations = [
+            { frequency: '89.5 MHz', name: 'Cosmic Static', loopId: 'spaceBedB', baseGain: 1.0, isStatic: true },
+            { frequency: '95.4 MHz', name: 'Deep Space Chords', loopId: 'spaceChords', baseGain: 2.0, isStatic: false },
+            { frequency: '101.2 MHz', name: 'Alien Beacon', loopId: 'longSignal', baseGain: 1.2, isStatic: false },
+            { frequency: '106.8 MHz', name: 'Pulsar Beep', loopId: 'signal2', baseGain: 1.2, isStatic: false }
+        ];
         this._createTelemetryHud();
         this._bindEvents();
         this._installDebugHooks();
         this._applyRuntimeConfig();
         this._loadInitialJsonPreset();
         this.rpg = createRpgRuntime();
+        this._loadCustomRadioStations();
     }
 
     start() {
@@ -327,6 +350,12 @@ export class App {
             pois: this.environment.getPOIs(this.ship.position, 8),
             selectedTarget: this.selectedNavigationTarget
         });
+        this.diegeticRadioPanel.update({
+            power: this.radioPower,
+            currentStation: this.radioStations[this.activeRadioStationIndex],
+            volume: this.radioVolume,
+            dt
+        });
         this.universePanel.updateStats({
             counts: this.environment.getCounts(),
             currentNode: this.environment.getCurrentNode(this.ship.position),
@@ -360,6 +389,7 @@ export class App {
             if (action) {
                 if (action === 'openComms') this._openCommsPanel();
                 else if (action === 'openNavigation') this._openNavigationPanel();
+                else if (action === 'openRadio') this._openRadioPanel();
                 this.input.gamepad.pulse({ duration: 90, weak: 0.25, strong: 0.45 });
                 this._syncDebugDomState();
             }
@@ -595,6 +625,7 @@ export class App {
         if (action) {
             if (action === 'openComms') this._openCommsPanel();
             else if (action === 'openNavigation') this._openNavigationPanel();
+            else if (action === 'openRadio') this._openRadioPanel();
             this.xr.pulse({ duration: 80, strength: 0.34 });
             this._syncDebugDomState();
         }
@@ -823,6 +854,7 @@ export class App {
 
         this._createCommsPanel();
         this._createNavigationPanel();
+        this._createRadioPanel();
     }
 
     _createCommsPanel() {
@@ -1169,6 +1201,379 @@ export class App {
         });
     }
 
+    _createRadioPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'cockpit-radio-panel';
+        panel.innerHTML = `
+            <style>
+                #cockpit-radio-panel {
+                    position: fixed;
+                    left: 18px;
+                    top: 72px;
+                    width: min(420px, calc(100vw - 36px));
+                    max-height: calc(100vh - 116px);
+                    overflow: auto;
+                    padding: 14px;
+                    background: rgba(18, 9, 0, 0.92);
+                    border: 1px solid rgba(255, 140, 0, 0.42);
+                    border-radius: 4px;
+                    color: #ffd08c;
+                    font: 13px/1.45 "Consolas", "Courier New", monospace;
+                    letter-spacing: 0;
+                    text-shadow: 0 0 10px rgba(255, 120, 0, 0.45);
+                    box-shadow: 0 0 28px rgba(255, 100, 0, 0.16);
+                    pointer-events: auto;
+                    z-index: 12;
+                    display: none;
+                }
+                #cockpit-radio-panel .radio-head {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    margin-bottom: 12px;
+                    border-bottom: 1px solid rgba(255, 140, 0, 0.22);
+                    padding-bottom: 6px;
+                }
+                #cockpit-radio-panel .radio-title {
+                    color: #ff9c00;
+                    font-size: 14px;
+                    font-weight: bold;
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
+                }
+                #cockpit-radio-panel .radio-close {
+                    min-width: 32px;
+                    text-align: center;
+                    padding: 5px 8px;
+                }
+                #cockpit-radio-panel .radio-body {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 14px;
+                    margin-top: 10px;
+                }
+                #cockpit-radio-panel .radio-row {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 6px 10px;
+                    border: 1px solid rgba(255, 140, 0, 0.15);
+                    border-radius: 4px;
+                    background: rgba(30, 15, 0, 0.32);
+                }
+                #cockpit-radio-panel .radio-label {
+                    font-weight: bold;
+                    color: #ffb000;
+                }
+                #cockpit-radio-panel .radio-controls {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+                #cockpit-radio-panel .radio-value {
+                    font-weight: bold;
+                    min-width: 90px;
+                    text-align: center;
+                    color: #fff0d0;
+                }
+                #cockpit-radio-panel button {
+                    color: #fff0d0;
+                    background: rgba(80, 35, 0, 0.6);
+                    border: 1px solid rgba(255, 140, 0, 0.42);
+                    border-radius: 4px;
+                    padding: 5px 10px;
+                    font: inherit;
+                    cursor: pointer;
+                    text-transform: uppercase;
+                }
+                #cockpit-radio-panel button:hover,
+                #cockpit-radio-panel button:focus {
+                    background: rgba(120, 50, 0, 0.8);
+                    outline: none;
+                }
+                #cockpit-radio-panel button.power-active {
+                    background: rgba(140, 60, 0, 0.88);
+                    border-color: rgba(255, 156, 0, 0.8);
+                    color: #fff;
+                }
+                #cockpit-radio-panel button.power-inactive {
+                    background: rgba(40, 20, 0, 0.6);
+                    border-color: rgba(255, 100, 0, 0.3);
+                    color: #ff7000;
+                }
+            </style>
+            <div data-radio-content></div>
+        `;
+        document.body.appendChild(panel);
+        this.radioPanel = panel;
+        this.radioContentNode = panel.querySelector('[data-radio-content]');
+        panel.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-radio-action]');
+            if (!target) return;
+            event.preventDefault();
+            const action = target.dataset.radioAction;
+            if (action === 'close') this._closeRadioPanel();
+            else if (action === 'power') this._toggleRadioPower();
+            else if (action === 'tune-prev') this._tuneRadio(-1);
+            else if (action === 'tune-next') this._tuneRadio(1);
+            else if (action === 'vol-down') this._adjustRadioVolume(-0.1);
+            else if (action === 'vol-up') this._adjustRadioVolume(0.1);
+        });
+    }
+
+    _openRadioPanel() {
+        this.radioOpen = true;
+        this._exitPointerLock();
+        this._updateRadioPanel();
+        this._syncRadioAudio();
+        this._syncDebugDomState();
+    }
+
+    _closeRadioPanel() {
+        this.radioOpen = false;
+        this._updateRadioPanel();
+        this._syncDebugDomState();
+    }
+
+    _toggleRadioPower() {
+        this.radioPower = !this.radioPower;
+        this._updateRadioPanel();
+        this._syncRadioAudio();
+    }
+
+    _tuneRadio(dir) {
+        if (!this.radioPower) return;
+        this.activeRadioStationIndex = (this.activeRadioStationIndex + dir + this.radioStations.length) % this.radioStations.length;
+        this._updateRadioPanel();
+        this._syncRadioAudio();
+    }
+
+    _adjustRadioVolume(amount) {
+        if (!this.radioPower) return;
+        this.radioVolume = Math.max(0, Math.min(1, this.radioVolume + amount));
+        this._updateRadioPanel();
+        this._syncRadioAudio();
+    }
+
+    _syncRadioAudio() {
+        if (!this.audio || !this.audio.enabled) return;
+        const activeStation = this.radioStations[this.activeRadioStationIndex];
+
+        if (this.radioPower) {
+            // First stop any loop-based stations that are not active
+            this.radioStations.forEach((station, idx) => {
+                if (idx !== this.activeRadioStationIndex) {
+                    if (station.loopId) {
+                        this.audio.stopLoop(station.loopId, { fadeSeconds: 0.5 });
+                    }
+                }
+            });
+
+            // Now handle the active station
+            if (activeStation.loopId) {
+                // Stop playlist player if it's active
+                if (this.audio.playlistPlayer) {
+                    this.audio.playlistPlayer.stop();
+                }
+                const gain = this.radioVolume * activeStation.baseGain;
+                this.audio.startLoop(activeStation.loopId, { gain, fadeSeconds: 0.5 });
+                this.audio.setLoopGain(activeStation.loopId, gain, 0.15);
+            } else if (activeStation.isCustom) {
+                // Play custom station
+                if (this.audio.playlistPlayer) {
+                    this.audio.playlistPlayer.playStation(activeStation, this.radioVolume);
+                }
+            }
+        } else {
+            // Stop all loops
+            this.radioStations.forEach((station) => {
+                if (station.loopId) {
+                    this.audio.stopLoop(station.loopId, { fadeSeconds: 0.5 });
+                }
+            });
+            // Stop custom playlist player
+            if (this.audio.playlistPlayer) {
+                this.audio.playlistPlayer.stop();
+            }
+        }
+    }
+
+    async _loadCustomRadioStations() {
+        try {
+            const response = await fetch('./assets/audio/custom_radios/manifest.json');
+            if (!response.ok) {
+                console.warn('Custom radio manifest.json not found. Continuing with default stations.');
+                return;
+            }
+            const data = await response.json();
+            if (Array.isArray(data)) {
+                const validCustomStations = data.filter(station => station.tracks && station.tracks.length > 0);
+                const nowTime = this.audio && this.audio.context ? this.audio.context.currentTime : 0;
+
+                validCustomStations.forEach((station) => {
+                    const freq = this._generateStationFrequency(station.name || station.folder);
+                    
+                    const randomTrackIndex = Math.floor(Math.random() * station.tracks.length);
+                    const randomPlayhead = Math.random() * 60; // random start offset between 0-60s
+                    
+                    this.radioStations.push({
+                        frequency: `${freq.toFixed(1)} MHz`,
+                        name: station.name || station.folder,
+                        folder: station.folder,
+                        tracks: station.tracks,
+                        isCustom: true,
+                        isStatic: false,
+                        baseGain: 1.0,
+                        currentTrackIndex: randomTrackIndex,
+                        trackStartTime: nowTime - randomPlayhead,
+                        trackDurations: {},
+                        playhead: randomPlayhead
+                    });
+                });
+
+                // Keep the current station active if possible, or default to 0
+                const currentStation = this.radioStations[this.activeRadioStationIndex];
+
+                // Sort stations by frequency so tuning moves in order across the dial
+                this.radioStations.sort((a, b) => parseFloat(a.frequency) - parseFloat(b.frequency));
+
+                if (currentStation) {
+                    const newIndex = this.radioStations.findIndex(s => s.frequency === currentStation.frequency);
+                    if (newIndex !== -1) {
+                        this.activeRadioStationIndex = newIndex;
+                    } else {
+                        this.activeRadioStationIndex = 0;
+                    }
+                } else {
+                    this.activeRadioStationIndex = 0;
+                }
+
+                // Sync the UI if it's currently open
+                if (this.radioOpen) {
+                    this._updateRadioPanel();
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load custom radio stations manifest:', error);
+        }
+    }
+
+    _generateStationFrequency(name) {
+        // Deterministically map a string to a frequency between 88.0 and 108.0 MHz
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) {
+            hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        }
+
+        const range = 108.0 - 88.0;
+        const steps = Math.floor(range / 0.2); // 100 steps of 0.2 MHz
+        const step = Math.abs(hash) % (steps + 1);
+        let freq = 88.0 + step * 0.2;
+
+        // Prevent collisions with existing frequencies
+        let attempt = 0;
+        while (attempt < 50) {
+            const freqStr = `${freq.toFixed(1)} MHz`;
+            const exists = this.radioStations.some(s => s.frequency === freqStr);
+            if (!exists) {
+                break;
+            }
+            freq = 88.0 + ((step + attempt * 2) % (steps + 1)) * 0.2;
+            attempt++;
+        }
+
+        return freq;
+    }
+
+    _updateRadioPanel() {
+        if (!this.radioPanel || !this.radioContentNode) return;
+        this.radioPanel.style.display = this.radioOpen ? 'block' : 'none';
+        if (!this.radioOpen) return;
+
+        const station = this.radioStations[this.activeRadioStationIndex];
+        const lines = [
+            '<div class="radio-head">',
+            '  <div class="radio-title">TRANSCEIVER RX-90</div>',
+            '  <button data-radio-action="close" class="radio-close">X</button>',
+            '</div>',
+            '<div class="radio-body">',
+            '  <div class="radio-row">',
+            '    <div class="radio-label">POWER</div>',
+            `    <button data-radio-action="power" class="${this.radioPower ? 'power-active' : 'power-inactive'}">${this.radioPower ? 'ON' : 'STANDBY'}</button>`,
+            '  </div>'
+        ];
+
+        if (this.radioPower) {
+            lines.push(
+                '  <div class="radio-row">',
+                '    <div class="radio-label">FREQUENCY</div>',
+                '    <div class="radio-controls">',
+                '      <button data-radio-action="tune-prev">&lt; TUNE</button>',
+                `      <div class="radio-value">${station.frequency}</div>`,
+                '      <button data-radio-action="tune-next">TUNE &gt;</button>',
+                '    </div>',
+                '  </div>',
+                '  <div class="radio-row">',
+                '    <div class="radio-label">STATION</div>',
+                `    <div class="radio-value" style="text-align: right; color: #ffb000;">${station.name.toUpperCase()}</div>`,
+                '  </div>',
+                '  <div class="radio-row">',
+                '    <div class="radio-label">VOLUME</div>',
+                '    <div class="radio-controls">',
+                '      <button data-radio-action="vol-down">VOL -</button>',
+                `      <div class="radio-value">${(this.radioVolume * 100).toFixed(0)}%</div>`,
+                '      <button data-radio-action="vol-up">VOL +</button>',
+                '    </div>',
+                '  </div>'
+            );
+        } else {
+            lines.push(
+                '  <div class="radio-row" style="justify-content: center; padding: 20px; color: #ff5400; font-weight: bold;">',
+                '    [ SYSTEM STANDBY ]',
+                '  </div>'
+            );
+        }
+
+        lines.push('</div>');
+        this.radioContentNode.innerHTML = lines.join('');
+    }
+
+    _handleRadioKeydown(event) {
+        if (!this.radioOpen) return false;
+        if (event.code === 'Escape' || event.code === 'KeyC') {
+            event.preventDefault();
+            this._closeRadioPanel();
+            return true;
+        }
+        if (event.code === 'ArrowLeft' || event.code === 'KeyA') {
+            event.preventDefault();
+            this._tuneRadio(-1);
+            return true;
+        }
+        if (event.code === 'ArrowRight' || event.code === 'KeyD') {
+            event.preventDefault();
+            this._tuneRadio(1);
+            return true;
+        }
+        if (event.code === 'ArrowUp' || event.code === 'KeyW') {
+            event.preventDefault();
+            this._adjustRadioVolume(0.1);
+            return true;
+        }
+        if (event.code === 'ArrowDown' || event.code === 'KeyS') {
+            event.preventDefault();
+            this._adjustRadioVolume(-0.1);
+            return true;
+        }
+        if (event.code === 'Space' || event.code === 'KeyP') {
+            event.preventDefault();
+            this._toggleRadioPower();
+            return true;
+        }
+        return false;
+    }
+
     _openNavigationPanel() {
         this.navigationPanelOpen = true;
         this._exitPointerLock();
@@ -1419,7 +1824,8 @@ export class App {
             nearestDebris,
             debrisHazard: this.debrisHazardState,
             universeCounts: this.environment.getCounts(),
-            xrActive
+            xrActive,
+            radioPower: this.radioPower
         };
     }
 
@@ -1441,6 +1847,7 @@ export class App {
 
             if (this._handleCommsKeydown(event)) return;
             if (this._handleNavigationKeydown(event)) return;
+            if (this._handleRadioKeydown(event)) return;
 
             if (event.code === 'F2') {
                 event.preventDefault();
@@ -1531,6 +1938,7 @@ export class App {
                     const action = this.playerController.interact();
                     if (action === 'openComms') this._openCommsPanel();
                     else if (action === 'openNavigation') this._openNavigationPanel();
+                    else if (action === 'openRadio') this._openRadioPanel();
                     this._syncDebugDomState();
                 }
                 return;
@@ -1584,7 +1992,7 @@ export class App {
         this.canvas.addEventListener('pointerdown', () => this._unlockAudioFromGesture(), { passive: true });
         this.canvas.addEventListener('click', () => {
             this._unlockAudioFromGesture();
-            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen) {
+            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen) {
                 this.canvas.requestPointerLock?.();
             }
         });
