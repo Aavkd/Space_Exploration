@@ -42,6 +42,15 @@ Civilizations and entities in this universe span a **vast technology spectrum**.
 - **Ancient Ascended**: Civilizations that reached singularity long ago. Archaeological traces exist. Possibly dormant, possibly watching.
 - **Recursive AIs**: Active. Present. Agenda unknown. May have emerged from a collapsed Tier 3 civilization's infrastructure.
 
+### Tier Fluidity (Locked)
+
+**Tiers are runtime simulation states, not fixed world properties.** Any civilization can ascend or descend at any time based on simulation events. This is a first-class mechanic.
+
+- Named system dominant tiers are **starting states only** — they will shift during a playthrough
+- Tier transition is triggered by: scientific breakthroughs, war damage, Tier 4 intervention, player action (pre and post ascension), pillage, collapse, or deliberate regression
+- The simulation must support tier transitions as data mutations on civilization entities
+- See [worldbuilding.md — Tier Fluidity](worldbuilding.md) for full trigger table
+
 ---
 
 ## 3. World Architecture
