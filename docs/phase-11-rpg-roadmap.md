@@ -2,7 +2,8 @@
 
 > **Status:** Phase 11A-E implemented and validated; Phase 12 is the next expansion slice.
 > **Last updated:** 2026-06-27.
-> **Companion docs:** `rpg-design-vision.md`, `worldbuilding.md`, `phase-09-voice-ai-assistant.md`.
+> **Companion docs:** `rpg-design-vision.md`, `rpg-future-development-roadmap.md`,
+> `worldbuilding.md`, `phase-09-voice-ai-assistant.md`.
 
 ## Goal
 
@@ -359,68 +360,22 @@ rpg.reset();
 
 ## Expansion Roadmap
 
-Only start these once Phase 11A-E is validated.
+Phase 11A-E is validated. The original coarse expansion list has been replaced
+by the dependency-aware vertical slices in
+[`rpg-future-development-roadmap.md`](rpg-future-development-roadmap.md).
 
-### Phase 12 - Crew Foundation
-
-- Ship-resident crew registry.
-- Crew spawn/anchor points inside ship.
-- Crew relationship/mood state.
-- Basic crew dialogue through the same deterministic/LLM split.
-
-### Phase 13 - Economy And Maintenance
-
-- Credits, fuel, parts, hull plates, consumables.
-- Trade-good definitions.
-- Simple buy/sell or mission reward path.
-- Ship condition state.
-
-### Phase 14 - Faction Presence And Patrols
-
-- Faction influence regions around named systems.
-- Passive patrol/contact events.
-- Reputation-gated hails, docking permission, warnings, and hostility.
-- Autonomous faction agenda tick while the game is running.
-
-### Phase 15 - Surface POIs
-
-- Planet POI definition format.
-- Orbit scanner/signpost layer.
-- One surface settlement or outpost connected to a mission.
-- Surface NPC encounter framework.
-
-### Phase 16 - Ship Combat Foundation
-
-- Weapon hardpoints.
-- Targeting/lock-on.
-- Per-system ship damage model.
-- One hostile encounter type.
-
-### Phase 17 - Boarding And Free EVA
-
-- Untethered EVA between ships/structures.
-- Boarding trigger.
-- Temporary encounter NPCs inside ship/interior spaces.
-- Close-quarters combat or non-combat boarding outcome.
-
-### Phase 18 - Larger Simulation
-
-- Faction agendas.
-- Emergent faction relationship matrix.
-- Economy flow.
-- Tier fluidity events.
-- Simulation event scheduler that advances only while playing.
-
-### Phase 19 - Ascension Precursor
-
-- Long-term knowledge/contact state.
-- Tier 3/Tier 4 trace interactions.
-- Conditions for ascension eligibility.
-- No full god-phase implementation until the pre-ascension simulation is satisfying.
+The new roadmap treats the existing radio transceiver as Phase 12 and resumes
+RPG expansion at Phase 13. It defines a shared Definition of Done, test ladder,
+save/migration gates, playable acceptance criteria, explicit exclusions,
+decision points, and a staged path through cargo, crew, surface POIs, patrols,
+damage, combat, economy, boarding, autonomous simulation, authored content, and
+post-ascension play.
 
 ## Clarifications Still Needed Later
 
-These do not block Phase 11A-E:
+These did not block Phase 11A-E. Current recommendations and the phase in which
+each decision becomes blocking are tracked in
+[`rpg-future-development-roadmap.md`](rpg-future-development-roadmap.md):
 
 - Exact UI treatment for cockpit comms in VR.
 - Final names and lore for first MVP system/contact/factions.

@@ -2,6 +2,7 @@
 
 > **Status:** Design source of truth. Phase 11A-E state, authored-system, cockpit-comms, first-mission, and validation slices are implemented.
 > **Purpose:** Capture the intended RPG layer architecture so it can be developed incrementally without losing design intent.
+> **Execution roadmap:** `rpg-future-development-roadmap.md`.
 > **Last updated:** 2026-06-27 (rounds 1–4 locked, first RPG loop validated, worldbuilding session open)
 
 ---
@@ -446,45 +447,21 @@ All RPG interactions happen at a **physical location** in the world. There are n
 
 ## 12. Suggested Development Order
 
-When implementation begins, this is the recommended sequence to avoid blocking dependencies:
+The original A-F outline identified the right pillars, but each pillar is too
+large to be an implementation phase. The executable order, acceptance criteria,
+test ladder, dependency gates, and scope limits now live in
+[`rpg-future-development-roadmap.md`](rpg-future-development-roadmap.md).
 
-```
-Phase A — World Foundation
-  └── Persistent save/load system
-  └── Faction data model + reputation tracking
-  └── Named system seed overrides + POI placement on planets
+The critical ordering constraints are:
 
-Phase B — NPC Layer
-  └── Crew NPC system (voice AI integration, ship-resident presence)
-  └── Comms station UI + Contact NPC framework
-  └── Surface NPC spawning at POIs
-
-Phase C — Simulation
-  └── Ship condition / damage model
-  └── Resource & maintenance loop (fuel, parts, consumables)
-  └── Economy + trade system
-  └── Faction patrol AI (autonomous ship agents)
-
-Phase D — Action
-  └── Ship combat (weapons, targeting, damage)
-  └── Free EVA (untethered)
-  └── Boarding encounters (interior combat arena)
-  └── Surface combat
-
-Phase E — Content
-  └── Author named systems (lore, missions, NPC dialogue)
-  └── Populate planet surfaces with POI sets
-  └── Authored faction missions and story threads
-
-Phase F — God Phase (Post-Ascension)
-  └── Ascension event trigger and phase transition
-  └── Simulation influence layer (indirect nudging API)
-  └── Direct manifestation event system
-  └── Universe mutation API (cosmic construction/destruction on procedural gen)
-  └── Tier 4 entity AI and political simulation
-  └── God-phase UI/UX (entirely new interface paradigm)
-  └── Legacy system (ship and crew persist, continue without player)
-```
+- Durable versioned saves and a play-time clock before new persistent domains.
+- Cargo/reward travel proof before dynamic economy.
+- Ship condition and repair before combat.
+- Surface POI proof before surface combat.
+- Untethered EVA proof before hostile boarding.
+- Faction, patrol, and economy proofs before autonomous world simulation.
+- Autonomous simulation and the ten-system content program before ascension.
+- Indirect influence before manifestation or cosmic universe mutation.
 
 ---
 
