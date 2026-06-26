@@ -103,7 +103,8 @@ export class SystemContents {
                 radius: planet.radius,
                 entryRadius,
                 descriptor,
-                childSeed: descriptor.childSeed
+                childSeed: descriptor.childSeed,
+                parentSystem: this._createParentSystemSnapshot(planet)
             });
         }
         return candidates;
@@ -248,6 +249,54 @@ export class SystemContents {
         this.group.add(this.debrisField.group);
     }
 
+    _createParentSystemSnapshot(selectedPlanet) {
+        const systemOrigin = this.group.getWorldPosition(new THREE.Vector3());
+        const starPosition = this.star.getWorldPosition(new THREE.Vector3()).sub(systemOrigin);
+        const selectedPosition = selectedPlanet.getWorldPosition(new THREE.Vector3()).sub(systemOrigin);
+
+        return {
+            name: this.anchor.name,
+            seed: this.seed,
+            star: {
+                name: this.star.name,
+                position: starPosition.toArray(),
+                radius: this.star.radius,
+                color: `#${this.star.color.getHexString()}`,
+                temperatureK: this.star.temperatureK,
+                luminosity: this.star.luminosity
+            },
+            selected: this._planetEphemeris(selectedPlanet, selectedPosition),
+            bodies: this.planets
+                .filter((planet) => planet !== selectedPlanet)
+                .map((planet) => this._planetEphemeris(
+                    planet,
+                    planet.getWorldPosition(new THREE.Vector3()).sub(systemOrigin)
+                ))
+        };
+    }
+
+    _planetEphemeris(planet, position) {
+        return {
+            id: planet.name,
+            name: planet.name,
+            kind: planet.kind,
+            type: planet.type,
+            radius: planet.radius,
+            color: skyColorForPlanet(planet),
+            position: position.toArray(),
+            orbitRadius: planet.orbitRadius,
+            orbitSpeed: planet.orbitSpeed,
+            spinSpeed: planet.spinSpeed,
+            spinPhase: planet.mesh?.rotation?.y ?? 0,
+            orbitRotation: [
+                planet.pivot.rotation.x,
+                planet.pivot.rotation.y,
+                planet.pivot.rotation.z,
+                planet.pivot.rotation.order
+            ]
+        };
+    }
+
     _createBackdrop() {
         const count = 2600;
         const positions = new Float32Array(count * 3);
@@ -299,4 +348,10 @@ function randomUnitVector(rng, target) {
     const a = rng() * Math.PI * 2;
     const r = Math.sqrt(Math.max(0, 1 - z * z));
     return target.set(Math.cos(a) * r, z, Math.sin(a) * r);
+}
+
+function skyColorForPlanet(planet) {
+    const palette = planet.palette ?? {};
+    const color = palette.accent ?? palette.highland ?? palette.midland ?? palette.lowland ?? '#d8c38a';
+    return new THREE.Color(color).getHexString();
 }

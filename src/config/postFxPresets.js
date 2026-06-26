@@ -1,7 +1,7 @@
 const desktopDefault = {
     bloom: {
         enabled: true,
-        strength: 0.28,
+        strength: 0.44,
         radius: 0.82,
         threshold: 0.05,
         // XR-only multipliers so the headset bloom can be nudged relative to
@@ -10,7 +10,7 @@ const desktopDefault = {
         xrRadiusScale: 1
     },
     warp: {
-        enabled: false,
+        enabled: true,
         debugOverrideEnabled: false,
         debugSpeedFactor: 0.77,
         blurStrength: 0.144,
@@ -24,35 +24,35 @@ const desktopDefault = {
         // applies when nobody is at the controls (walking the ship / EVA) so the
         // drift FX read calmer on foot. Eased between the two on take/leave.
         speedFxScale: 0.71,
-        speedFxOnFootScale: 0.35
+        speedFxOnFootScale: 0.68
     },
     relativisticStars: {
         enabled: true,
-        intensity: 1.8,
+        intensity: 0.15,
         maxBeta: 0.82,
         debugOverrideEnabled: false,
         debugBeta: 0
     },
     retro: {
         enabled: true,
-        pixelSize: 4,
-        colorDepth: 21,
+        pixelSize: 3,
+        colorDepth: 8,
         scanlineIntensity: 0.64,
         scanlineCount: 1.5,
         saturation: 0.59,
-        contrast: 0.76,
+        contrast: 0.89,
         noiseIntensity: 0.03,
         vignetteStrength: 0.4,
         vignetteIntensity: 0.6,
-        aberration: 0.0045,
+        aberration: 0,
         brightness: -0.13,
         exposure: 4
     },
     autoExposure: {
         enabled: true,
-        targetLuminance: 0.18,
-        minExposureScale: 0.5,
-        maxExposureScale: 1.65,
+        targetLuminance: 0.02,
+        minExposureScale: 0.27,
+        maxExposureScale: 3,
         adaptationUpSeconds: 1.15,
         adaptationDownSeconds: 0.55,
         vrAdaptationUpSeconds: 1.65,
@@ -100,14 +100,14 @@ const desktopDefault = {
     // describe the HYPERDRIVE end of the spool and its FX recalibration.
     hyperdrive: {
         enabled: true,
-        hyperForwardMult: 155, // forwardForce multiplier at full spool
-        accelCap: 6000, // accelerationCap eases up to this at full spool
-        safetyClamp: 250000, // top-speed guard when the design clamp lifts
-        angularScale: 0.5, // angular authority reduced by (1 - this*level)
+        hyperForwardMult: 300, // forwardForce multiplier at full spool
+        accelCap: 10500, // accelerationCap eases up to this at full spool
+        safetyClamp: 340000, // top-speed guard when the design clamp lifts
+        angularScale: 0.66, // angular authority reduced by (1 - this*level)
         engageTime: 0.9, // spool-up time constant (s)
         disengageTime: 0.5, // spool-down time constant (s)
         warpRefPrecision: 1500, // speed mapped to full warp in PRECISION
-        warpRefHyper: 18000, // speed mapped to full warp at full spool (~600*mult^0.7)
+        warpRefHyper: 20000, // speed mapped to full warp at full spool (~600*mult^0.7)
         fovStart: 8000, // m/s where FOV/distortion cues begin
         fovMax: 60000 // m/s where FOV/distortion cues saturate
     },
@@ -138,10 +138,10 @@ const desktopDefault = {
         landmarkGlow: 1
     },
     ship: {
-        envMapIntensity: 0.13,
+        envMapIntensity: 0.79,
         glassOpacity: 0.02,
-        brightness: 2,
-        bloom: 0.2
+        brightness: 1.23,
+        bloom: 0.25
     }
 };
 

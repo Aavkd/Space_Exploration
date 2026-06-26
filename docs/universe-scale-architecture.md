@@ -398,6 +398,7 @@ To lock down before implementation:
 | True-radius planet provider | `src/space/universe/QuadPlanetContents.js` | `QuadPlanetContents`: Universe-compatible provider for landable terrestrial worlds at true radius (R ≈ 3–9.5 × 10⁶ m). Camera-relative tile origins + float64 `_centerScene` + log depth (§4), radial gravity, `heightAt` terrain collision, `LANDED`/`ALT` landing state, and debug landing-site helpers. `runJitterTest()` — numerical precision validation. |
 | `planetTrueRadius`, `USE_QUAD_PLANET`, `QUAD_PLANET` | `src/config/scaleTiers.js` | True-radius formula, feature flag, and quadtree LOD config (tile res, error threshold, skirt fraction, max depth). |
 | Quad-planet level factory | `src/space/scale/Level.js` | `createQuadPlanetLevel()` — true-radius entry shells (region = R×1.8, exit = R×1.55, spawn = R×1.18). `createPlanetaryLevel` dispatches landable-terrestrial → quad, gas → hero. |
+| Planetary parent-system sky | `docs/planetary-system-sky-v1.md` | V1 projection layer that carries System-tier star/planet ephemeris into true-radius planets so the visible sun, sibling planets, lighting, and ascent handoff stay coherent. |
 
 ### How each §-mechanic landed
 

@@ -51,6 +51,8 @@ const RIGHT = new THREE.Vector3(1, 0, 0);
 const LOCAL_FORWARD = new THREE.Vector3(0, 0, -1);
 const LOCAL_RIGHT = new THREE.Vector3(1, 0, 0);
 const SHIP_CLEARANCE_EXPORT = FALLBACK_SHIP_CLEARANCE;
+const SKY_DISTANCE_SCALE = 2.7;
+const MAX_SKY_BODIES = 10;
 
 const froundV = (v) => new THREE.Vector3(Math.fround(v.x), Math.fround(v.y), Math.fround(v.z));
 // float32 add of two vectors (operands rounded, sum rounded) — mimics the GPU.
@@ -59,9 +61,10 @@ const f32add = (a, b) => new THREE.Vector3(
 );
 
 export class QuadPlanetContents {
-    constructor({ seed, descriptor, regionRadius }) {
+    constructor({ seed, descriptor, regionRadius, parentSystem = null }) {
         this.seed = seed;
         this.descriptor = normalizePlanetDescriptor(descriptor);
+        this.parentSystem = parentSystem;
         this.kind = this.descriptor?.kind ?? 'terrestrial';
         this.type = this.descriptor?.type ?? 'temperate';
         this.landable = Boolean(this.descriptor?.landable);
@@ -94,6 +97,7 @@ export class QuadPlanetContents {
             randomRange(rng, -1, 1)
         ).normalize();
         this.sunColor = new THREE.Color('#fff2d6');
+        if (this.parentSystem?.star?.color) this.sunColor.set(this.parentSystem.star.color);
 
         this.basis = createPlanetSurfaceModel(this.descriptor, {
             seed,
@@ -134,6 +138,13 @@ export class QuadPlanetContents {
         this._pb = new THREE.Vector3();
         this._pc = new THREE.Vector3();
         this._pd = new THREE.Vector3();
+        this._selectedParentPos = new THREE.Vector3();
+        this._bodyParentPos = new THREE.Vector3();
+        this._relParent = new THREE.Vector3();
+        this._skyDir = new THREE.Vector3();
+        this._skyOrigin = new THREE.Vector3();
+        this._parentFrameQuat = new THREE.Quaternion();
+        this._orbitEuler = new THREE.Euler();
 
         this._time = 0;
         this._lastAltitude = Infinity;
@@ -144,6 +155,11 @@ export class QuadPlanetContents {
         this._lastLeafCount = 0;
         this._lastMaxDepth = 0;
         this._lastCamera = new THREE.Vector3();
+        this._skyBodies = [];
+        this.sunLight = this._createSunLight();
+        this.group.add(this.sunLight, this.sunLight.target);
+        this.systemSky = this._createSystemSky();
+        if (this.systemSky) this.group.add(this.systemSky);
     }
 
     // Gravity reach the App widens its field to while this level is active, so a
@@ -218,6 +234,7 @@ export class QuadPlanetContents {
             if (leaf.depth > maxDepth) maxDepth = leaf.depth;
         }
         if (this.atmosphere) this.atmosphere.position.copy(this._centerScene);
+        this._updateSystemLightingAndSky(camera);
         this._lastMaxDepth = maxDepth;
     }
 
@@ -364,6 +381,9 @@ export class QuadPlanetContents {
         const lighting = config.lighting ?? {};
         this._material.uniforms.uSunColor.value.copy(this.sunColor);
         this._material.uniforms.uAmbient.value = THREE.MathUtils.clamp(0.22 + (lighting.ambient ?? 0), 0.16, 0.48);
+        if (this.sunLight) {
+            this.sunLight.intensity = (lighting.intensity ?? 2.35) * Math.max(0.8, this.parentSystem?.star?.luminosity ?? 1);
+        }
     }
 
     setVisualGlow({ sceneGlow = 1, landmarkGlow = 1 } = {}) {
@@ -372,6 +392,14 @@ export class QuadPlanetContents {
 
     setRelativisticState() {
         // No starfield warp inside a planetary theatre.
+    }
+
+    getParentFrameQuaternion(target = new THREE.Quaternion()) {
+        return target.setFromAxisAngle(UP, this._selectedSpinAngle());
+    }
+
+    toParentFrameDirection(direction, target = direction) {
+        return target.copy(direction).applyQuaternion(this.getParentFrameQuaternion(this._parentFrameQuat)).normalize();
     }
 
     // Jump the ship to `metres` altitude above the surface under its current
@@ -504,6 +532,13 @@ export class QuadPlanetContents {
             leafTiles: this._lastLeafCount,
             maxLodDepth: this._lastMaxDepth,
             builtTiles: tileStats.totalBuilt,
+            parentSystemSky: {
+                system: this.parentSystem?.name ?? null,
+                star: this.parentSystem?.star?.name ?? null,
+                sunDir: this.sunDir.toArray(),
+                selectedSpinDeg: THREE.MathUtils.radToDeg(this._selectedSpinAngle()),
+                projectedBodies: this._skyBodies.length
+            },
             ...tileStats
         };
     }
@@ -725,6 +760,142 @@ export class QuadPlanetContents {
         });
     }
 
+    _createSunLight() {
+        const light = new THREE.DirectionalLight(this.sunColor, 3.0 * Math.max(0.8, this.parentSystem?.star?.luminosity ?? 1));
+        light.name = 'PlanetaryParentStarLight';
+        light.target.name = 'PlanetaryParentStarLightTarget';
+        return light;
+    }
+
+    _createSystemSky() {
+        const group = new THREE.Group();
+        group.name = 'ProjectedParentSystemSky';
+
+        const sunMaterial = new THREE.SpriteMaterial({
+            map: discTexture(),
+            color: this.sunColor,
+            transparent: true,
+            opacity: 1,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            depthTest: true,
+            fog: false
+        });
+        this.sunSprite = new THREE.Sprite(sunMaterial);
+        this.sunSprite.name = `ProjectedSun:${this.parentSystem?.star?.name ?? 'Parent star'}`;
+        group.add(this.sunSprite);
+
+        const bodies = (this.parentSystem?.bodies ?? []).slice(0, MAX_SKY_BODIES);
+        for (const body of bodies) {
+            const material = new THREE.SpriteMaterial({
+                map: discTexture(),
+                color: colorFromHex(body.color, '#d8c38a'),
+                transparent: true,
+                opacity: body.kind === 'gas' ? 0.95 : 0.82,
+                depthWrite: false,
+                depthTest: true,
+                fog: false
+            });
+            const sprite = new THREE.Sprite(material);
+            sprite.name = `ProjectedSystemBody:${body.name}`;
+            sprite.userData.body = body;
+            group.add(sprite);
+            this._skyBodies.push(sprite);
+        }
+
+        return group;
+    }
+
+    _updateSystemLightingAndSky(cameraPosition = this._lastCamera) {
+        this._updateSunDirection();
+        this._material.uniforms.uSunDir.value.copy(this.sunDir);
+        this._material.uniforms.uSunColor.value.copy(this.sunColor);
+        if (this.atmosphere?.material?.uniforms?.uSunDir) {
+            this.atmosphere.material.uniforms.uSunDir.value.copy(this.sunDir);
+        }
+
+        const lightDistance = Math.max(this.radius * 0.35, 50_000);
+        this.sunLight.position.copy(this._centerScene).addScaledVector(this.sunDir, lightDistance);
+        this.sunLight.target.position.copy(this._centerScene);
+        this.sunLight.color.copy(this.sunColor);
+
+        if (!this.systemSky) return;
+        const skyDistance = this.radius * SKY_DISTANCE_SCALE;
+        this._skyOrigin.copy(cameraPosition ?? this._lastCamera);
+        this.sunSprite.position.copy(this._skyOrigin).addScaledVector(this.sunDir, skyDistance);
+        const sunAngular = THREE.MathUtils.clamp(
+            ((this.parentSystem?.star?.radius ?? this.radius * 0.02) / Math.max(this._parentStarDistance(), 1)) * 9.5,
+            0.028,
+            0.095
+        );
+        const sunScale = skyDistance * sunAngular;
+        this.sunSprite.scale.setScalar(sunScale);
+        this.sunSprite.material.color.copy(this.sunColor);
+
+        for (const sprite of this._skyBodies) {
+            const body = sprite.userData.body;
+            const rel = this._bodyRelativeToSelected(body, this._relParent);
+            const distance = rel.length();
+            if (distance < 1e-6) {
+                sprite.visible = false;
+                continue;
+            }
+            this._parentToPlanetLocalDirection(rel, this._skyDir);
+            sprite.position.copy(this._skyOrigin).addScaledVector(this._skyDir, skyDistance * 0.96);
+            const angular = THREE.MathUtils.clamp((body.radius / distance) * 4.2, 0.008, body.kind === 'gas' ? 0.052 : 0.036);
+            sprite.scale.setScalar(skyDistance * angular);
+            sprite.visible = true;
+        }
+    }
+
+    _updateSunDirection() {
+        if (!this.parentSystem?.star || !this.parentSystem?.selected) return;
+        this._bodyParentPosition(this.parentSystem.selected, this._selectedParentPos);
+        this._vectorFromArray(this.parentSystem.star.position, this._bodyParentPos);
+        this._relParent.copy(this._bodyParentPos).sub(this._selectedParentPos);
+        this._parentToPlanetLocalDirection(this._relParent, this.sunDir);
+    }
+
+    _bodyRelativeToSelected(body, target) {
+        this._bodyParentPosition(this.parentSystem.selected, this._selectedParentPos);
+        this._bodyParentPosition(body, this._bodyParentPos);
+        return target.copy(this._bodyParentPos).sub(this._selectedParentPos);
+    }
+
+    _parentStarDistance() {
+        if (!this.parentSystem?.star || !this.parentSystem?.selected) return this.radius * 30;
+        this._bodyParentPosition(this.parentSystem.selected, this._selectedParentPos);
+        this._vectorFromArray(this.parentSystem.star.position, this._bodyParentPos);
+        return this._bodyParentPos.distanceTo(this._selectedParentPos);
+    }
+
+    _parentToPlanetLocalDirection(parentVector, target) {
+        target.copy(parentVector);
+        if (target.lengthSq() < 1e-10) return target.copy(this.sunDir);
+        target.normalize();
+        return target.applyAxisAngle(UP, -this._selectedSpinAngle()).normalize();
+    }
+
+    _selectedSpinAngle() {
+        const selected = this.parentSystem?.selected;
+        return (selected?.spinPhase ?? 0) + (selected?.spinSpeed ?? 0) * this._time;
+    }
+
+    _bodyParentPosition(body, target) {
+        if (Number.isFinite(body?.orbitRadius) && Array.isArray(body?.orbitRotation)) {
+            const [x = 0, y = 0, z = 0, order = 'XYZ'] = body.orbitRotation;
+            this._orbitEuler.set(x, y + (body.orbitSpeed ?? 0) * this._time, z, order);
+            return target.set(body.orbitRadius, 0, 0).applyEuler(this._orbitEuler);
+        }
+        return this._vectorFromArray(body?.position, target);
+    }
+
+    _vectorFromArray(value, target) {
+        return Array.isArray(value)
+            ? target.fromArray(value)
+            : target.set(0, 0, 0);
+    }
+
     _createAtmosphere() {
         const atmosphere = this.descriptor?.atmosphere;
         if (!atmosphere || (atmosphere.density ?? 0) <= 0.02) return null;
@@ -779,5 +950,44 @@ export class QuadPlanetContents {
             this.atmosphere.geometry.dispose();
             this.atmosphere.material.dispose();
         }
+        if (this.systemSky) {
+            for (const child of this.systemSky.children) {
+                child.material?.dispose?.();
+            }
+        }
     }
+}
+
+let DISC_TEXTURE = null;
+
+function discTexture() {
+    if (DISC_TEXTURE) return DISC_TEXTURE;
+    if (typeof document === 'undefined') {
+        const data = new Uint8Array([255, 255, 255, 255]);
+        DISC_TEXTURE = new THREE.DataTexture(data, 1, 1);
+        DISC_TEXTURE.needsUpdate = true;
+        return DISC_TEXTURE;
+    }
+
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(size * 0.5, size * 0.5, 0, size * 0.5, size * 0.5, size * 0.5);
+    gradient.addColorStop(0.0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.58, 'rgba(255,255,255,0.94)');
+    gradient.addColorStop(0.82, 'rgba(255,255,255,0.32)');
+    gradient.addColorStop(1.0, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    DISC_TEXTURE = new THREE.CanvasTexture(canvas);
+    DISC_TEXTURE.colorSpace = THREE.SRGBColorSpace;
+    return DISC_TEXTURE;
+}
+
+function colorFromHex(value, fallback = '#ffffff') {
+    if (!value) return new THREE.Color(fallback);
+    const text = String(value);
+    return new THREE.Color(text.startsWith('#') ? text : `#${text}`);
 }

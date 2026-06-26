@@ -37,9 +37,10 @@ const TERRAIN_DETAIL = 6;         // icosphere subdivisions (20 * 4^6 ≈ 82k tr
 const BASE_FREQ = 2.2;            // continent-scale noise frequency
 
 export class PlanetaryContents {
-    constructor({ seed, descriptor, regionRadius }) {
+    constructor({ seed, descriptor, regionRadius, parentSystem = null }) {
         this.seed = seed;
         this.descriptor = normalizePlanetDescriptor(descriptor);
+        this.parentSystem = parentSystem;
         this.kind = this.descriptor?.kind ?? 'terrestrial';
         this.landable = Boolean(this.descriptor?.landable);
         this.name = this.descriptor?.name ?? 'Unnamed world';

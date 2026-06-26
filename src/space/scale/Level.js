@@ -170,6 +170,8 @@ export function createGalaxyLevel(candidate, baseConfig) {
         exitRadius: tierDef.exitRadius,
         entryPosition,
         breadcrumb: {
+            id: candidate.id,
+            kind: candidate.kind,
             position: candidate.position.clone(),
             entryRadius: candidate.entryRadius
         }
@@ -197,6 +199,8 @@ export function createSystemLevel(candidate) {
         exitRadius: tierDef.exitRadius,
         entryPosition: new THREE.Vector3(0, 0, spawnDistance),
         breadcrumb: {
+            id: candidate.id,
+            kind: candidate.kind,
             position: candidate.position.clone(),
             entryRadius: candidate.entryRadius
         }
@@ -229,7 +233,8 @@ export function createPlanetaryLevel(candidate) {
     const contents = new PlanetaryContents({
         seed: candidate.childSeed,
         descriptor,
-        regionRadius
+        regionRadius,
+        parentSystem: candidate.parentSystem
     });
 
     // Spawn where the ship entered: keep the same direction it approached the
@@ -251,6 +256,8 @@ export function createPlanetaryLevel(candidate) {
         exitRadius,
         entryPosition,
         breadcrumb: {
+            id: candidate.id,
+            kind: candidate.kind,
             position: candidate.position.clone(),
             entryRadius: candidate.entryRadius
         }
@@ -274,7 +281,8 @@ export function createQuadPlanetLevel(candidate) {
     const contents = new QuadPlanetContents({
         seed: candidate.childSeed,
         descriptor,
-        regionRadius
+        regionRadius,
+        parentSystem: candidate.parentSystem
     });
 
     const approach = candidate.approachDir && candidate.approachDir.lengthSq() > 1e-6
@@ -293,6 +301,8 @@ export function createQuadPlanetLevel(candidate) {
         exitRadius,
         entryPosition,
         breadcrumb: {
+            id: candidate.id,
+            kind: candidate.kind,
             position: candidate.position.clone(),
             entryRadius: candidate.entryRadius
         }
