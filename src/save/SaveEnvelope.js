@@ -2,7 +2,7 @@ import { createInitialShipState, sanitizeShipState } from '../rpg/cargo.js';
 import { migrateRpgState } from '../rpg/migrations.js';
 import { createInitialRpgState, sanitizeRpgState } from '../rpg/state.js';
 
-export const SAVE_ENVELOPE_VERSION = 6;
+export const SAVE_ENVELOPE_VERSION = 7;
 export const MAX_EVENT_LOG_ENTRIES = 500;
 export const PROTECTED_EVENT_TYPES = Object.freeze([
     'mission.resolved',
@@ -50,6 +50,7 @@ export function sanitizeSaveEnvelope(value) {
     if (value.version === 3) value = migrateVersion3Envelope(value);
     if (value.version === 4) value = migrateVersion4Envelope(value);
     if (value.version === 5) value = migrateVersion5Envelope(value);
+    if (value.version === 6) value = migrateVersion6Envelope(value);
     if (value.version !== SAVE_ENVELOPE_VERSION) {
         throw new Error(
             value.version > SAVE_ENVELOPE_VERSION
@@ -170,6 +171,26 @@ export function migrateVersion5Envelope(value) {
         autosave: {
             kind: 'migration',
             reason: 'phase-17-v5',
+            savedAt,
+            sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
+        }
+    };
+}
+
+export function migrateVersion6Envelope(value) {
+    if (!value || value.version !== 6) {
+        throw new Error(`Expected save envelope version 6, received ${value?.version ?? 'missing'}.`);
+    }
+    const savedAt = typeof value.slot?.updatedAt === 'string'
+        ? value.slot.updatedAt
+        : new Date().toISOString();
+    return {
+        ...structuredClone(value),
+        version: 7,
+        ship: sanitizeShipState(value.ship),
+        autosave: {
+            kind: 'migration',
+            reason: 'phase-18-v6',
             savedAt,
             sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
         }

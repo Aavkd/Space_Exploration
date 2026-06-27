@@ -22,7 +22,7 @@ export const CARGO_DEFINITIONS = Object.freeze({
 });
 
 export const CARGO_IDS = Object.freeze(Object.keys(CARGO_DEFINITIONS));
-export const SHIP_STATE_VERSION = 1;
+export const SHIP_STATE_VERSION = 2;
 export const DEFAULT_CREDITS = 300;
 export const DEFAULT_FUEL_CAPACITY = 100;
 export const DEFAULT_FUEL_RESERVE = 15;
@@ -47,7 +47,13 @@ export function createInitialShipState() {
         travel: {
             currentSystemId: null,
             pendingJump: null
-        }
+        },
+        condition: createInitialConditionState(),
+        inventory: {
+            repairParts: 0,
+            hullPlates: 0
+        },
+        maintenance: createInitialMaintenanceState()
     };
 }
 
@@ -55,6 +61,7 @@ export function sanitizeShipState(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error('Save domain ship must be an object.');
     }
+    if (value.version === 1) value = migrateShipStateV1(value);
     if (value.version !== SHIP_STATE_VERSION) {
         throw new Error(`Unsupported ship state version: ${value.version ?? 'missing'}.`);
     }
@@ -93,8 +100,169 @@ export function sanitizeShipState(value) {
         travel: {
             currentSystemId: sanitizeSystemId(value.travel?.currentSystemId, 'ship.travel.currentSystemId'),
             pendingJump: sanitizePendingJump(value.travel?.pendingJump)
+        },
+        condition: sanitizeConditionState(value.condition),
+        inventory: sanitizeRepairInventory(value.inventory),
+        maintenance: sanitizeMaintenanceState(value.maintenance)
+    };
+}
+
+export function migrateShipStateV1(value) {
+    if (!value || value.version !== 1) {
+        throw new Error(`Expected ship state version 1, received ${value?.version ?? 'missing'}.`);
+    }
+    return {
+        ...structuredClone(value),
+        version: SHIP_STATE_VERSION,
+        condition: createInitialConditionState(),
+        inventory: {
+            repairParts: 0,
+            hullPlates: 0
+        },
+        maintenance: createInitialMaintenanceState()
+    };
+}
+
+const CONDITION_SYSTEM_IDS = Object.freeze([
+    'engine',
+    'hyperdrive',
+    'sensors',
+    'comms',
+    'life_support',
+    'weapons'
+]);
+const SALVAGE_SOURCE_ID = 'index_k7_derelict_cache';
+const HAZARD_ID = 'index_k7_micrometeoroid_shear';
+const MAX_REPAIR_ITEMS = 999;
+
+function createInitialConditionState() {
+    return {
+        hull: { current: 100, maximum: 100 },
+        systems: Object.fromEntries(CONDITION_SYSTEM_IDS.map((id) => [id, { condition: 100 }]))
+    };
+}
+
+function createInitialMaintenanceState() {
+    return {
+        salvageSources: {
+            [SALVAGE_SOURCE_ID]: {
+                claimed: false,
+                claimedAtGameTime: null
+            }
+        },
+        hazards: {
+            [HAZARD_ID]: {
+                triggered: false,
+                triggeredAtGameTime: null
+            }
         }
     };
+}
+
+function sanitizeConditionState(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('ship.condition must be an object.');
+    }
+    const maximum = sanitizeConditionNumber(value.hull?.maximum, 'ship.condition.hull.maximum');
+    if (maximum !== 100) throw new Error('ship.condition.hull.maximum must be 100.');
+    const systems = {};
+    for (const id of CONDITION_SYSTEM_IDS) {
+        systems[id] = {
+            condition: sanitizeConditionNumber(
+                value.systems?.[id]?.condition,
+                `ship.condition.systems.${id}.condition`
+            )
+        };
+    }
+    const unknown = Object.keys(value.systems ?? {}).filter((id) => !CONDITION_SYSTEM_IDS.includes(id));
+    if (unknown.length) throw new Error(`Unknown ship condition system ID: ${unknown[0]}`);
+    return {
+        hull: {
+            current: sanitizeConditionNumber(value.hull?.current, 'ship.condition.hull.current'),
+            maximum
+        },
+        systems
+    };
+}
+
+function sanitizeRepairInventory(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('ship.inventory must be an object.');
+    }
+    return {
+        repairParts: sanitizeRepairItemCount(value.repairParts, 'ship.inventory.repairParts'),
+        hullPlates: sanitizeRepairItemCount(value.hullPlates, 'ship.inventory.hullPlates')
+    };
+}
+
+function sanitizeMaintenanceState(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('ship.maintenance must be an object.');
+    }
+    const sourceIds = Object.keys(value.salvageSources ?? {});
+    const hazardIds = Object.keys(value.hazards ?? {});
+    if (sourceIds.some((id) => id !== SALVAGE_SOURCE_ID)) {
+        throw new Error(`Unknown salvage source ID: ${sourceIds.find((id) => id !== SALVAGE_SOURCE_ID)}`);
+    }
+    if (hazardIds.some((id) => id !== HAZARD_ID)) {
+        throw new Error(`Unknown ship hazard ID: ${hazardIds.find((id) => id !== HAZARD_ID)}`);
+    }
+    const source = sanitizeOneShotRecord(
+        value.salvageSources?.[SALVAGE_SOURCE_ID],
+        'claimed',
+        'claimedAtGameTime',
+        `ship.maintenance.salvageSources.${SALVAGE_SOURCE_ID}`
+    );
+    const hazard = sanitizeOneShotRecord(
+        value.hazards?.[HAZARD_ID],
+        'triggered',
+        'triggeredAtGameTime',
+        `ship.maintenance.hazards.${HAZARD_ID}`
+    );
+    if (
+        source.claimed !== hazard.triggered
+        || source.claimedAtGameTime !== hazard.triggeredAtGameTime
+    ) {
+        throw new Error('Ship salvage and hazard one-shot records must share one atomic checkpoint.');
+    }
+    return {
+        salvageSources: {
+            [SALVAGE_SOURCE_ID]: source
+        },
+        hazards: {
+            [HAZARD_ID]: hazard
+        }
+    };
+}
+
+function sanitizeOneShotRecord(value, flagKey, timeKey, label) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`${label} must be an object.`);
+    }
+    if (typeof value[flagKey] !== 'boolean') {
+        throw new Error(`${label}.${flagKey} must be a boolean.`);
+    }
+    const flag = value[flagKey];
+    const time = value[timeKey];
+    if (time !== null && (!Number.isFinite(Number(time)) || Number(time) < 0)) {
+        throw new Error(`${label}.${timeKey} must be null or a non-negative finite number.`);
+    }
+    if (flag !== (time !== null)) {
+        throw new Error(`${label} flag and game-time checkpoint must agree.`);
+    }
+    return { [flagKey]: flag, [timeKey]: time === null ? null : Number(time) };
+}
+
+function sanitizeConditionNumber(value, label) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) throw new Error(`${label} must be a finite number.`);
+    return Math.max(0, Math.min(100, number));
+}
+
+function sanitizeRepairItemCount(value, label) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) throw new Error(`${label} must be a finite number.`);
+    return Math.max(0, Math.min(MAX_REPAIR_ITEMS, Math.floor(number)));
 }
 
 export function getCargoDefinition(id) {

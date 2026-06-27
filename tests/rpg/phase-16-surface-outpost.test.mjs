@@ -71,9 +71,9 @@ test('Phase 15 v4 fixture migrates to envelope v5/RPG v4 without prior consequen
         'utf8'
     ));
     const migrated = sanitizeSaveEnvelope(fixture);
-    assert.equal(migrated.version, 6);
+    assert.equal(migrated.version, 7);
     assert.equal(migrated.rpg.version, 5);
-    assert.equal(migrated.autosave.reason, 'phase-17-v5');
+    assert.equal(migrated.autosave.reason, 'phase-18-v6');
     assert.equal(migrated.ship.credits, 1150);
     assert.equal(migrated.ship.fuel.current, 72);
     assert.equal(migrated.rpg.factions.byId.index.reputation, 0.15);

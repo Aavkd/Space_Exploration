@@ -21,6 +21,9 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
 - Deterministic Commonwealth territory patrol at Port Meridian: one local
   agent, reputation bands, cargo inspection, safe refusal, ignored hails, and
   reload/scale deduplication without combat.
+- Persistent hull and six-system condition, a one-shot K-7 derelict
+  hazard/salvage transaction, repair inventory, bounded flight degradation,
+  and physical maintenance.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -37,8 +40,9 @@ Then open [http://localhost:5177/](http://localhost:5177/).
 
 The dependency-free RPG suite covers Phase 11 mission behavior, Phase 13 slots
 and clock, Phase 14 cargo/fuel delivery, Phase 15 crew state, Phase 16 surface
-placement, and Phase 17 faction patrol policy, migration, failures, checkpoint
-reloads, and exact-once completion:
+placement, Phase 17 faction patrol policy, and Phase 18 ship condition,
+salvage, hazard, repair, migration, failures, checkpoint reloads, and exact-once
+transactions:
 
 ```powershell
 node --experimental-default-type=module --test tests/rpg/*.test.mjs
@@ -146,8 +150,9 @@ window.__deepSpaceDebug.rpg.reset();
 Walk to the observation-bay ship computer and press `C` / Triangle / XR select
 to inspect `A Clean Copy`, manage three isolated local slots, export validated
 JSON, preview/import it into a new slot, and inspect active-play time. Phase 11
-version-1 browser saves migrate automatically through the current Phase 17
-version-6 envelope / RPG version 5; Phase 13–16 slots migrate non-destructively.
+version-1 browser saves migrate automatically through the current Phase 18
+version-7 envelope / ship version 2 / RPG version 5; Phase 13–17 slots migrate
+non-destructively.
 There is no cloud synchronization or offline simulation.
 
 ### Cargo delivery
@@ -191,6 +196,16 @@ inspection, warning/refusal, ignored hail, or safe-hostility departure. No
 outcome attacks, damages, confiscates cargo, or forces combat. Leaving the
 pilot seat hides but does not resolve the hail; use the cockpit comms station
 to resume it.
+
+### Ship condition, salvage, and repair
+
+At Index Relay K-7, walk to the observation-bay cargo terminal and recover the
+nearby `index_k7_derelict_cache`. Its one-shot transaction applies a
+deterministic micrometeoroid hit and grants three repair parts plus two hull
+plates. Use the same physical terminal to repair hull or a named system; every
+repair consumes exactly one matching item and saves immediately. Engine and
+hyperdrive degradation have bounded live flight effects, while emergency
+stabilization keeps critical hull/engine saves controllable.
 
 ### Gamepad and VR
 
@@ -244,6 +259,10 @@ window.__deepSpaceDebug.surfaceOutpost.getPlacement();
 window.__deepSpaceDebug.patrol.getState();
 window.__deepSpaceDebug.patrol.getInfluence('entry_hub');
 window.__deepSpaceDebug.patrol.restartVisit('entry_hub');
+window.__deepSpaceDebug.condition.getState();
+window.__deepSpaceDebug.condition.getCapabilities();
+window.__deepSpaceDebug.condition.claimSalvage();
+window.__deepSpaceDebug.condition.repair('engine');
 ```
 
 The Phase 11A-E implementation and verification checklist are documented in
@@ -265,6 +284,7 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-14-cargo-fuel-delivery.md](docs/phase-14-cargo-fuel-delivery.md) - persistent cargo, fuel, recovery, and two-system delivery
 - [docs/phase-16-surface-outpost.md](docs/phase-16-surface-outpost.md) - authored planet POI, surface terminal mission, and checkpoint persistence
 - [docs/phase-17-faction-patrol.md](docs/phase-17-faction-patrol.md) - deterministic faction influence, cargo policy, and one safe local patrol
+- [docs/phase-18-ship-condition.md](docs/phase-18-ship-condition.md) - persistent condition, one-shot salvage/hazard, repair inventory, and recovery
 - [docs/rpg-future-development-roadmap.md](docs/rpg-future-development-roadmap.md) - post-Phase-11 vertical slices, dependencies, tests, and acceptance gates
 - [docs/rpg-phase-agent-prompts.md](docs/rpg-phase-agent-prompts.md) - copy-paste implementation prompts for each future RPG phase
 
@@ -281,3 +301,7 @@ The Phase 11A-E implementation and verification checklist are documented in
   There are no weapons, damage, fleets, confiscation, dynamic agendas, or
   normal-play contraband acquisition yet. The hail is currently a desktop DOM
   panel rather than a diegetic in-headset surface.
+- Phase 18 has one text-presented derelict cache and one deterministic hazard.
+  There is no boarding, general loot generation, repair animation, crafting,
+  salvage market, hostile damage source, or usable weapon system. Full
+  gamepad/PCVR device signoff remains pending.

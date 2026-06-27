@@ -69,6 +69,10 @@ export class Ship {
         this.engageTime = 0.9; // spool-up time constant (s)
         this.disengageTime = 0.5; // spool-down time constant (s)
         this._hyperFxVisible = false;
+        this.capabilityEffects = {
+            engineThrust: 1,
+            hyperdriveAuthority: 1
+        };
 
         // Once the async GLB resolves, grab its animation mixer + glass materials
         // and kick off the built-in startup sequence (landing gear, thrusters...).
@@ -114,14 +118,23 @@ export class Ship {
     }
 
     update(dt, commandState = {}, gravityField = this.gravityField, externalAcceleration = null) {
-        this.commandState = commandState;
+        const engineThrust = THREE.MathUtils.clamp(this.capabilityEffects.engineThrust ?? 1, 0.4, 1);
+        const affectedCommand = {
+            ...commandState,
+            thrust: (commandState.thrust ?? 0) * engineThrust,
+            strafe: (commandState.strafe ?? 0) * engineThrust,
+            lift: (commandState.lift ?? 0) * engineThrust
+        };
+        this.commandState = affectedCommand;
 
         // Ease the hyperdrive spool toward the latched intent. This tracks the
         // gear itself, NOT whether someone is at the controls: leaving the seat
         // mid-jump keeps the regime (clamp lifted, speed held) until hyperdrive is
         // explicitly disengaged. Thrust still only applies while piloting.
-        const engaged = Boolean(commandState.hyperdrive);
-        const target = engaged ? 1 : 0;
+        const engaged = Boolean(affectedCommand.hyperdrive);
+        const target = engaged
+            ? THREE.MathUtils.clamp(this.capabilityEffects.hyperdriveAuthority ?? 1, 0.5, 1)
+            : 0;
         const tau = target > this.hyperdriveLevel ? this.engageTime : this.disengageTime;
         const k = tau > 1e-4 ? 1 - Math.exp(-dt / tau) : 1;
         this.hyperdriveLevel += (target - this.hyperdriveLevel) * k;
@@ -129,7 +142,7 @@ export class Ship {
 
         // smoothstep gives a nicer ease than the raw exponential for forces/FX.
         const easedLevel = THREE.MathUtils.smoothstep(this.hyperdriveLevel, 0, 1);
-        const command = { ...commandState, hyperdrive: easedLevel };
+        const command = { ...affectedCommand, hyperdrive: easedLevel };
 
         const gravityAccel = gravityField
             ? gravityField.getAcceleration(this.object3D.position, this._gravityAccel)
@@ -151,6 +164,16 @@ export class Ship {
     setHyperdriveSpool(engageTime, disengageTime) {
         if (Number.isFinite(engageTime)) this.engageTime = Math.max(0.01, engageTime);
         if (Number.isFinite(disengageTime)) this.disengageTime = Math.max(0.01, disengageTime);
+    }
+
+    setCapabilityEffects({ engineThrust, hyperdriveAuthority } = {}) {
+        if (Number.isFinite(engineThrust)) {
+            this.capabilityEffects.engineThrust = THREE.MathUtils.clamp(engineThrust, 0.4, 1);
+        }
+        if (Number.isFinite(hyperdriveAuthority)) {
+            this.capabilityEffects.hyperdriveAuthority = THREE.MathUtils.clamp(hyperdriveAuthority, 0.5, 1);
+        }
+        return { ...this.capabilityEffects };
     }
 
     // Drive the dedicated `hyperdrive_fx` sprite cards by the eased spool level:

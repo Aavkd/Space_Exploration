@@ -108,9 +108,9 @@ test('Phase 16 envelope v5/RPG v4 migrates to v6/v5 with initialized patrol stat
     delete previous.rpg.patrol;
 
     const migrated = sanitizeSaveEnvelope(previous);
-    assert.equal(migrated.version, 6);
+    assert.equal(migrated.version, 7);
     assert.equal(migrated.rpg.version, 5);
-    assert.equal(migrated.autosave.reason, 'phase-17-v5');
+    assert.equal(migrated.autosave.reason, 'phase-18-v6');
     assert.deepEqual(migrated.rpg.patrol, createInitialPatrolState());
     assert.equal(migrated.ship.credits, 1150);
     assert.equal(migrated.rpg.worldFlags['index_hq.archive_delivery_complete'], true);

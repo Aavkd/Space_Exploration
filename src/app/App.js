@@ -45,6 +45,7 @@ import {
     CrewRuntime,
     DeliveryRuntime,
     PatrolRuntime,
+    ShipConditionRuntime,
     SurfaceOutpostRuntime,
     SURFACE_OUTPOST_ID,
     isMeteredAuthoredRoute,
@@ -303,6 +304,9 @@ export class App {
         this._syncCrewPresence();
         this.deliveryError = null;
         this.delivery = this._createDeliveryRuntimeSafely();
+        this.conditionError = null;
+        this.condition = this._createConditionRuntimeSafely();
+        this._shipCapabilities = this.condition?.getState().capabilities ?? null;
         this.surfaceOutpostError = null;
         this.surfaceOutpost = this._createSurfaceOutpostRuntimeSafely();
         this.patrolError = null;
@@ -356,6 +360,13 @@ export class App {
         // through the debug hooks is deterministic; rendering keeps running.
         if (!this.paused) {
             const command = this.shipControls.getCommand(this.input.keys, controlInput);
+            const capabilities = this._shipCapabilities;
+            if (capabilities) {
+                this.ship.capabilityEffects = {
+                    engineThrust: capabilities.engineThrust,
+                    hyperdriveAuthority: capabilities.hyperdriveAuthority
+                };
+            }
             this.debrisHazardState = this.environment.getHazardState?.(this.ship.position, this.ship.velocity) ?? this._emptyDebrisHazard();
             this.ship.update(dt, command, this.gravityField, this.debrisHazardState.acceleration);
             this._maybeRebaseOrigin();
@@ -604,6 +615,7 @@ export class App {
             const systemId = this._findActiveRpgNamedSystemId();
             this.rpg.setActiveNamedSystem(systemId);
             this.delivery?.syncSystem(systemId);
+            this.condition?.syncSystem(systemId);
             return true;
         } catch (error) {
             this._recordRpgError('named-system sync', error);
@@ -683,6 +695,28 @@ export class App {
             console.warn('Phase 14 delivery runtime unavailable; flight remains active.', error);
             return null;
         }
+    }
+
+    _createConditionRuntimeSafely() {
+        try {
+            return new ShipConditionRuntime({
+                slots: this.saveSlots,
+                rpg: this.rpg,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.conditionError = {
+                context: 'ship condition runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 18 ship condition runtime unavailable; flight remains active.', error);
+            return null;
+        }
+    }
+
+    _refreshShipCapabilities() {
+        this._shipCapabilities = this.condition?.getState().capabilities ?? null;
+        return this._shipCapabilities;
     }
 
     _createSurfaceOutpostRuntimeSafely() {
@@ -1306,6 +1340,8 @@ export class App {
         this._lastClockCheckpoint = this.gameClock.getTime();
         this.rpg.reload();
         this.delivery?.reload();
+        this.condition?.reload();
+        this._refreshShipCapabilities();
         this.surfaceOutpost?.reload();
         this.patrol?.reload();
         this._observedPatrolSystemId = undefined;
@@ -1713,15 +1749,29 @@ export class App {
     _handleCargoTerminalAction(action) {
         try {
             if (action === 'close') return this._closeCargoTerminalPanel();
-            if (!this.delivery) throw new Error(this.deliveryError?.message ?? 'Cargo runtime is unavailable.');
             let result;
-            if (action === 'load') result = this.delivery.loadMissionCargo();
-            else if (action === 'deliver') result = this.delivery.deliverMissionCargo();
-            else if (action === 'abandon') result = this.delivery.abandonMission();
-            else if (action === 'lose') result = this.delivery.loseMissionCargo();
-            else if (action === 'refuel') result = this.delivery.refuel();
-            else if (action === 'rescue') result = this.delivery.emergencyRescue();
-            else throw new Error(`Unknown cargo-terminal action: ${action}`);
+            if (action === 'salvage') {
+                if (!this.condition) throw new Error(this.conditionError?.message ?? 'Ship condition runtime is unavailable.');
+                result = this.condition.claimSalvage();
+            } else if (action === 'stabilize') {
+                if (!this.condition) throw new Error(this.conditionError?.message ?? 'Ship condition runtime is unavailable.');
+                result = this.condition.stabilizeCriticalState();
+            } else if (action.startsWith('repair-')) {
+                if (!this.condition) throw new Error(this.conditionError?.message ?? 'Ship condition runtime is unavailable.');
+                result = this.condition.repair(action.slice('repair-'.length));
+            } else {
+                if (!this.delivery) throw new Error(this.deliveryError?.message ?? 'Cargo runtime is unavailable.');
+                if (action === 'load') result = this.delivery.loadMissionCargo();
+                else if (action === 'deliver') result = this.delivery.deliverMissionCargo();
+                else if (action === 'abandon') result = this.delivery.abandonMission();
+                else if (action === 'lose') result = this.delivery.loseMissionCargo();
+                else if (action === 'refuel') result = this.delivery.refuel();
+                else if (action === 'rescue') result = this.delivery.emergencyRescue();
+                else throw new Error(`Unknown cargo-terminal action: ${action}`);
+            }
+            if (action === 'salvage' || action === 'stabilize' || action.startsWith('repair-')) {
+                this._refreshShipCapabilities();
+            }
             this.cargoTerminalMessage = result?.changed === false
                 ? `No change: ${result.reason ?? 'already applied'}.`
                 : 'Authoritative ship state saved.';
@@ -1749,6 +1799,7 @@ export class App {
         const state = this.delivery.getState();
         const ship = state.ship;
         const mission = state.mission;
+        const conditionState = this.condition?.getState() ?? null;
         const stacks = ship.cargo.stacks.map((stack) => (
             `<li>${escapeHtml(stack.cargoId)} × ${stack.quantity}</li>`
         )).join('') || '<li>Empty</li>';
@@ -1758,8 +1809,23 @@ export class App {
         const pending = ship.travel.pendingJump
             ? `${escapeHtml(ship.travel.pendingJump.originSystemId)} → ${escapeHtml(ship.travel.pendingJump.targetSystemId)} / ${ship.travel.pendingJump.fuelCost} fuel`
             : 'none';
+        const conditionRows = conditionState
+            ? [
+                ['hull', conditionState.condition.hull.current],
+                ...Object.entries(conditionState.condition.systems)
+                    .map(([id, record]) => [id, record.condition])
+            ].map(([id, value]) => (
+                `<li>${escapeHtml(id)}: ${Number(value).toFixed(0)} / 100 `
+                + `<button data-cargo-action="repair-${escapeHtml(id)}">Repair</button></li>`
+            )).join('')
+            : '<li>Condition runtime unavailable</li>';
+        const capabilityRows = conditionState
+            ? Object.entries(conditionState.capabilities).map(([id, value]) => (
+                `<li>${escapeHtml(id)}: ${(value * 100).toFixed(0)}%</li>`
+            )).join('')
+            : '';
         this.cargoTerminalContentNode.innerHTML = `
-            <div style="display:flex;justify-content:space-between"><h2>CARGO / FUEL TERMINAL</h2><button data-cargo-action="close">Close</button></div>
+            <div style="display:flex;justify-content:space-between"><h2>CARGO / FUEL / MAINTENANCE</h2><button data-cargo-action="close">Close</button></div>
             <div class="cargo-grid">
                 <section>
                     <h3>Ship stores</h3>
@@ -1781,9 +1847,26 @@ export class App {
                     <button data-cargo-action="abandon">Abandon job</button>
                     <button data-cargo-action="lose">Jettison / report cargo lost</button>
                 </section>
+                <section>
+                    <h3>Ship condition</h3>
+                    <p>Repair parts: ${conditionState?.inventory.repairParts ?? 'unavailable'}</p>
+                    <p>Hull plates: ${conditionState?.inventory.hullPlates ?? 'unavailable'}</p>
+                    <ul>${conditionRows}</ul>
+                    <h3>Bounded capability</h3>
+                    <ul>${capabilityRows}</ul>
+                    <p>Derelict cache: ${
+                        conditionState?.maintenance.salvageSources.index_k7_derelict_cache.claimed
+                            ? 'recovered'
+                            : conditionState?.salvageAvailable
+                                ? 'in range'
+                                : 'not in range'
+                    }</p>
+                    <button data-cargo-action="salvage">Recover K-7 derelict cache</button>
+                    <button data-cargo-action="stabilize">Emergency stabilization</button>
+                </section>
             </div>
             <p>${escapeHtml(this.cargoTerminalMessage)}</p>
-            <small>Static prices. No market, trading, docking, or cargo confiscation.</small>
+            <small>Static prices and deterministic repairs. No market, crafting, combat, boarding, or cargo confiscation.</small>
         `;
     }
 
@@ -2859,6 +2942,14 @@ export class App {
                 `<b>FUEL</b> ${delivery.ship.fuel.current}/${delivery.ship.fuel.capacity} reserve ${delivery.ship.fuel.reserve}   <b>CARGO</b> ${delivery.usedCargoMass}/${delivery.ship.cargo.capacityMass}`
             );
         }
+        if (this.condition) {
+            const condition = this.condition.getState();
+            lines.push(
+                `<b>HULL</b> ${condition.condition.hull.current.toFixed(0)}   `
+                + `<b>ENG</b> ${condition.condition.systems.engine.condition.toFixed(0)}   `
+                + `<b>SENS</b> ${condition.condition.systems.sensors.condition.toFixed(0)}`
+            );
+        }
         if (this.cargoTerminalMessage) lines.push(`<span class="warn">${escapeHtml(this.cargoTerminalMessage)}</span>`);
         const patrolEncounter = this.patrol?.getState().activeEncounter;
         if (patrolEncounter) {
@@ -3513,6 +3604,38 @@ export class App {
                 emergencyRescue: () => this.delivery?.emergencyRescue(),
                 setFuelForDebug: (value) => this.delivery?.setFuelForDebug(value),
                 addCargoForDebug: (cargoId, quantity) => this.delivery?.addCargoForDebug(cargoId, quantity),
+                openTerminal: () => this._openCargoTerminalPanel(),
+                closeTerminal: () => this._closeCargoTerminalPanel()
+            },
+            condition: {
+                getState: () => this.condition?.getState() ?? { unavailable: this.conditionError },
+                getCapabilities: () => this.condition?.getState().capabilities ?? null,
+                syncSystem: (systemId) => this.condition?.syncSystem(systemId),
+                claimSalvage: () => {
+                    const result = this.condition?.claimSalvage();
+                    this._refreshShipCapabilities();
+                    return result;
+                },
+                repair: (targetId) => {
+                    const result = this.condition?.repair(targetId);
+                    this._refreshShipCapabilities();
+                    return result;
+                },
+                stabilize: () => {
+                    const result = this.condition?.stabilizeCriticalState();
+                    this._refreshShipCapabilities();
+                    return result;
+                },
+                setConditionForDebug: (targetId, value) => {
+                    const result = this.condition?.setConditionForDebug(targetId, value);
+                    this._refreshShipCapabilities();
+                    return result;
+                },
+                setInventoryForDebug: (inventory) => {
+                    const result = this.condition?.setInventoryForDebug(inventory);
+                    this._refreshShipCapabilities();
+                    return result;
+                },
                 openTerminal: () => this._openCargoTerminalPanel(),
                 closeTerminal: () => this._closeCargoTerminalPanel()
             },

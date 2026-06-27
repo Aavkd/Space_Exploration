@@ -5,6 +5,21 @@ export { DELIVERY_MISSION_ID, DeliveryRuntime } from './DeliveryRuntime.js';
 export { SurfaceOutpostRuntime } from './SurfaceOutpostRuntime.js';
 export { PATROL_PHASE_DURATIONS, PatrolRuntime } from './PatrolRuntime.js';
 export {
+    CRITICAL_THRESHOLD,
+    HAZARD_DAMAGE,
+    HAZARD_ID,
+    REPAIR_AMOUNTS,
+    SALVAGE_GRANT,
+    SALVAGE_SOURCE_ID,
+    SALVAGE_SYSTEM_ID,
+    SHIP_CONDITION_IDS,
+    SHIP_SYSTEM_IDS,
+    STABILIZED_CONDITION,
+    ShipConditionRuntime,
+    calculateShipCapabilities,
+    isCriticalCondition
+} from './ShipConditionRuntime.js';
+export {
     CREW_INTERACTION_STATES,
     CrewRuntime,
     createReadOnlyCrewContext,
@@ -52,6 +67,7 @@ export {
     getCargoDefinition,
     getCargoQuantity,
     isMeteredAuthoredRoute,
+    migrateShipStateV1,
     sanitizeShipState
 } from './cargo.js';
 export {

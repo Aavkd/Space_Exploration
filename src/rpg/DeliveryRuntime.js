@@ -33,7 +33,8 @@ export class DeliveryRuntime {
     }
 
     getState() {
-        const ship = sanitizeShipState(this.ship);
+        const ship = sanitizeShipState(this.slots.getActiveEnvelope().ship);
+        this.ship = ship;
         return {
             ship,
             usedCargoMass: calculateCargoMass(ship.cargo.stacks),
@@ -47,7 +48,7 @@ export class DeliveryRuntime {
         this.activeSystemId = systemId || null;
         if (!systemId) return this.getState();
 
-        const ship = sanitizeShipState(this.ship);
+        const ship = sanitizeShipState(this.slots.getActiveEnvelope().ship);
         const rpg = this.rpg.getState();
         let changed = ship.travel.currentSystemId !== systemId;
         ship.travel.currentSystemId = systemId;
@@ -81,7 +82,7 @@ export class DeliveryRuntime {
     loadMissionCargo() {
         this._assertSystem('entry_hub', 'Cargo pickup');
         const definition = MISSION_DEFINITIONS[DELIVERY_MISSION_ID];
-        const ship = sanitizeShipState(this.ship);
+        const ship = sanitizeShipState(this.slots.getActiveEnvelope().ship);
         const rpg = this.rpg.getState();
         const mission = rpg.missions.byId[DELIVERY_MISSION_ID];
         if (mission.status !== MISSION_STATUSES.ACCEPTED) {
@@ -113,7 +114,7 @@ export class DeliveryRuntime {
     }
 
     beginAuthoredJump(targetSystemId) {
-        const ship = sanitizeShipState(this.ship);
+        const ship = sanitizeShipState(this.slots.getActiveEnvelope().ship);
         const originSystemId = ship.travel.currentSystemId;
         if (!originSystemId) {
             throw new Error('Authored hyperdrive route requires departure from a known authored system.');
@@ -158,7 +159,7 @@ export class DeliveryRuntime {
     deliverMissionCargo() {
         this._assertSystem('index_hq', 'Cargo delivery');
         const definition = MISSION_DEFINITIONS[DELIVERY_MISSION_ID];
-        const ship = sanitizeShipState(this.ship);
+        const ship = sanitizeShipState(this.slots.getActiveEnvelope().ship);
         const rpg = this.rpg.getState();
         const mission = rpg.missions.byId[DELIVERY_MISSION_ID];
 
@@ -232,14 +233,17 @@ export class DeliveryRuntime {
     }
 
     loseMissionCargo() {
-        const quantity = getCargoQuantity(this.ship, 'index_archive_canister');
+        const quantity = getCargoQuantity(
+            sanitizeShipState(this.slots.getActiveEnvelope().ship),
+            'index_archive_canister'
+        );
         if (quantity <= 0) throw new Error('No Index archive mission cargo is aboard to lose.');
         return this._failMission('cargo_lost');
     }
 
     refuel() {
         if (!this.activeSystemId) throw new Error('Normal refuel is available only inside an authored system.');
-        const ship = sanitizeShipState(this.ship);
+        const ship = sanitizeShipState(this.slots.getActiveEnvelope().ship);
         if (ship.fuel.current >= ship.fuel.capacity) throw new Error('Fuel tanks are already full.');
         if (ship.credits < REFUEL_UNIT_PRICE) {
             throw new Error(`Normal refuel costs ${REFUEL_UNIT_PRICE} credits.`);
@@ -254,7 +258,7 @@ export class DeliveryRuntime {
     }
 
     emergencyRescue() {
-        const ship = sanitizeShipState(this.ship);
+        const ship = sanitizeShipState(this.slots.getActiveEnvelope().ship);
         if (ship.fuel.current > ship.fuel.reserve) {
             throw new Error(`Emergency rescue requires fuel at or below reserve (${ship.fuel.reserve}).`);
         }
@@ -271,16 +275,17 @@ export class DeliveryRuntime {
     }
 
     setFuelForDebug(value) {
+        const current = sanitizeShipState(this.slots.getActiveEnvelope().ship);
         const ship = sanitizeShipState({
-            ...this.ship,
-            fuel: { ...this.ship.fuel, current: Number(value) }
+            ...current,
+            fuel: { ...current.fuel, current: Number(value) }
         });
         this._commit(ship, this.rpg.getState(), 'debug-set-fuel');
         return this.getState();
     }
 
     addCargoForDebug(cargoId, quantity) {
-        const ship = sanitizeShipState(this.ship);
+        const ship = sanitizeShipState(this.slots.getActiveEnvelope().ship);
         addCargo(ship, cargoId, quantity);
         this._commit(ship, this.rpg.getState(), 'debug-add-cargo');
         return this.getState();
@@ -288,7 +293,7 @@ export class DeliveryRuntime {
 
     _failMission(outcomeId) {
         const definition = MISSION_DEFINITIONS[DELIVERY_MISSION_ID];
-        const ship = sanitizeShipState(this.ship);
+        const ship = sanitizeShipState(this.slots.getActiveEnvelope().ship);
         const rpg = this.rpg.getState();
         const mission = rpg.missions.byId[DELIVERY_MISSION_ID];
         const outcome = definition.failureOutcomes[outcomeId];

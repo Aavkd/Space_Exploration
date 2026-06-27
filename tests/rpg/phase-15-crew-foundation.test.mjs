@@ -46,9 +46,9 @@ test('Phase 14 envelope v3 and RPG v2 migrate to crew-capable v4/v3 without cons
     prior.rpg.version = 2;
     delete prior.rpg.npcs;
     const migrated = sanitizeSaveEnvelope(prior);
-    assert.equal(migrated.version, 6);
+    assert.equal(migrated.version, 7);
     assert.equal(migrated.rpg.version, 5);
-    assert.equal(migrated.autosave.reason, 'phase-17-v5');
+    assert.equal(migrated.autosave.reason, 'phase-18-v6');
     assert.equal(migrated.rpg.worldFlags['index_hq.archive_delivery_complete'], true);
     assert.deepEqual(migrated.rpg.npcs.crewRoster, [CREW_NPC_ID]);
     assert.equal(migrated.rpg.npcs.crewCapacity, 4);

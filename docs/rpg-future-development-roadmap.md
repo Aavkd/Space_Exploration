@@ -300,6 +300,11 @@ Acceptance:
 
 ### Phase 18 - Ship Condition, Hazard, Salvage, And Repair
 
+**Status:** Implementation and T0–T4 verification complete with 53 passing RPG
+regressions and a normal-control Chromium terminal smoke. The full travel-loop
+manual pass and gamepad/PCVR device signoff remain open; see
+[`phase-18-ship-condition.md`](phase-18-ship-condition.md).
+
 **Proof loop:** investigate a derelict/hazard, suffer system damage, recover
 parts, and repair at a physical ship station.
 
