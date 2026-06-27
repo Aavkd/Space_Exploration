@@ -7,10 +7,12 @@ import {
     sanitizeSaveEnvelope
 } from './SaveEnvelope.js';
 
-export const SAVE_INDEX_KEY = 'deep-space-vr:save-index:v3';
-export const SAVE_SLOT_KEY_PREFIX = 'deep-space-vr:save-slot:v3:';
-export const LEGACY_SAVE_INDEX_KEY = 'deep-space-vr:save-index:v2';
-export const LEGACY_SAVE_SLOT_KEY_PREFIX = 'deep-space-vr:save-slot:v2:';
+export const SAVE_INDEX_KEY = 'deep-space-vr:save-index:v4';
+export const SAVE_SLOT_KEY_PREFIX = 'deep-space-vr:save-slot:v4:';
+export const LEGACY_SAVE_INDEX_KEY = 'deep-space-vr:save-index:v3';
+export const LEGACY_SAVE_SLOT_KEY_PREFIX = 'deep-space-vr:save-slot:v3:';
+export const PHASE_13_SAVE_INDEX_KEY = 'deep-space-vr:save-index:v2';
+export const PHASE_13_SAVE_SLOT_KEY_PREFIX = 'deep-space-vr:save-slot:v2:';
 export const SAVE_SLOT_LIMIT = 3;
 
 export class LocalSaveSlots {
@@ -39,7 +41,11 @@ export class LocalSaveSlots {
                     : null;
             } else {
                 const legacyIndex = this.storage?.getItem(LEGACY_SAVE_INDEX_KEY);
-                if (legacyIndex) this._migrateVersion2Slots(legacyIndex);
+                if (legacyIndex) this._migrateLegacySlots(legacyIndex, LEGACY_SAVE_SLOT_KEY_PREFIX);
+                else {
+                    const phase13Index = this.storage?.getItem(PHASE_13_SAVE_INDEX_KEY);
+                    if (phase13Index) this._migrateLegacySlots(phase13Index, PHASE_13_SAVE_SLOT_KEY_PREFIX);
+                }
             }
             if (!this.activeEnvelope) this._initializeFirstSlot();
         } catch (error) {
@@ -229,10 +235,10 @@ export class LocalSaveSlots {
         this._commitNewSlot(envelope, { version: 1, activeSlotId: id, slotIds: [id] });
     }
 
-    _migrateVersion2Slots(rawIndex) {
+    _migrateLegacySlots(rawIndex, slotKeyPrefix) {
         const legacyIndex = sanitizeIndex(JSON.parse(rawIndex));
         const envelopes = legacyIndex.slotIds.map((slotId) => {
-            const raw = this.storage?.getItem(`${LEGACY_SAVE_SLOT_KEY_PREFIX}${slotId}`);
+            const raw = this.storage?.getItem(`${slotKeyPrefix}${slotId}`);
             if (!raw) throw new Error(`Phase 13 save slot data is missing: ${slotId}`);
             return sanitizeSaveEnvelope(JSON.parse(raw));
         });

@@ -62,6 +62,7 @@ export class PlayerController {
             'radioStation',
             'shipComputerStation',
             'cargoTerminalStation',
+            'crewMessAnchor',
             'exitAirlock',
             'interiorSpawn',
             'exteriorSpawn'
@@ -133,6 +134,8 @@ export class PlayerController {
             case 'openShipComputer':
                 return action;
             case 'openCargoTerminal':
+                return action;
+            case 'openCrew':
                 return action;
             case 'leaveControls':
                 this._leaveControls();
@@ -260,6 +263,7 @@ export class PlayerController {
             if (this._near('radioStation')) return 'openRadio';
             if (this._near('shipComputerStation')) return 'openShipComputer';
             if (this._near('cargoTerminalStation')) return 'openCargoTerminal';
+            if (this._near('crewMessAnchor') && this.ship.isCrewAvatarVisible?.()) return 'openCrew';
             if (this._near('pilotControls')) return 'takeControls';
             if (this._near('exitAirlock')) return this._canSurfaceDisembark() ? 'disembarkSurface' : 'exitAirlock';
             return null;
@@ -304,6 +308,8 @@ export class PlayerController {
                 return 'Press C / Triangle - open ship log';
             case 'openCargoTerminal':
                 return 'Press C / Triangle - open cargo terminal';
+            case 'openCrew':
+                return 'Press C / Triangle - speak with Lyra Venn';
             case 'leaveControls':
                 return 'Press C / Triangle - leave the controls';
             case 'exitAirlock':

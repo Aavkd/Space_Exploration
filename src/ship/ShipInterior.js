@@ -90,7 +90,8 @@ export const REQUIRED_SHIP_ANCHORS = Object.freeze([
     'cameraDebugMount',
     'radioStation',
     'shipComputerStation',
-    'cargoTerminalStation'
+    'cargoTerminalStation',
+    'crewMessAnchor'
 ]);
 
 export const SHIP_ANCHORS = Object.freeze({
@@ -142,6 +143,13 @@ export const SHIP_ANCHORS = Object.freeze({
         position: [-1.7, 0.9, 2.4],
         forward: [1, 0, 0],
         interactionRadius: 1.0
+    },
+    crewMessAnchor: {
+        role: 'Stable ship-resident crew interaction point; Phase 15 stand-in avatar.',
+        zone: 'circulation',
+        position: [1.2, -0.5, -7.5],
+        forward: [-1, 0, 0],
+        interactionRadius: 1.35
     },
     exitAirlock: {
         role: 'Interior side of the airlock exit interaction.',

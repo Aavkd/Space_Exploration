@@ -3,6 +3,24 @@ export { RPG_STATE_MIGRATIONS, migrateRpgState } from './migrations.js';
 export { RpgRuntime, createRpgRuntime } from './RpgRuntime.js';
 export { DELIVERY_MISSION_ID, DeliveryRuntime } from './DeliveryRuntime.js';
 export {
+    CREW_INTERACTION_STATES,
+    CrewRuntime,
+    createReadOnlyCrewContext,
+    selectAuthoredBeat
+} from './CrewRuntime.js';
+export {
+    CREW_CAPACITY,
+    CREW_LOCATION_ID,
+    CREW_NPC_ID,
+    NPC_DEFINITIONS,
+    NPC_KINDS,
+    NPC_MOODS,
+    NPC_PRESENCE,
+    createInitialNpcState,
+    isNpcPhysicallyPresent,
+    sanitizeNpcState
+} from './npcs.js';
+export {
     RPG_STATE_VERSION,
     clampReputation,
     cloneRpgValue,

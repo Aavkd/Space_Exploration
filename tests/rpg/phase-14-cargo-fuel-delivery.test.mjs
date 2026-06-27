@@ -82,14 +82,14 @@ test('Phase 13 version-2 slot migrates non-destructively to envelope v3 and RPG 
     const slots = new LocalSaveSlots({ storage });
     const envelope = slots.getActiveEnvelope();
 
-    assert.equal(envelope.version, 3);
-    assert.equal(envelope.rpg.version, 2);
+    assert.equal(envelope.version, 4);
+    assert.equal(envelope.rpg.version, 3);
     assert.equal(envelope.ship.credits, 300);
     assert.equal(envelope.ship.fuel.current, 100);
     assert.deepEqual(envelope.ship.cargo.stacks, []);
     assert.equal(envelope.simulation.gameTime, 123.5);
     assert.equal(envelope.autosave.kind, 'migration');
-    assert.equal(envelope.autosave.reason, 'phase-13-v2');
+    assert.equal(envelope.autosave.reason, 'phase-14-v3');
     assert.ok(storage.getItem(LEGACY_SAVE_INDEX_KEY));
     assert.ok(storage.getItem(`${LEGACY_SAVE_SLOT_KEY_PREFIX}slot-phase13`));
     assert.ok(storage.getItem(SAVE_INDEX_KEY));

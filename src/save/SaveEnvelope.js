@@ -2,7 +2,7 @@ import { createInitialShipState, sanitizeShipState } from '../rpg/cargo.js';
 import { migrateRpgState } from '../rpg/migrations.js';
 import { createInitialRpgState, sanitizeRpgState } from '../rpg/state.js';
 
-export const SAVE_ENVELOPE_VERSION = 3;
+export const SAVE_ENVELOPE_VERSION = 4;
 export const MAX_EVENT_LOG_ENTRIES = 500;
 export const PROTECTED_EVENT_TYPES = Object.freeze([
     'mission.resolved',
@@ -47,6 +47,7 @@ export function sanitizeSaveEnvelope(value) {
         throw new Error('Save envelope must be an object.');
     }
     if (value.version === 2) value = migrateVersion2Envelope(value);
+    if (value.version === 3) value = migrateVersion3Envelope(value);
     if (value.version !== SAVE_ENVELOPE_VERSION) {
         throw new Error(
             value.version > SAVE_ENVELOPE_VERSION
@@ -107,6 +108,26 @@ export function migrateVersion2Envelope(value) {
         autosave: {
             kind: 'migration',
             reason: 'phase-13-v2',
+            savedAt,
+            sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
+        }
+    };
+}
+
+export function migrateVersion3Envelope(value) {
+    if (!value || value.version !== 3) {
+        throw new Error(`Expected save envelope version 3, received ${value?.version ?? 'missing'}.`);
+    }
+    const savedAt = typeof value.slot?.updatedAt === 'string'
+        ? value.slot.updatedAt
+        : new Date().toISOString();
+    return {
+        ...structuredClone(value),
+        version: 4,
+        rpg: migrateRpgState(value.rpg),
+        autosave: {
+            kind: 'migration',
+            reason: 'phase-14-v3',
             savedAt,
             sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
         }

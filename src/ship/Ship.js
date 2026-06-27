@@ -48,6 +48,7 @@ export class Ship {
         };
 
         this.object3D.add(this.model.root);
+        this._createCrewPlaceholder();
 
         this.speedLines = new SpeedLines();
         this.exteriorRoot.add(this.speedLines.object3D);
@@ -341,5 +342,46 @@ export class Ship {
 
     validateAnchors() {
         return validateShipAnchors(this.anchors);
+    }
+
+    setCrewAvatarVisible(visible) {
+        if (this.crewPlaceholder) this.crewPlaceholder.visible = Boolean(visible);
+        return this.isCrewAvatarVisible();
+    }
+
+    isCrewAvatarVisible() {
+        return Boolean(this.crewPlaceholder?.visible);
+    }
+
+    _createCrewPlaceholder() {
+        const anchor = this.getAnchor('crewMessAnchor');
+        if (!anchor) return;
+        const avatar = new THREE.Group();
+        avatar.name = 'CrewPlaceholderLyra';
+        avatar.userData = {
+            npcId: 'crew_quartermaster_lyra',
+            placeholder: true,
+            animation: 'static-idle'
+        };
+        const suit = new THREE.MeshStandardMaterial({
+            color: 0x315269,
+            emissive: 0x07131a,
+            roughness: 0.75
+        });
+        const visor = new THREE.MeshStandardMaterial({
+            color: 0x8ed7db,
+            emissive: 0x173d44,
+            emissiveIntensity: 0.8,
+            roughness: 0.25
+        });
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.82, 5, 10), suit);
+        body.position.y = 0.77;
+        body.name = 'PlaceholderBody';
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 8), visor);
+        head.position.y = 1.48;
+        head.name = 'PlaceholderHead';
+        avatar.add(body, head);
+        anchor.add(avatar);
+        this.crewPlaceholder = avatar;
     }
 }

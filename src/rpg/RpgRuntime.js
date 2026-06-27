@@ -282,6 +282,12 @@ export class RpgRuntime {
         return this.getState();
     }
 
+    replaceState(state, reason = 'authoritative-rpg-change') {
+        this.state = sanitizeRpgState(state);
+        this.state = this.persistence.save(this.state, reason);
+        return this.getState();
+    }
+
     reload() {
         this.state = this.persistence.load();
         this.activeNamedSystemId = null;

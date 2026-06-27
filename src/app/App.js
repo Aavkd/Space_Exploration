@@ -38,6 +38,7 @@ import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
 import {
     createRpgRuntime,
+    CrewRuntime,
     DeliveryRuntime,
     isMeteredAuthoredRoute,
     LocalRpgPersistence
@@ -269,6 +270,7 @@ export class App {
         this.shipComputerTransferText = '';
         this.cargoTerminalOpen = false;
         this.cargoTerminalMessage = '';
+        this.crewPanelOpen = false;
         this.radioPower = true;
         this.radioVolume = 0.5;
         this.activeRadioStationIndex = 0;
@@ -282,6 +284,8 @@ export class App {
         this._bindEvents();
         this.rpgError = null;
         this.rpg = this._createRpgRuntimeSafely();
+        this.crew = new CrewRuntime({ rpg: this.rpg });
+        this._syncCrewPresence();
         this.deliveryError = null;
         this.delivery = this._createDeliveryRuntimeSafely();
         this._installDebugHooks();
@@ -412,6 +416,11 @@ export class App {
         }
 
         if (buttons.triangle.justPressed && this.cameraMode === 'player') {
+            if (this.crewPanelOpen) {
+                this._closeCrewPanel();
+                this.input.gamepad.pulse({ duration: 70, weak: 0.18, strong: 0.28 });
+                return;
+            }
             const action = this.playerController.interact();
             if (action) {
                 if (action === 'openComms') this._openCommsPanel();
@@ -419,6 +428,7 @@ export class App {
                 else if (action === 'openRadio') this._openRadioPanel();
                 else if (action === 'openShipComputer') this._openShipComputerPanel();
                 else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
+                else if (action === 'openCrew') this._openCrewPanel();
                 this.input.gamepad.pulse({ duration: 90, weak: 0.25, strong: 0.45 });
                 this._syncDebugDomState();
             }
@@ -749,6 +759,11 @@ export class App {
     _handleXrSelect() {
         this._unlockAudioFromGesture();
         if (this.cameraMode !== 'player') return false;
+        if (this.crewPanelOpen) {
+            this._closeCrewPanel();
+            this.xr.pulse({ duration: 70, strength: 0.25 });
+            return 'closeCrew';
+        }
         const action = this.playerController.interact();
         if (action) {
             if (action === 'openComms') this._openCommsPanel();
@@ -756,6 +771,7 @@ export class App {
             else if (action === 'openRadio') this._openRadioPanel();
             else if (action === 'openShipComputer') this._openShipComputerPanel();
             else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
+            else if (action === 'openCrew') this._openCrewPanel();
             this.xr.pulse({ duration: 80, strength: 0.34 });
             this._syncDebugDomState();
         }
@@ -985,6 +1001,7 @@ export class App {
         this._createCommsPanel();
         this._createShipComputerPanel();
         this._createCargoTerminalPanel();
+        this._createCrewPanel();
         this._createNavigationPanel();
         this._createRadioPanel();
     }
@@ -1095,6 +1112,7 @@ export class App {
         this.rpg.reload();
         this.delivery?.reload();
         this._syncActiveRpgSystem();
+        this._syncCrewPresence();
         this._syncDebugDomState();
     }
 
@@ -1294,6 +1312,126 @@ export class App {
             <p>${escapeHtml(this.cargoTerminalMessage)}</p>
             <small>Static prices. No market, trading, docking, or patrol simulation.</small>
         `;
+    }
+
+    _createCrewPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'crew-dialogue-panel';
+        panel.innerHTML = `
+            <style>
+                #crew-dialogue-panel {
+                    position: fixed; left: 50%; bottom: 42px; transform: translateX(-50%);
+                    width: min(620px, calc(100vw - 36px)); max-height: 62vh; overflow: auto;
+                    z-index: 25; display: none; padding: 15px; color: #e5fbff;
+                    background: rgba(3, 12, 18, .95); border: 1px solid #6ccbd1;
+                    font: 13px/1.5 "Consolas", "Courier New", monospace;
+                    box-shadow: 0 0 28px rgba(54, 184, 194, .18);
+                }
+                #crew-dialogue-panel .crew-head { display:flex; justify-content:space-between; gap:12px; }
+                #crew-dialogue-panel .crew-name { color:#8ff3dd; font-weight:bold; }
+                #crew-dialogue-panel .crew-status { color:#ffc982; text-transform:uppercase; }
+                #crew-dialogue-panel .crew-text { margin:12px 0; padding:10px; border-left:2px solid #6ccbd1; }
+                #crew-dialogue-panel .crew-error { color:#ffaaa2; }
+                #crew-dialogue-panel button { margin:4px; padding:7px 9px; color:#e5fbff; background:#10313a; border:1px solid #559ca4; }
+            </style>
+            <div data-crew-content></div>
+        `;
+        document.body.appendChild(panel);
+        this.crewPanel = panel;
+        this.crewContentNode = panel.querySelector('[data-crew-content]');
+        panel.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-crew-action]');
+            if (!target) return;
+            event.preventDefault();
+            const action = target.dataset.crewAction;
+            if (action === 'close') this._closeCrewPanel();
+            else if (action === 'interrupt') {
+                this.crew.interrupt();
+                this._updateCrewPanel();
+            } else if (action === 'voice') {
+                this.crew.requestPresentation().finally(() => this._updateCrewPanel());
+                this._updateCrewPanel();
+            } else if (action === 'listen') {
+                this.crew.beginListening();
+                this._updateCrewPanel();
+            } else if (action === 'choose') {
+                this.crew.chooseRelationship(target.dataset.crewId);
+                this._syncCrewPresence();
+                this._updateCrewPanel();
+            }
+        });
+    }
+
+    _openCrewPanel() {
+        const state = this.crew.openInteraction();
+        this.crewPanelOpen = true;
+        this._exitPointerLock();
+        this._syncCrewPresence();
+        this._updateCrewPanel();
+        this._syncDebugDomState();
+        return state;
+    }
+
+    _closeCrewPanel() {
+        const state = this.crew.closeInteraction();
+        this.crewPanelOpen = false;
+        this._updateCrewPanel();
+        this._syncDebugDomState();
+        return state;
+    }
+
+    _handleCrewKeydown(event) {
+        if (!this.crewPanelOpen) return false;
+        if (event.code === 'Escape' || event.code === 'KeyC') {
+            event.preventDefault();
+            this._closeCrewPanel();
+            return true;
+        }
+        if (/^Digit[1-2]$/.test(event.code)) {
+            const choice = this.crew.getState().choices[Number(event.code.slice(5)) - 1];
+            if (choice) {
+                event.preventDefault();
+                this.crew.chooseRelationship(choice.id);
+                this._updateCrewPanel();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    _updateCrewPanel() {
+        if (!this.crewPanel || !this.crewContentNode) return;
+        this.crewPanel.style.display = this.crewPanelOpen ? 'block' : 'none';
+        if (!this.crewPanelOpen) return;
+        const state = this.crew.getState();
+        const text = state.presentationText ?? state.authoredBeat.text;
+        const choices = state.choices.map((choice, index) => (
+            `<button data-crew-action="choose" data-crew-id="${escapeHtml(choice.id)}">${index + 1}. ${escapeHtml(choice.label)}</button>`
+        )).join('');
+        this.crewContentNode.innerHTML = `
+            <div class="crew-head">
+                <div><div class="crew-name">${escapeHtml(state.npc.name)}</div>
+                <div>${escapeHtml(state.npc.title)} · relationship ${state.npc.state.relationship.toFixed(2)} · mood ${escapeHtml(state.npc.state.mood)}</div></div>
+                <button data-crew-action="close">Close</button>
+            </div>
+            <div class="crew-status">${escapeHtml(state.status)}</div>
+            <div class="crew-text">${escapeHtml(text)}</div>
+            <div>${choices}</div>
+            <div>
+                <button data-crew-action="listen">Listening state</button>
+                <button data-crew-action="voice">Optional voice/LLM presentation</button>
+                <button data-crew-action="interrupt">Interrupt</button>
+            </div>
+            <div class="crew-error">${escapeHtml(state.error ?? '')}</div>
+            <small>Authored text is authoritative and works offline. The optional provider receives read-only context and cannot change game state.</small>
+        `;
+    }
+
+    _syncCrewPresence() {
+        const present = Boolean(this.crew?.isPresent?.());
+        this.ship.setCrewAvatarVisible(present);
+        if (!present && this.crewPanelOpen) this._closeCrewPanel();
+        return present;
     }
 
     _createCommsPanel() {
@@ -2297,6 +2435,7 @@ export class App {
         window.addEventListener('keydown', (event) => {
             this._unlockAudioFromGesture();
 
+            if (this._handleCrewKeydown(event)) return;
             if (this._handleCargoTerminalKeydown(event)) return;
             if (this._handleShipComputerKeydown(event)) return;
             if (this._handleCommsKeydown(event)) return;
@@ -2395,6 +2534,7 @@ export class App {
                     else if (action === 'openRadio') this._openRadioPanel();
                     else if (action === 'openShipComputer') this._openShipComputerPanel();
                     else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
+                    else if (action === 'openCrew') this._openCrewPanel();
                     this._syncDebugDomState();
                 }
                 return;
@@ -2448,7 +2588,7 @@ export class App {
         this.canvas.addEventListener('pointerdown', () => this._unlockAudioFromGesture(), { passive: true });
         this.canvas.addEventListener('click', () => {
             this._unlockAudioFromGesture();
-            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen && !this.shipComputerOpen && !this.cargoTerminalOpen) {
+            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen && !this.shipComputerOpen && !this.cargoTerminalOpen && !this.crewPanelOpen) {
                 this.canvas.requestPointerLock?.();
             }
         });
@@ -2788,6 +2928,30 @@ export class App {
                 addCargoForDebug: (cargoId, quantity) => this.delivery?.addCargoForDebug(cargoId, quantity),
                 openTerminal: () => this._openCargoTerminalPanel(),
                 closeTerminal: () => this._closeCargoTerminalPanel()
+            },
+            crew: {
+                getState: () => this.crew.getState(),
+                getContext: () => this.crew.getState(),
+                isPresent: () => this._syncCrewPresence(),
+                open: () => this._openCrewPanel(),
+                close: () => this._closeCrewPanel(),
+                interrupt: () => {
+                    const state = this.crew.interrupt();
+                    this._updateCrewPanel();
+                    return state;
+                },
+                beginListening: () => {
+                    const state = this.crew.beginListening();
+                    this._updateCrewPanel();
+                    return state;
+                },
+                requestPresentation: () => this.crew.requestPresentation(),
+                chooseRelationship: (choiceId) => {
+                    const state = this.crew.chooseRelationship(choiceId);
+                    this._updateCrewPanel();
+                    return state;
+                },
+                syncPresence: () => this._syncCrewPresence()
             },
             saves: {
                 getStatus: () => this.saveSlots.getStatus(),
