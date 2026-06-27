@@ -5,6 +5,35 @@ export { DELIVERY_MISSION_ID, DeliveryRuntime } from './DeliveryRuntime.js';
 export { SurfaceOutpostRuntime } from './SurfaceOutpostRuntime.js';
 export { PATROL_PHASE_DURATIONS, PatrolRuntime } from './PatrolRuntime.js';
 export {
+    COMBAT_FIXED_STEP,
+    COMBAT_ATTACK_GRACE,
+    COMBAT_ENEMY_WEAPON,
+    COMBAT_ENEMY_WEAPON_ID,
+    COMBAT_HARDPOINT_IDS,
+    COMBAT_LIMITS,
+    COMBAT_MAX_STEPS,
+    COMBAT_SYSTEM_DAMAGE_IDS,
+    COMBAT_WEAPON,
+    COMBAT_WEAPON_ID,
+    COMBAT_WARNING_DELAY,
+    CombatRuntime,
+    calculateInterceptPoint,
+    selectDamageSystem
+} from './CombatRuntime.js';
+export {
+    COMBAT_DISPOSITIONS,
+    COMBAT_ENCOUNTER_ID,
+    COMBAT_ENEMY_FACTION_ID,
+    COMBAT_ENEMY_ID,
+    COMBAT_MAX_HISTORY,
+    COMBAT_OUTCOMES,
+    COMBAT_STATE_VERSION,
+    COMBAT_SYSTEM_ID,
+    COMBAT_WRECK_ID,
+    createInitialCombatState,
+    sanitizeCombatState
+} from './combat.js';
+export {
     CRITICAL_THRESHOLD,
     HAZARD_DAMAGE,
     HAZARD_ID,

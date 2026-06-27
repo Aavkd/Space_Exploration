@@ -14,8 +14,9 @@ import {
 import { createInitialNpcState, sanitizeNpcState } from './npcs.js';
 import { createInitialSurfaceState, sanitizeSurfaceState } from './surfaceOutposts.js';
 import { createInitialPatrolState, sanitizePatrolState } from './patrols.js';
+import { createInitialCombatState, sanitizeCombatState } from './combat.js';
 
-export const RPG_STATE_VERSION = 5;
+export const RPG_STATE_VERSION = 6;
 export const INITIAL_RPG_TIMESTAMP = '2026-06-26T00:00:00.000Z';
 
 export function createInitialRpgState() {
@@ -109,6 +110,7 @@ export function createInitialRpgState() {
         npcs: createInitialNpcState(),
         surface: createInitialSurfaceState(),
         patrol: createInitialPatrolState(),
+        combat: createInitialCombatState(),
         comms: {
             activeContactId: null,
             llmFlavorEnabled: false
@@ -150,6 +152,7 @@ export function sanitizeRpgState(value) {
         npcs: sanitizeNpcState(value.npcs),
         surface: sanitizeSurfaceState(value.surface),
         patrol: sanitizePatrolState(value.patrol),
+        combat: sanitizeCombatState(value.combat),
         comms: sanitizeComms(value.comms, base.comms),
         eventLog: Array.isArray(value.eventLog)
             ? value.eventLog
@@ -226,6 +229,7 @@ export function createRpgSummary(state, { activeNamedSystemId = null } = {}) {
         },
         surface: cloneRpgValue(state.surface),
         patrol: cloneRpgValue(state.patrol),
+        combat: cloneRpgValue(state.combat),
         worldFlags: cloneRpgValue(state.worldFlags ?? {}),
         activeNamedSystemId,
         comms: createCommsSummary(state)

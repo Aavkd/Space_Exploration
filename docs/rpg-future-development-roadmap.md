@@ -319,8 +319,17 @@ Acceptance:
 
 ### Phase 19 - Ship Combat Foundation
 
+**Status:** Implementation and T0–T3 automated verification in progress.
+Browser normal-control, full manual checkpoint,
+gamepad, PCVR, and sustained render-performance signoff remain open; see
+[`phase-19-ship-combat.md`](phase-19-ship-combat.md).
+
 **Proof loop:** detect one hostile, target it, fight or disengage, survive
 persistent damage, and salvage/report the outcome.
+
+The K-7 raider appears on entry, transmits after 10 active-play seconds, and
+cannot attack during the following 5-second grace. Player combat mode is an
+independent weapons control, not an encounter spawn/despawn switch.
 
 Acceptance:
 

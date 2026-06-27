@@ -46,6 +46,7 @@ import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
 import {
     createRpgRuntime,
+    CombatRuntime,
     CrewRuntime,
     DeliveryRuntime,
     PatrolRuntime,
@@ -55,6 +56,7 @@ import {
     isMeteredAuthoredRoute,
     LocalRpgPersistence
 } from '../rpg/index.js';
+import { CombatPresentation } from '../rpg/CombatPresentation.js';
 import { GameClock, LocalSaveSlots, SlotRpgPersistence } from '../save/index.js';
 
 // Rebase the world origin when the ship exceeds this distance from (0,0,0).
@@ -291,6 +293,8 @@ export class App {
         this.patrolHailOpen = false;
         this.patrolHailDismissedId = null;
         this.patrolPanelEncounter = null;
+        this.combatWarningOpen = false;
+        this.combatWarningShown = false;
         this.patrolPanelRenderKey = null;
         this.radioPower = true;
         this.radioVolume = 0.5;
@@ -319,6 +323,9 @@ export class App {
         this.patrolAgentVisual = null;
         this.patrolVisualState = null;
         this._observedPatrolSystemId = undefined;
+        this.combatError = null;
+        this.combat = this._createCombatRuntimeSafely();
+        this.combatPresentation = new CombatPresentation({ scene: this.scene });
         this._installDebugHooks();
         this._applyRuntimeConfig();
         this._loadInitialJsonPreset();
@@ -357,6 +364,22 @@ export class App {
         // Hyperdrive toggle (r3 on a pad, right face button in VR) reads from
         // whichever input is actually driving the ship this frame.
         this._handleHyperdriveButton(controlInput);
+        if (
+            controlInput?.buttons?.dpadDown?.justPressed
+            && this.shipControls.pilotActive
+        ) {
+            this._toggleCombatMode();
+            if (controlInput.source === 'webxr') this.xr.pulse({ duration: 90, strength: 0.36 });
+            else this.input.gamepad.pulse({ duration: 90, weak: 0.24, strong: 0.4 });
+        }
+        if (
+            controlInput?.source === 'webxr'
+            && controlInput.buttons?.l2?.justPressed
+            && this.shipControls.pilotActive
+        ) {
+            this._cycleCombatTarget();
+            this.xr.pulse({ duration: 75, strength: 0.3 });
+        }
 
         // Ship is simulated every frame whether or not anyone is piloting: when
         // pilot mode is off the command is inactive and it coasts on inertia +
@@ -427,9 +450,22 @@ export class App {
                 }
             }
 
+            const flightInput = this.combat?.getState().combatMode && controlInput?.buttons
+                ? {
+                    ...controlInput,
+                    buttons: {
+                        ...controlInput.buttons,
+                        cross: {
+                            ...controlInput.buttons.cross,
+                            pressed: false,
+                            value: 0
+                        }
+                    }
+                }
+                : controlInput;
             const command = this.autopilot.isActive()
                 ? this.autopilot.buildCommand(this.ship, this.selectedNavigationTarget, dt)
-                : this.shipControls.getCommand(this.input.keys, controlInput);
+                : this.shipControls.getCommand(this.input.keys, flightInput);
             const capabilities = this._shipCapabilities;
             if (capabilities) {
                 this.ship.capabilityEffects = {
@@ -480,6 +516,18 @@ export class App {
         this._syncSurfaceOutpostProgress();
         if (!this.paused) this.patrol?.update(this.gameClock.getTime());
         this._syncPatrolPresentation();
+        if (clockActive && this.combat) {
+            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.ship.object3D.quaternion);
+            this.combat.update(dt, {
+                playerPosition: this.ship.position.toArray(),
+                playerVelocity: this.ship.velocity.toArray(),
+                playerForward: forward.toArray()
+            });
+            this._refreshShipCapabilities();
+        }
+        this.combatPresentation?.update(this.combat?.getState());
+        this._syncCombatNavigationTarget();
+        this._syncCombatWarning();
         this.sky.update(dt, this.camera.position);
 
         this._updateSpeedFx(dt, xrActive);
@@ -532,6 +580,28 @@ export class App {
             this._unlockAudioFromGesture();
         }
 
+        if (
+            buttons.triangle.justPressed
+            && this.cameraMode === 'player'
+            && this.shipControls.pilotActive
+            && this.combat?.getState().active
+            && this.combat?.getState().combatMode
+        ) {
+            this._cycleCombatTarget();
+            this.input.gamepad.pulse({ duration: 75, weak: 0.2, strong: 0.35 });
+            return;
+        }
+
+        if (
+            buttons.cross.justPressed
+            && this.shipControls.pilotActive
+            && this.combat?.getState().active
+            && this.combat?.getState().combatMode
+        ) {
+            this._fireCombatWeapon();
+            this.input.gamepad.pulse({ duration: 55, weak: 0.18, strong: 0.32 });
+        }
+
         if (buttons.triangle.justPressed && this.cameraMode === 'player') {
             if (this.surfaceOutpostPanelOpen) {
                 this._closeSurfaceOutpostPanel();
@@ -580,7 +650,9 @@ export class App {
             if (this.shipControls.handleToggleKey('KeyU') === 'autopilot') {
                 const shouldActive = this.shipControls.autopilotActive;
                 if (shouldActive) {
-                    const engaged = this.autopilot.engage(this.ship, this.selectedNavigationTarget, this.scaleStack.active.tier, this.scaleStack.isTransitioning);
+                    const engaged = this.selectedNavigationTarget?.rpg?.combatTargetId
+                        ? false
+                        : this.autopilot.engage(this.ship, this.selectedNavigationTarget, this.scaleStack.active.tier, this.scaleStack.isTransitioning);
                     if (!engaged) {
                         this.shipControls.autopilotActive = false;
                     } else {
@@ -713,6 +785,7 @@ export class App {
             this.rpg.setActiveNamedSystem(systemId);
             this.delivery?.syncSystem(systemId);
             this.condition?.syncSystem(systemId);
+            this.combat?.syncSystem(systemId);
             return true;
         } catch (error) {
             this._recordRpgError('named-system sync', error);
@@ -846,6 +919,109 @@ export class App {
                 message: error instanceof Error ? error.message : String(error)
             };
             console.warn('Phase 17 patrol runtime unavailable; flight remains active.', error);
+            return null;
+        }
+    }
+
+    _createCombatRuntimeSafely() {
+        try {
+            return new CombatRuntime({
+                slots: this.saveSlots,
+                rpg: this.rpg,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.combatError = {
+                context: 'combat runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 19 combat runtime unavailable; flight remains active.', error);
+            return null;
+        }
+    }
+
+    _toggleCombatMode() {
+        try {
+            const result = this.combat?.toggleCombatMode() ?? null;
+            this.combatError = null;
+            this.combatPresentation?.update(result);
+            this._syncCombatNavigationTarget();
+            return result;
+        } catch (error) {
+            this.combatError = {
+                context: 'combat mode toggle',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return null;
+        }
+    }
+
+    _cycleCombatTarget() {
+        try {
+            const result = this.combat?.cycleTarget() ?? null;
+            this._syncCombatNavigationTarget();
+            return result;
+        } catch (error) {
+            this.combatError = {
+                context: 'combat target selection',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return null;
+        }
+    }
+
+    _syncCombatNavigationTarget() {
+        const state = this.combat?.getState();
+        const combatTargetId = state?.targetId ?? null;
+        const selectedCombatId = this.selectedNavigationTarget?.rpg?.combatTargetId ?? null;
+        if (!combatTargetId || !state?.enemy) {
+            if (selectedCombatId) {
+                this.selectedNavigationTarget = null;
+                this.selectedNavigationTargetDepth = null;
+            }
+            return null;
+        }
+        if (!this.selectedNavigationTarget || selectedCombatId !== combatTargetId) {
+            this.selectedNavigationTarget = {
+                id: `combat-target:${combatTargetId}`,
+                type: 'hostile ship',
+                name: 'Red Knife [HOSTILE]',
+                position: new THREE.Vector3(),
+                rpg: {
+                    combatTargetId,
+                    encounterId: state.encounterId
+                }
+            };
+        }
+        this.selectedNavigationTarget.position.fromArray(state.enemy.position);
+        this.selectedNavigationTargetDepth = this.scaleStack.depth;
+        return this.selectedNavigationTarget;
+    }
+
+    _fireCombatWeapon() {
+        try {
+            const result = this.combat?.fire() ?? null;
+            this._refreshShipCapabilities();
+            return result;
+        } catch (error) {
+            this.combatError = {
+                context: 'combat weapon fire',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return null;
+        }
+    }
+
+    _rescueCombatDefeat() {
+        try {
+            const result = this.combat?.rescueAfterDefeat() ?? null;
+            this._refreshShipCapabilities();
+            return result;
+        } catch (error) {
+            this.combatError = {
+                context: 'combat rescue',
+                message: error instanceof Error ? error.message : String(error)
+            };
             return null;
         }
     }
@@ -1066,6 +1242,15 @@ export class App {
     _handleXrSelect() {
         this._unlockAudioFromGesture();
         if (this.cameraMode !== 'player') return false;
+        if (
+            this.shipControls.pilotActive
+            && this.combat?.getState().active
+            && this.combat?.getState().combatMode
+        ) {
+            const shot = this._fireCombatWeapon();
+            this.xr.pulse({ duration: 55, strength: 0.32 });
+            return shot ? 'combatFire' : false;
+        }
         if (this.surfaceOutpostPanelOpen) {
             this._closeSurfaceOutpostPanel();
             this.xr.pulse({ duration: 70, strength: 0.25 });
@@ -1320,6 +1505,7 @@ export class App {
         this._createCrewPanel();
         this._createSurfaceOutpostPanel();
         this._createPatrolHailPanel();
+        this._createCombatWarningPanel();
         this._createNavigationPanel();
         this._createRadioPanel();
     }
@@ -1452,10 +1638,13 @@ export class App {
         this._refreshShipCapabilities();
         this.surfaceOutpost?.reload();
         this.patrol?.reload();
+        this.combat?.reload();
         this._observedPatrolSystemId = undefined;
         this.patrolHailOpen = false;
         this.patrolHailDismissedId = null;
         this.patrolPanelEncounter = null;
+        this.combatWarningShown = false;
+        this._closeCombatWarning();
         this._syncActiveRpgSystem();
         this._syncCrewPresence();
         this._syncDebugDomState();
@@ -1576,6 +1765,65 @@ export class App {
             if (!target) return;
             this._handlePatrolAction(target.dataset.patrolAction);
         });
+    }
+
+    _createCombatWarningPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'combat-warning-panel';
+        panel.innerHTML = `
+            <style>
+                #combat-warning-panel {
+                    position: fixed; right: 5%; top: 14%; width: min(430px, 86vw);
+                    z-index: 28; display: none; padding: 18px; pointer-events: auto;
+                    color: #ffd7d2; background: rgba(18, 3, 5, 0.96);
+                    border: 1px solid #ff695e;
+                    font: 13px/1.5 "Consolas", "Courier New", monospace;
+                    box-shadow: 0 0 30px rgba(255, 70, 60, 0.2);
+                }
+                #combat-warning-panel button {
+                    padding: 7px 10px; color: #ffd7d2;
+                    background: #351014; border: 1px solid #ff695e;
+                }
+                #combat-warning-panel strong { color: #ff8b82; }
+            </style>
+            <h3>INCOMING TRANSMISSION — RED KNIFE</h3>
+            <p><strong>“Unidentified vessel. Cut thrust and surrender your hold.”</strong></p>
+            <p>Weapons signature rising. Hostile fire expected in 5 seconds.</p>
+            <button data-combat-warning-close>Keep channel open / return to controls</button>
+        `;
+        panel.querySelector('[data-combat-warning-close]').addEventListener('click', () => {
+            this._closeCombatWarning();
+        });
+        document.body.appendChild(panel);
+        this.combatWarningPanel = panel;
+    }
+
+    _openCombatWarning() {
+        this.combatWarningOpen = true;
+        this.combatWarningShown = true;
+        if (this.combatWarningPanel) this.combatWarningPanel.style.display = 'block';
+    }
+
+    _closeCombatWarning() {
+        this.combatWarningOpen = false;
+        if (this.combatWarningPanel) this.combatWarningPanel.style.display = 'none';
+    }
+
+    _syncCombatWarning() {
+        const state = this.combat?.getState();
+        if (!state?.active) {
+            this.combatWarningShown = false;
+            this._closeCombatWarning();
+            return;
+        }
+        if (state.warningIssued && !this.combatWarningShown) this._openCombatWarning();
+    }
+
+    _handleCombatWarningKeydown(event) {
+        if (!this.combatWarningOpen || event.code !== 'Escape') return false;
+        event.preventDefault();
+        this._closeCombatWarning();
+        return true;
     }
 
     _openPatrolHailPanel() {
@@ -3058,6 +3306,36 @@ export class App {
                 + `<b>SENS</b> ${condition.condition.systems.sensors.condition.toFixed(0)}`
             );
         }
+        const combat = this.combat?.getState();
+        if (combat) {
+            lines.push(
+                `<b>COMBAT MODE</b> ${combat.combatMode ? '<span class="warn">ARMED</span>' : '<span class="off">SAFE</span>'}`
+                + ' (B / D-PAD DOWN)'
+            );
+        }
+        if (combat?.active) {
+            const target = combat.target;
+            lines.push(
+                `<b>COMBAT</b> ${escapeHtml(combat.phase.toUpperCase())}   `
+                + (target
+                    ? `<b>LOCK</b> ${escapeHtml(target.id)} ${target.range.toFixed(0)}m ${target.inRange ? '<span class="on">IN RANGE</span>' : '<span class="warn">OUT OF RANGE</span>'}`
+                    : combat.combatMode
+                        ? '<span class="warn">TAB / TRIANGLE / LEFT TRIGGER TO LOCK</span>'
+                        : '<span class="off">WEAPONS SAFE</span>')
+            );
+            if (!combat.warningIssued) {
+                lines.push(`<b>HOSTILE COMMS</b> ${(combat.warningDelayRemaining ?? 0).toFixed(1)}s`);
+            } else if ((combat.attackGraceRemaining ?? 0) > 0) {
+                lines.push(`<b>ATTACK GRACE</b> <span class="warn">${combat.attackGraceRemaining.toFixed(1)}s</span>`);
+            }
+            lines.push(
+                `<b>HEAT</b> ${combat.hardpoints.map((entry) => `${escapeHtml(entry.id)} ${(entry.heat * 100).toFixed(0)}%`).join(' / ')}`
+            );
+            if (combat.phase === 'defeated') {
+                lines.push('<span class="warn">SHIP DISABLED — PRESS Y FOR TOW / RESCUE</span>');
+            }
+        }
+        if (this.combatError) lines.push(`<span class="warn">${escapeHtml(this.combatError.message)}</span>`);
         if (this.cargoTerminalMessage) lines.push(`<span class="warn">${escapeHtml(this.cargoTerminalMessage)}</span>`);
         const patrolEncounter = this.patrol?.getState().activeEncounter;
         if (patrolEncounter) {
@@ -3221,9 +3499,20 @@ export class App {
             this.gameClock.setActive(false);
             this._checkpointGameClock('visibility-change');
         });
+        this.canvas.addEventListener('mousedown', (event) => {
+            if (
+                event.button === 0
+                && this.shipControls.pilotActive
+                && this.combat?.getState().active
+                && this.combat?.getState().combatMode
+            ) {
+                this._fireCombatWeapon();
+            }
+        });
         window.addEventListener('keydown', (event) => {
             this._unlockAudioFromGesture();
 
+            if (this._handleCombatWarningKeydown(event)) return;
             if (this._handlePatrolKeydown(event)) return;
             if (this._handleSurfaceOutpostKeydown(event)) return;
             if (this._handleCrewKeydown(event)) return;
@@ -3232,6 +3521,27 @@ export class App {
             if (this._handleCommsKeydown(event)) return;
             if (this._handleNavigationKeydown(event)) return;
             if (this._handleRadioKeydown(event)) return;
+
+            if (event.code === 'Tab' && !event.repeat && this.shipControls.pilotActive) {
+                event.preventDefault();
+                this._cycleCombatTarget();
+                this._syncDebugDomState();
+                return;
+            }
+
+            if (event.code === 'KeyB' && !event.repeat && this.shipControls.pilotActive) {
+                event.preventDefault();
+                this._toggleCombatMode();
+                this._syncDebugDomState();
+                return;
+            }
+
+            if (event.code === 'KeyY' && !event.repeat && this.combat?.getState().phase === 'defeated') {
+                event.preventDefault();
+                this._rescueCombatDefeat();
+                this._syncDebugDomState();
+                return;
+            }
 
             if (event.code === 'F2') {
                 event.preventDefault();
@@ -3365,7 +3675,9 @@ export class App {
                     if (this.shipControls.handleToggleKey('KeyU') === 'autopilot') {
                         const shouldActive = this.shipControls.autopilotActive;
                         if (shouldActive) {
-                            const engaged = this.autopilot.engage(this.ship, this.selectedNavigationTarget, this.scaleStack.active.tier, this.scaleStack.isTransitioning);
+                            const engaged = this.selectedNavigationTarget?.rpg?.combatTargetId
+                                ? false
+                                : this.autopilot.engage(this.ship, this.selectedNavigationTarget, this.scaleStack.active.tier, this.scaleStack.isTransitioning);
                             if (!engaged) {
                                 this.shipControls.autopilotActive = false;
                             } else {
@@ -3849,6 +4161,59 @@ export class App {
                 openHail: () => this._openPatrolHailPanel(),
                 closeHail: () => this._closePatrolHailPanel()
             },
+            combat: {
+                getState: () => this.combat?.getState() ?? { unavailable: this.combatError },
+                toggleMode: () => this._toggleCombatMode(),
+                setMode: (enabled) => this.combat?.setCombatMode(enabled),
+                syncSystem: (systemId) => {
+                    const state = this.combat?.syncSystem(systemId);
+                    this.combatPresentation?.update(state);
+                    return state;
+                },
+                update: (dt = 1 / 60, input = {}) => {
+                    const state = this.combat?.update(dt, input);
+                    this.combatPresentation?.update(state);
+                    this._refreshShipCapabilities();
+                    return state;
+                },
+                cycleTarget: () => this._cycleCombatTarget(),
+                fire: () => this._fireCombatWeapon(),
+                rescue: () => this._rescueCombatDefeat(),
+                claimSalvage: () => this.combat?.claimWreckSalvage(),
+                cleanup: (reason = 'debug') => {
+                    const result = this.combat?.cleanup(reason);
+                    this.combatPresentation?.cleanup();
+                    return result;
+                },
+                addTarget: (target) => this.combat?.addTargetForDebug(target),
+                applyHit: (hit) => this.combat?.applyHitForDebug(hit),
+                queryEvents: (query) => this.combat?.queryCombatEvents(query),
+                getPresentationState: () => this.combatPresentation?.getState(),
+                runPerformanceScene: (seconds = 10) => {
+                    const duration = Math.max(0, Math.min(120, Number(seconds) || 0));
+                    const start = performance.now();
+                    let steps = 0;
+                    while (steps < duration * 60) {
+                        this.combat?.update(1 / 60, {
+                            playerPosition: this.ship.position.toArray(),
+                            playerVelocity: this.ship.velocity.toArray(),
+                            playerForward: new THREE.Vector3(0, 0, -1)
+                                .applyQuaternion(this.ship.object3D.quaternion)
+                                .toArray()
+                        });
+                        steps += 1;
+                    }
+                    const elapsedMs = performance.now() - start;
+                    return {
+                        seconds: duration,
+                        steps,
+                        totalMs: elapsedMs,
+                        averageMsPerStep: steps ? elapsedMs / steps : 0,
+                        projectileCount: this.combat?.getState().projectileCount ?? 0,
+                        presentation: this.combatPresentation?.getState()
+                    };
+                }
+            },
             saves: {
                 getStatus: () => this.saveSlots.getStatus(),
                 list: () => this.saveSlots.listSlots(),
@@ -4154,7 +4519,9 @@ export class App {
                 isHyperdriveAutopilotTier(this.scaleStack.active.tier) &&
                 !this.scaleStack.isTransitioning
             ) {
-                const engaged = this.autopilot.engage(this.ship, this.selectedNavigationTarget, this.scaleStack.active.tier, this.scaleStack.isTransitioning);
+                const engaged = this.selectedNavigationTarget?.rpg?.combatTargetId
+                    ? false
+                    : this.autopilot.engage(this.ship, this.selectedNavigationTarget, this.scaleStack.active.tier, this.scaleStack.isTransitioning);
                 if (engaged) {
                     this.shipControls.autopilotActive = true;
                 }
@@ -4226,6 +4593,10 @@ export class App {
             patrol: this.patrol?.getState() ?? {
                 available: false,
                 error: this.patrolError
+            },
+            combat: this.combat?.getState() ?? {
+                available: false,
+                error: this.combatError
             },
             saves: {
                 ...this.saveSlots.getStatus(),

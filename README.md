@@ -24,6 +24,9 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
 - Persistent hull and six-system condition, a one-shot K-7 derelict
   hazard/salvage transaction, repair inventory, bounded flight degradation,
   and physical maintenance.
+- Warned K-7 ship combat with two pulse hardpoints, deterministic targeting,
+  one Tier 2 raider, flee/victory/tow outcomes, persistent wreck state, and
+  Phase 18 repair consequences.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -108,6 +111,9 @@ Notes:
 | `Z` | Toggle dampeners |
 | `X` | Airbrake |
 | `Space` | Toggle hyperdrive |
+| `B` | Toggle combat mode while piloting |
+| `Tab` | Cycle/lock a hostile combat target |
+| Primary mouse | Fire locked pulse hardpoints |
 
 ### Debug and panels
 
@@ -150,8 +156,8 @@ window.__deepSpaceDebug.rpg.reset();
 Walk to the observation-bay ship computer and press `C` / Triangle / XR select
 to inspect `A Clean Copy`, manage three isolated local slots, export validated
 JSON, preview/import it into a new slot, and inspect active-play time. Phase 11
-version-1 browser saves migrate automatically through the current Phase 18
-version-7 envelope / ship version 2 / RPG version 5; Phase 13–17 slots migrate
+version-1 browser saves migrate automatically through the current Phase 19
+version-8 envelope / ship version 2 / RPG version 6; Phase 13–18 slots migrate
 non-destructively.
 There is no cloud synchronization or offline simulation.
 
@@ -206,6 +212,19 @@ plates. Use the same physical terminal to repair hull or a named system; every
 repair consumes exactly one matching item and saves immediately. Engine and
 hyperdrive degradation have bounded live flight effects, while emergency
 stabilization keeps critical hull/engine saves controllable.
+
+### Ship combat
+
+The placeholder raider `Red Knife` appears automatically on entering Index
+Relay K-7 but holds patrol. After 10 active-play seconds it sends a hostile
+comm warning, followed by a 5-second no-attack grace period. Toggle combat mode
+with `B` or gamepad D-pad Down, use `Tab` / Triangle to lock it, and use primary
+mouse / Cross to fire. The combat lock uses the navigation computer's existing
+target and compass display. Combat mode can be toggled anywhere and only controls
+the player's weapons; safing weapons does not despawn or resolve an encounter.
+Open distance to flee, destroy the raider and claim its exact-once wreck
+salvage, or press `Y` after defeat for a recoverable tow. Combat damage
+persists into the Phase 18 maintenance loop.
 
 ### Gamepad and VR
 
@@ -263,6 +282,11 @@ window.__deepSpaceDebug.condition.getState();
 window.__deepSpaceDebug.condition.getCapabilities();
 window.__deepSpaceDebug.condition.claimSalvage();
 window.__deepSpaceDebug.condition.repair('engine');
+window.__deepSpaceDebug.combat.getState();
+window.__deepSpaceDebug.combat.toggleMode();
+window.__deepSpaceDebug.combat.cycleTarget();
+window.__deepSpaceDebug.combat.fire();
+window.__deepSpaceDebug.combat.rescue();
 ```
 
 The Phase 11A-E implementation and verification checklist are documented in
@@ -285,6 +309,7 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-16-surface-outpost.md](docs/phase-16-surface-outpost.md) - authored planet POI, surface terminal mission, and checkpoint persistence
 - [docs/phase-17-faction-patrol.md](docs/phase-17-faction-patrol.md) - deterministic faction influence, cargo policy, and one safe local patrol
 - [docs/phase-18-ship-condition.md](docs/phase-18-ship-condition.md) - persistent condition, one-shot salvage/hazard, repair inventory, and recovery
+- [docs/phase-19-ship-combat.md](docs/phase-19-ship-combat.md) - opt-in targeting, weapons, Tier 2 enemy, damage, recovery, and cleanup
 - [docs/rpg-future-development-roadmap.md](docs/rpg-future-development-roadmap.md) - post-Phase-11 vertical slices, dependencies, tests, and acceptance gates
 - [docs/rpg-phase-agent-prompts.md](docs/rpg-phase-agent-prompts.md) - copy-paste implementation prompts for each future RPG phase
 
@@ -305,3 +330,7 @@ The Phase 11A-E implementation and verification checklist are documented in
   There is no boarding, general loot generation, repair animation, crafting,
   salvage market, hostile damage source, or usable weapon system. Full
   gamepad/PCVR device signoff remains pending.
+- Phase 19 has one opt-in placeholder raider and pulse weapon only. There are no
+  fleets, missiles, shields, capital ships, boarding, ammunition, or equipment
+  progression. Full browser normal-control, gamepad, and PCVR device signoff
+  remains pending.
