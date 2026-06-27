@@ -158,6 +158,44 @@ export const MISSION_DEFINITIONS = Object.freeze({
             })
         }),
         failureOutcomes: Object.freeze({})
+    }),
+    wayfarer_derelict_recovery: Object.freeze({
+        id: 'wayfarer_derelict_recovery',
+        name: 'A Quiet Crossing',
+        namedSystemId: 'drifter_convergence',
+        contactId: null,
+        initialStatus: MISSION_STATUSES.UNAVAILABLE,
+        requiresExternalResolution: true,
+        description: 'Secure beside a Wayfarer survey wreck, recover its operations log, and return.',
+        boardingPoiId: 'wayfarer_research_derelict',
+        objectives: Object.freeze({
+            secure_wayfarer_derelict: Object.freeze({
+                id: 'secure_wayfarer_derelict',
+                label: 'Stabilize close to the Wayfarer survey wreck.'
+            }),
+            board_wayfarer_derelict: Object.freeze({
+                id: 'board_wayfarer_derelict',
+                label: 'Cross by EVA and enter the survey wreck.'
+            }),
+            recover_wayfarer_log: Object.freeze({
+                id: 'recover_wayfarer_log',
+                label: 'Recover the wreck operations log.'
+            }),
+            return_from_wayfarer_derelict: Object.freeze({
+                id: 'return_from_wayfarer_derelict',
+                label: 'Return safely to the ship.'
+            })
+        }),
+        branches: Object.freeze({
+            log_recovered: Object.freeze({
+                id: 'log_recovered',
+                label: 'Recovered the survey wreck operations log.',
+                worldFlags: Object.freeze({
+                    'drifter_convergence.wayfarer_derelict_log_recovered': true
+                })
+            })
+        }),
+        failureOutcomes: Object.freeze({})
     })
 });
 

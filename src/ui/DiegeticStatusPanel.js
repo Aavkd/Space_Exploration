@@ -59,6 +59,7 @@ export class DiegeticStatusPanel {
             universe: state.universe ?? 'default',
             nav: summarizeNav(state.nav),
             hazard: summarizeHazard(state.hazard),
+            boarding: summarizeBoarding(state.boarding),
             prompt: state.prompt ?? ''
         };
 
@@ -105,10 +106,10 @@ export class DiegeticStatusPanel {
         ctx.fillText(`DAMP ${state.dampeners ? 'ON' : 'OFF'}   DRIVE ${state.drive}`, 48, 330);
         ctx.fillText(`FX ${state.preset.toUpperCase().slice(0, 18)} / U ${state.universe.toUpperCase().slice(0, 16)}`, 48, 390);
 
-        ctx.fillStyle = state.prompt || state.hazard ? '#ffcc75' : 'rgba(155, 220, 255, 0.68)';
+        ctx.fillStyle = state.prompt || state.hazard || state.boarding ? '#ffcc75' : 'rgba(155, 220, 255, 0.68)';
         ctx.font = '700 28px Consolas, monospace';
         ctx.fillText(state.nav || 'NAV NO TARGET', 48, 430);
-        ctx.fillText(state.hazard || (state.prompt ? trimPrompt(state.prompt) : 'NO LOCAL ACTION'), 48, 474);
+        ctx.fillText(state.boarding || state.hazard || (state.prompt ? trimPrompt(state.prompt) : 'NO LOCAL ACTION'), 48, 474);
 
         this.texture.needsUpdate = true;
     }
@@ -149,4 +150,10 @@ function summarizeHazard(hazard) {
     if (!hazard?.active) return '';
     const intensity = Math.round((hazard.intensity ?? 0) * 100);
     return `DEBRIS TURBULENCE ${intensity}%`.slice(0, 34);
+}
+
+function summarizeBoarding(boarding) {
+    if (!boarding?.player || boarding.player.location === 'ship') return '';
+    const oxygen = Math.max(0, Math.round(boarding.player.oxygenRemaining ?? 0));
+    return `EVA O2 ${oxygen}S / ${String(boarding.progress?.checkpoint ?? '').toUpperCase()} / A RETURN`.slice(0, 42);
 }

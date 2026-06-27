@@ -190,4 +190,45 @@ export class RelativeLocomotion {
         this.lastStep = { grounded: false, blockedX: false, blockedZ: false, volumeId: null };
         return this.lastStep;
     }
+
+    /**
+     * Conservative inertial EVA used by Phase 21. The velocity is explicit so
+     * encounter-local saves can round-trip without making the legacy tethered
+     * EVA path inertial.
+     */
+    floatEVAInertial(position, velocity, orientation, move, dt, {
+        acceleration = 1.4,
+        maxSpeed = 3,
+        damping = 2
+    } = {}) {
+        const elapsed = Number(dt);
+        if (!Number.isFinite(elapsed) || elapsed < 0) {
+            throw new Error('Inertial EVA dt must be a non-negative finite number.');
+        }
+        this._forward.set(0, 0, -1).applyQuaternion(orientation);
+        this._right.set(1, 0, 0).applyQuaternion(orientation);
+        this._move
+            .copy(this._forward).multiplyScalar(move.forward ?? 0)
+            .addScaledVector(this._right, move.strafe ?? 0);
+        this._move.y += move.vertical ?? 0;
+        if (this._move.lengthSq() > 1e-6) {
+            this._move.normalize();
+            velocity.addScaledVector(this._move, acceleration * elapsed);
+        } else {
+            const speed = velocity.length();
+            const next = Math.max(0, speed - damping * elapsed);
+            if (speed > 1e-9) velocity.multiplyScalar(next / speed);
+            else velocity.set(0, 0, 0);
+        }
+        if (velocity.length() > maxSpeed) velocity.setLength(maxSpeed);
+        position.addScaledVector(velocity, elapsed);
+        this.lastStep = {
+            grounded: false,
+            blockedX: false,
+            blockedZ: false,
+            volumeId: null,
+            speed: velocity.length()
+        };
+        return this.lastStep;
+    }
 }

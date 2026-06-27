@@ -7,6 +7,7 @@ import { starBodyRadius } from './starColor.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 import { DESCENT } from '../../config/scaleTiers.js';
 import { findSurfacePoiForPlanet } from '../../rpg/surfaceOutposts.js';
+import { findBoardingPoiForSystem } from '../../rpg/boarding.js';
 
 const PLANET_ENTRY = Object.freeze({
     scale: DESCENT.planetEntryRadiusScale,
@@ -71,6 +72,7 @@ export class SystemContents {
 
     getPOIs(shipPosition = new THREE.Vector3(), limit = 12) {
         const surfaceSignals = this._getSurfaceOutpostSignals();
+        const boardingSignals = this._getBoardingSignals();
         const ordinaryPois = [
             this.star.getPOI(),
             ...this.planets.map((planet) => planet.getPOI()),
@@ -78,7 +80,7 @@ export class SystemContents {
         ]
             .map((poi) => ({ ...poi, distance: shipPosition.distanceTo(poi.position) }))
             .sort((a, b) => a.distance - b.distance);
-        const pinnedSignals = surfaceSignals.map((poi) => ({
+        const pinnedSignals = [...surfaceSignals, ...boardingSignals].map((poi) => ({
             ...poi,
             distance: shipPosition.distanceTo(poi.position)
         }));
@@ -86,6 +88,18 @@ export class SystemContents {
             ...pinnedSignals,
             ...ordinaryPois.slice(0, Math.max(0, limit - pinnedSignals.length))
         ].slice(0, limit);
+    }
+
+    getBoardingPlacement() {
+        const definition = findBoardingPoiForSystem(this.anchor.rpg?.namedSystemId ?? null);
+        if (!definition) return null;
+        this.group.updateWorldMatrix(true, false);
+        const position = new THREE.Vector3().fromArray(definition.systemLocalPosition);
+        this.group.localToWorld(position);
+        return {
+            definition,
+            position
+        };
     }
 
     // Planets the ship can descend into from this System level (§4.1). Each
@@ -329,6 +343,23 @@ export class SystemContents {
                 }
             }];
         });
+    }
+
+    _getBoardingSignals() {
+        const placement = this.getBoardingPlacement();
+        if (!placement) return [];
+        return [{
+            id: placement.definition.id,
+            type: placement.definition.type,
+            name: placement.definition.navigationLabel,
+            position: placement.position,
+            radius: 18,
+            rpg: {
+                namedSystemId: placement.definition.systemId,
+                boardingPoiId: placement.definition.id,
+                encounterId: placement.definition.encounterId
+            }
+        }];
     }
 
     _planetEphemeris(planet, position) {

@@ -46,9 +46,14 @@ import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
 import {
     createRpgRuntime,
+    BOARDING_DERELICT_ID,
+    BOARDING_LIMITS,
+    BOARDING_LOG_ID,
+    BOARDING_SYSTEM_ID,
     CombatRuntime,
     CrewRuntime,
     DeliveryRuntime,
+    EvaBoardingRuntime,
     EconomyRuntime,
     MARKET_DEFINITIONS,
     TRADE_GOOD_IDS,
@@ -61,6 +66,7 @@ import {
     LocalRpgPersistence
 } from '../rpg/index.js';
 import { CombatPresentation } from '../rpg/CombatPresentation.js';
+import { BoardingPresentation } from '../rpg/BoardingPresentation.js';
 import { GameClock, LocalSaveSlots, SlotRpgPersistence } from '../save/index.js';
 
 // Rebase the world origin when the ship exceeds this distance from (0,0,0).
@@ -174,6 +180,7 @@ export class App {
         // expressed in the ship-local frame and rides along with every ship
         // translation/rotation. The camera converts local -> world each frame.
         this.ship.interiorRoot.add(this.playerRig.object3D);
+        this.boardingPresentation = new BoardingPresentation({ scene: this.scene });
 
         // Phase 4: on-foot relative locomotion + the WALKING/PILOTING/EVA state
         // machine. Piloting is routed through ShipControls (same as Phase 3),
@@ -186,7 +193,8 @@ export class App {
             locomotion: this.locomotion,
             getSurfaceProvider: () => this.environment?.getSurfaceSample ? this.environment : null,
             getSurfaceParent: () => this.environment?.getSurfaceSample ? this.environment.group : null,
-            getSurfaceInteraction: (position) => this.environment?.getSurfaceInteraction?.(position) ?? null
+            getSurfaceInteraction: (position) => this.environment?.getSurfaceInteraction?.(position) ?? null,
+            getBoardingContext: () => this._getBoardingContext()
         });
 
         // 'player' -> first-person rig drives the camera (default Phase 4 view);
@@ -324,6 +332,8 @@ export class App {
         this._shipCapabilities = this.condition?.getState().capabilities ?? null;
         this.surfaceOutpostError = null;
         this.surfaceOutpost = this._createSurfaceOutpostRuntimeSafely();
+        this.boardingError = null;
+        this.boarding = this._createBoardingRuntimeSafely();
         this.patrolError = null;
         this.patrol = this._createPatrolRuntimeSafely();
         this.patrolAgentVisual = null;
@@ -332,6 +342,7 @@ export class App {
         this.combatError = null;
         this.combat = this._createCombatRuntimeSafely();
         this.combatPresentation = new CombatPresentation({ scene: this.scene });
+        this._restoreBoardingSession();
         this._installDebugHooks();
         this._applyRuntimeConfig();
         this._loadInitialJsonPreset();
@@ -393,6 +404,7 @@ export class App {
         // `paused` freezes only the live simulation so manual/automated stepping
         // through the debug hooks is deterministic; rendering keeps running.
         if (!this.paused) {
+            const boardingSecured = this._boardingSessionActive();
             if (this.autopilot.isActive()) {
                 const target = this.selectedNavigationTarget;
                 const tier = this.scaleStack.active.tier;
@@ -469,7 +481,9 @@ export class App {
                     }
                 }
                 : controlInput;
-            const command = this.autopilot.isActive()
+            const command = boardingSecured
+                ? { active: false }
+                : this.autopilot.isActive()
                 ? this.autopilot.buildCommand(this.ship, this.selectedNavigationTarget, dt)
                 : this.shipControls.getCommand(this.input.keys, flightInput);
             const capabilities = this._shipCapabilities;
@@ -479,8 +493,11 @@ export class App {
                     hyperdriveAuthority: capabilities.hyperdriveAuthority
                 };
             }
-            this.debrisHazardState = this.environment.getHazardState?.(this.ship.position, this.ship.velocity) ?? this._emptyDebrisHazard();
-            this.ship.update(dt, command, this.gravityField, this.debrisHazardState.acceleration);
+            this.debrisHazardState = boardingSecured
+                ? this._emptyDebrisHazard()
+                : this.environment.getHazardState?.(this.ship.position, this.ship.velocity) ?? this._emptyDebrisHazard();
+            if (boardingSecured) this.ship.physics?.halt?.();
+            else this.ship.update(dt, command, this.gravityField, this.debrisHazardState.acceleration);
             this._maybeRebaseOrigin();
             // Planetary tier only: resolve ship-vs-surface contact after physics
             // so gravity rests the hull on the terrain (touchdown) while outward
@@ -494,6 +511,7 @@ export class App {
         // cameras drive it instead.
         if (this.cameraMode === 'player') {
             if (!this.paused) this.playerController.update(dt, this.input.keys, controlInput);
+            if (!this.paused) this._updateBoarding();
             if (!xrActive) this.playerController.updateCamera(this.camera);
         } else {
             this._updateDebugCamera(dt);
@@ -509,7 +527,7 @@ export class App {
         )
             ? this.selectedNavigationTarget
             : null;
-        this.scaleStack.update({
+        const scaleContext = {
             shipPosition: this.ship.position,
             dt,
             cameraPosition: this.camera.position,
@@ -517,7 +535,16 @@ export class App {
             lockedTargetId: activeNavigationTarget ? (activeNavigationTarget.id ?? activeNavigationTarget.name) : null,
             lockedTargetPosition: activeNavigationTarget?.position ?? null,
             autopilotActive: this.autopilot.isActive()
-        });
+        };
+        if (this._boardingSessionActive()) {
+            this.scaleStack.active.update(
+                scaleContext.shipPosition,
+                scaleContext.dt,
+                scaleContext.cameraPosition
+            );
+        } else {
+            this.scaleStack.update(scaleContext);
+        }
         this._syncPatrolFromSettledScale();
         this._syncSurfaceOutpostProgress();
         if (clockActive) this._updateEconomySafely();
@@ -644,6 +671,13 @@ export class App {
             }
         }
 
+        if (buttons.circle.justPressed && this._boardingSessionActive()) {
+            this._recoverBoarding('explicit');
+            this.input.gamepad.pulse({ duration: 110, weak: 0.28, strong: 0.5 });
+            this._syncDebugDomState();
+            return;
+        }
+
         if (buttons.circle.pressed && this.shipControls.pilotActive) {
             this.input.gamepad.pulse({
                 duration: 90,
@@ -683,6 +717,11 @@ export class App {
         if (!(this.postFxConfig.hyperdrive?.enabled ?? true)) return;
         if (!input?.connected) return;
         if (!input.buttons?.r3?.justPressed) return;
+        if (this._boardingSessionActive()) {
+            this._recoverBoarding('explicit');
+            return;
+        }
+        if (!this.shipControls.pilotActive) return;
         if (this.shipControls.handleToggleKey('Space') === 'hyperdrive') {
             this._onHyperdriveToggled(input.source === 'webxr');
         }
@@ -724,7 +763,8 @@ export class App {
     // scene.
     _maybeRebaseOrigin({ force = false } = {}) {
         const surfaceActive = this.playerController.getState() === PLAYER_STATE.SURFACE;
-        const offset = surfaceActive
+        const boardingActive = this._boardingSessionActive();
+        const offset = surfaceActive || boardingActive
             ? this.playerRig.object3D.getWorldPosition(new THREE.Vector3())
             : this.ship.position.clone();
         if (!force && offset.lengthSq() < FLOAT_ORIGIN_THRESHOLD_SQ) return false;
@@ -732,9 +772,13 @@ export class App {
         if (surfaceActive) {
             this._moveObjectWorldBy(this.playerRig.object3D, offset.clone().negate());
             this.ship.object3D.position.sub(offset);
+        } else if (boardingActive) {
+            this.boardingPresentation.frame.position.sub(offset);
+            this.ship.object3D.position.sub(offset);
         } else {
             this.ship.object3D.position.set(0, 0, 0);
         }
+        if (!boardingActive) this.boardingPresentation?.rebaseOrigin(offset);
 
         // Shift the active navigation target coordinate by the rebase offset
         if (
@@ -794,6 +838,8 @@ export class App {
             this.economy?.syncSystem(systemId);
             this.condition?.syncSystem(systemId);
             this.combat?.syncSystem(systemId);
+            this.boarding?.syncSystem(systemId);
+            this._syncBoardingPresentation();
             return true;
         } catch (error) {
             this._recordRpgError('named-system sync', error);
@@ -927,6 +973,24 @@ export class App {
                 message: error instanceof Error ? error.message : String(error)
             };
             console.warn('Phase 17 patrol runtime unavailable; flight remains active.', error);
+            return null;
+        }
+    }
+
+    _createBoardingRuntimeSafely() {
+        try {
+            return new EvaBoardingRuntime({
+                slots: this.saveSlots,
+                rpg: this.rpg,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.boardingError = {
+                context: 'EVA boarding runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 21 EVA boarding unavailable; flight and tethered EVA remain active.', error);
+            this.boardingPresentation?.hide();
             return null;
         }
     }
@@ -1078,12 +1142,325 @@ export class App {
         else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
         else if (action === 'openCrew') this._openCrewPanel();
         else if (action === 'openSurfaceOutpost') this._openSurfaceOutpostPanel();
+        else if (action === 'beginBoardingEva') this._beginBoardingEva();
+        else if (action === 'enterDerelict') this._enterBoardingDerelict();
+        else if (action === 'recoverDerelictLog') this._recoverBoardingLog();
+        else if (action === 'exitDerelict') this._exitBoardingDerelict();
+        else if (action === 'returnBoardingShip') this._completeBoardingReturn();
         else if (action === 'takeControls' || action === 'leaveControls') this._onPilotModeChanged();
         else if (action === 'boardSurface') {
             const checkpoint = this.surfaceOutpost?.getState().progress.checkpoint;
             if (checkpoint === 'objective_complete') this.surfaceOutpost.recordBoarded();
         }
         return action;
+    }
+
+    _getBoardingContext() {
+        if (!this.boarding || !this.boardingPresentation) {
+            return {
+                available: false,
+                error: this.boardingError,
+                departure: { allowed: false, reason: this.boardingError?.message ?? 'EVA boarding is unavailable.' }
+            };
+        }
+        const state = this.boarding.getState();
+        const placement = this.environment?.getBoardingPlacement?.() ?? null;
+        const activeSession = state.player.location !== 'ship';
+        if (!this.boardingPresentation.frame.visible && (placement || activeSession)) {
+            if (activeSession) this.boardingPresentation.restoreSecured(this.ship);
+            else this.boardingPresentation.showAtWorldPosition(placement.position);
+        }
+        const derelictWorld = this.boardingPresentation.frame.visible
+            ? this.boardingPresentation.getDerelictWorldPosition(new THREE.Vector3())
+            : placement?.position ?? null;
+        const shipAirlockWorld = this.ship.getAnchorWorldPosition?.('exteriorSpawn', new THREE.Vector3())
+            ?? this.ship.position.clone();
+        const systemId = activeSession
+            ? BOARDING_SYSTEM_ID
+            : this._findActiveRpgNamedSystemId();
+        const distanceMetres = derelictWorld ? this.ship.position.distanceTo(derelictWorld) : Infinity;
+        const departure = this.boarding.evaluateDeparture({
+            systemId,
+            distanceMetres,
+            speedMetresPerSecond: this.ship.speed
+        });
+        return {
+            available: true,
+            state,
+            placement,
+            activeSession,
+            departure,
+            derelictWorld,
+            shipAirlockWorld,
+            hatchWorld: this.boardingPresentation.getHatchWorldPosition(new THREE.Vector3()),
+            interiorHatchWorld: this.boardingPresentation.getInteriorHatchWorldPosition(new THREE.Vector3()),
+            logWorld: this.boardingPresentation.getLogWorldPosition(new THREE.Vector3()),
+            logRecovered: Boolean(state.progress.logRecoveredAt)
+        };
+    }
+
+    _beginBoardingEva() {
+        const context = this._getBoardingContext();
+        if (!context?.departure?.allowed) {
+            this.boardingError = {
+                context: 'EVA departure',
+                message: context?.departure?.reason ?? 'EVA departure is unavailable.'
+            };
+            return false;
+        }
+        try {
+            this.ship.physics?.halt?.();
+            this.shipControls.hyperdriveEngaged = false;
+            this.autopilot.disengage();
+            this.shipControls.autopilotActive = false;
+            this.boardingPresentation.secureToShip(this.ship, context.derelictWorld);
+            const spawn = this.ship.getAnchorWorldPosition?.('exteriorSpawn', new THREE.Vector3())
+                ?? this.ship.position.clone();
+            this.playerController.enterUntetheredEva(this.boardingPresentation.frame, spawn);
+            const player = this.playerController.getPersistentPlayerState(
+                this.gameClock.getTime(),
+                BOARDING_LIMITS.oxygenSeconds
+            );
+            this.boarding.depart(player, {
+                systemId: BOARDING_SYSTEM_ID,
+                distanceMetres: context.derelictWorld.distanceTo(this.ship.position),
+                speedMetresPerSecond: 0
+            });
+            this.boardingError = null;
+            this._flashBoardingVeil();
+            return true;
+        } catch (error) {
+            this.playerController.returnFromBoarding();
+            this._syncBoardingPresentation();
+            this.boardingError = {
+                context: 'EVA departure',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return false;
+        }
+    }
+
+    _enterBoardingDerelict() {
+        const context = this._getBoardingContext();
+        try {
+            const playerWorld = this.playerRig.object3D.getWorldPosition(new THREE.Vector3());
+            const distanceMetres = playerWorld.distanceTo(context.hatchWorld);
+            this.boardingPresentation.setInteriorActive(true);
+            this.playerController.enterDerelictInterior(
+                this.boardingPresentation.getInteriorRoot(),
+                this.boardingPresentation.getInteriorSpawn()
+            );
+            this.boarding.enterDerelict(
+                this._captureBoardingPlayer(),
+                { distanceMetres }
+            );
+            this.boardingError = null;
+            this._flashBoardingVeil();
+            return true;
+        } catch (error) {
+            this.boardingPresentation.setInteriorActive(false);
+            if (this.playerController.getState() === PLAYER_STATE.DERELICT_INTERIOR) {
+                this.playerController.exitDerelictInterior(
+                    this.boardingPresentation.frame,
+                    this.boardingPresentation.getEvaHatchSpawnWorld(new THREE.Vector3())
+                );
+            }
+            this.boardingError = {
+                context: 'derelict entry',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return false;
+        }
+    }
+
+    _recoverBoardingLog() {
+        const context = this._getBoardingContext();
+        try {
+            const distanceMetres = this.playerRig.object3D
+                .getWorldPosition(new THREE.Vector3())
+                .distanceTo(context.logWorld);
+            const result = this.boarding.recoverLog(
+                this._captureBoardingPlayer(),
+                BOARDING_LOG_ID,
+                { distanceMetres }
+            );
+            this.boardingError = null;
+            return result;
+        } catch (error) {
+            this.boardingError = {
+                context: 'operations log recovery',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return false;
+        }
+    }
+
+    _exitBoardingDerelict() {
+        const context = this._getBoardingContext();
+        const previousPosition = this.playerRig.position.clone();
+        try {
+            const distanceMetres = this.playerRig.object3D
+                .getWorldPosition(new THREE.Vector3())
+                .distanceTo(context.interiorHatchWorld);
+            this.boardingPresentation.setInteriorActive(false);
+            this.playerController.exitDerelictInterior(
+                this.boardingPresentation.frame,
+                this.boardingPresentation.getEvaHatchSpawnWorld(new THREE.Vector3())
+            );
+            const result = this.boarding.exitDerelict(
+                this._captureBoardingPlayer(),
+                { distanceMetres }
+            );
+            this.boardingError = null;
+            this._flashBoardingVeil();
+            return result;
+        } catch (error) {
+            this.boardingPresentation.setInteriorActive(true);
+            if (this.playerController.getState() === PLAYER_STATE.EVA) {
+                this.playerController.enterDerelictInterior(
+                    this.boardingPresentation.getInteriorRoot(),
+                    previousPosition
+                );
+            }
+            this.boardingError = {
+                context: 'derelict exit',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return false;
+        }
+    }
+
+    _completeBoardingReturn() {
+        try {
+            this.playerController.returnFromBoarding();
+            const result = this.boarding.boardShip(this._captureBoardingPlayer());
+            this.boardingError = null;
+            this._syncBoardingPresentation();
+            this._flashBoardingVeil();
+            return result;
+        } catch (error) {
+            const savedPlayer = this.boarding?.getState().player;
+            if (savedPlayer && savedPlayer.location !== 'ship') {
+                this.playerController.restoreBoardingPlayer(savedPlayer, this.boardingPresentation);
+            }
+            this.boardingError = {
+                context: 'boarding return',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return false;
+        }
+    }
+
+    _recoverBoarding(reason = 'explicit') {
+        if (!this._boardingSessionActive()) return false;
+        try {
+            this.playerController.returnFromBoarding();
+            const result = this.boarding.recover(reason, this._captureBoardingPlayer());
+            this.boardingError = null;
+            this._syncBoardingPresentation();
+            this._flashBoardingVeil();
+            return result;
+        } catch (error) {
+            const savedPlayer = this.boarding?.getState().player;
+            if (savedPlayer && savedPlayer.location !== 'ship') {
+                this.playerController.restoreBoardingPlayer(savedPlayer, this.boardingPresentation);
+            }
+            this.boardingError = {
+                context: 'boarding recovery',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return false;
+        }
+    }
+
+    _captureBoardingPlayer() {
+        const live = this.boarding?.getState().player;
+        return this.playerController.getPersistentPlayerState(
+            live?.oxygenUpdatedAtGameTime ?? this.gameClock.getTime(),
+            live?.oxygenRemaining ?? BOARDING_LIMITS.oxygenSeconds
+        );
+    }
+
+    _updateBoarding() {
+        if (!this._boardingSessionActive()) return false;
+        const context = this._getBoardingContext();
+        const player = this._captureBoardingPlayer();
+        const playerWorld = this.playerRig.object3D.getWorldPosition(new THREE.Vector3());
+        const distanceFromShip = playerWorld.distanceTo(context.shipAirlockWorld);
+        try {
+            const result = this.boarding.updatePlayer(player, {
+                gameTime: this.gameClock.getTime(),
+                distanceFromShip
+            });
+            if (result.recovered) {
+                this.playerController.returnFromBoarding();
+                this._syncBoardingPresentation();
+                this._flashBoardingVeil();
+            }
+            return result;
+        } catch (error) {
+            this.boardingError = {
+                context: 'boarding update',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return false;
+        }
+    }
+
+    _boardingSessionActive() {
+        return Boolean(this.boarding && this.boarding.getState().player.location !== 'ship');
+    }
+
+    _restoreBoardingSession() {
+        if (!this.boarding || !this.boardingPresentation) return false;
+        try {
+            const state = this.boarding.reload();
+            if (state.player.location === 'ship') {
+                this.boardingPresentation.hide();
+                return false;
+            }
+            this.ship.physics?.halt?.();
+            this.boardingPresentation.restoreSecured(this.ship);
+            this.boardingPresentation.setInteriorActive(state.player.location === 'derelict');
+            this.playerController.restoreBoardingPlayer(state.player, this.boardingPresentation);
+            return true;
+        } catch (error) {
+            this.boardingError = {
+                context: 'boarding checkpoint restore',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            this.boardingPresentation.hide();
+            return false;
+        }
+    }
+
+    _syncBoardingPresentation() {
+        if (!this.boardingPresentation || !this.boarding) return null;
+        if (this._boardingSessionActive()) return this.boardingPresentation.getState();
+        const placement = this.environment?.getBoardingPlacement?.() ?? null;
+        if (placement) return this.boardingPresentation.showAtWorldPosition(placement.position);
+        this.boardingPresentation.hide();
+        return this.boardingPresentation.getState();
+    }
+
+    _flashBoardingVeil() {
+        let veil = document.querySelector('#boarding-transfer-veil');
+        if (!veil) {
+            veil = document.createElement('div');
+            veil.id = 'boarding-transfer-veil';
+            veil.style.cssText = [
+                'position:fixed',
+                'inset:0',
+                'background:#000',
+                'opacity:0',
+                'pointer-events:none',
+                'z-index:22',
+                'transition:opacity 140ms ease-out'
+            ].join(';');
+            document.body.appendChild(veil);
+        }
+        veil.style.opacity = '0.94';
+        requestAnimationFrame(() => requestAnimationFrame(() => { veil.style.opacity = '0'; }));
     }
 
     _syncSurfaceOutpostProgress() {
@@ -1678,6 +2055,7 @@ export class App {
         this.condition?.reload();
         this._refreshShipCapabilities();
         this.surfaceOutpost?.reload();
+        this.boarding?.reload();
         this.patrol?.reload();
         this.combat?.reload();
         this._observedPatrolSystemId = undefined;
@@ -1687,14 +2065,25 @@ export class App {
         this.combatWarningShown = false;
         this._closeCombatWarning();
         this._syncActiveRpgSystem();
+        this._restoreBoardingSession();
         this._syncCrewPresence();
         this._syncDebugDomState();
     }
 
     _checkpointGameClock(reason = 'clock-checkpoint') {
         if (!this.saveSlots || !this.rpg) return null;
+        if (this._boardingSessionActive()) {
+            this.boarding.checkpoint(this._captureBoardingPlayer(), reason);
+            const envelope = this.saveSlots.getActiveEnvelope();
+            this._lastClockCheckpoint = envelope.simulation.gameTime;
+            return envelope;
+        }
         const envelope = this.saveSlots.saveDomains(
-            { rpg: this.rpg.getState(), gameTime: this.gameClock.getTime() },
+            {
+                player: this.saveSlots.getActiveEnvelope().player,
+                rpg: this.rpg.getState(),
+                gameTime: this.gameClock.getTime()
+            },
             { kind: 'auto', reason }
         );
         this._lastClockCheckpoint = envelope.simulation.gameTime;
@@ -3274,6 +3663,18 @@ export class App {
                         this.surfaceOutpostMessage = error instanceof Error ? error.message : String(error);
                     }
                 }
+                if (poi.rpg?.boardingPoiId && this.boarding) {
+                    try {
+                        this.boarding.discover(poi.rpg.boardingPoiId, {
+                            systemId: poi.rpg.namedSystemId
+                        });
+                    } catch (error) {
+                        this.boardingError = {
+                            context: 'boarding navigation discovery',
+                            message: error instanceof Error ? error.message : String(error)
+                        };
+                    }
+                }
             }
             this._updateNavigationPanel();
             this._syncDebugDomState();
@@ -3415,6 +3816,22 @@ export class App {
             }
         }
         if (this.combatError) lines.push(`<span class="warn">${escapeHtml(this.combatError.message)}</span>`);
+        const boarding = this.boarding?.getState();
+        if (boarding && boarding.player.location !== 'ship') {
+            const spatial = this.playerController.getBoardingPlayerState?.();
+            const oxygen = boarding.player.oxygenRemaining;
+            const oxygenClass = oxygen <= 30 ? 'warn' : 'on';
+            lines.push(
+                `<b>EVA O2</b> <span class="${oxygenClass}">${oxygen.toFixed(0)}s</span>   `
+                + `<b>SHIP</b> ${(spatial?.shipDistance ?? 0).toFixed(1)}m   `
+                + `<b>WRECK</b> ${(spatial?.hatchDistance ?? 0).toFixed(1)}m`
+            );
+            lines.push(
+                `<b>BOARDING</b> ${escapeHtml(boarding.progress.checkpoint.toUpperCase())}   `
+                + '<span class="warn">Y / CIRCLE / A: SAFE RETURN</span>'
+            );
+        }
+        if (this.boardingError) lines.push(`<span class="warn">${escapeHtml(this.boardingError.message)}</span>`);
         if (this.cargoTerminalMessage) lines.push(`<span class="warn">${escapeHtml(this.cargoTerminalMessage)}</span>`);
         const patrolEncounter = this.patrol?.getState().activeEncounter;
         if (patrolEncounter) {
@@ -3445,7 +3862,13 @@ export class App {
             ? `<span class="warn">${scale.transition.toUpperCase()}…</span>`
             : `<span class="on">${scale.levelName}</span>`;
         lines.push(`<b>SCALE</b> ${scaleLabel} (tier ${scale.tier})`);
-        lines.push(`<b>ANCHOR</b> ${this.playerController.getState() === PLAYER_STATE.SURFACE ? 'PLAYER' : 'SHIP'}`);
+        lines.push(
+            `<b>ANCHOR</b> ${
+                this.playerController.getState() === PLAYER_STATE.SURFACE || this._boardingSessionActive()
+                    ? 'PLAYER'
+                    : 'SHIP'
+            }`
+        );
 
         // Planetary tier: surface altitude + landing readout.
         const landing = this.environment.getLandingState?.(this.ship.position);
@@ -3496,6 +3919,7 @@ export class App {
             universe: this.activeUniversePreset,
             nav: this.universeNavigation.getState(),
             hazard: this.debrisHazardState,
+            boarding: this.boarding?.getState() ?? null,
             prompt: this.cameraMode === 'player' ? this.playerController.getPrompt() : null
         });
     }
@@ -3615,6 +4039,13 @@ export class App {
                 return;
             }
 
+            if (event.code === 'KeyY' && !event.repeat && this._boardingSessionActive()) {
+                event.preventDefault();
+                this._recoverBoarding('explicit');
+                this._syncDebugDomState();
+                return;
+            }
+
             if (event.code === 'KeyY' && !event.repeat && this.combat?.getState().phase === 'defeated') {
                 event.preventDefault();
                 this._rescueCombatDefeat();
@@ -3719,7 +4150,8 @@ export class App {
             if (event.code === 'KeyT') {
                 event.preventDefault();
                 if (!event.repeat && this.cameraMode === 'player') {
-                    this.playerController.teleportEvaToggle?.();
+                    if (this._boardingSessionActive()) this._recoverBoarding('runtime-recovery');
+                    else this.playerController.teleportEvaToggle?.();
                     this.playerController.updateCamera(this.camera);
                     this._syncDebugDomState();
                 }
@@ -3739,7 +4171,12 @@ export class App {
             // Space toggles hyperdrive (PRECISION <-> HYPERDRIVE gear).
             if (event.code === 'Space') {
                 event.preventDefault();
-                if (!event.repeat && (this.postFxConfig.hyperdrive?.enabled ?? true)) {
+                if (
+                    !event.repeat
+                    && !this._boardingSessionActive()
+                    && this.shipControls.pilotActive
+                    && (this.postFxConfig.hyperdrive?.enabled ?? true)
+                ) {
                     if (this.shipControls.handleToggleKey('Space') === 'hyperdrive') {
                         this._onHyperdriveToggled();
                     }
@@ -4220,6 +4657,31 @@ export class App {
                 openTerminal: () => this._openSurfaceOutpostPanel(),
                 closeTerminal: () => this._closeSurfaceOutpostPanel()
             },
+            boarding: {
+                getState: () => this.boarding?.getState() ?? {
+                    available: false,
+                    error: this.boardingError
+                },
+                getDefinition: () => this.boarding?.getState().definition ?? null,
+                getPlacement: () => {
+                    const placement = this.environment?.getBoardingPlacement?.();
+                    return placement
+                        ? {
+                            definition: placement.definition,
+                            position: placement.position.toArray()
+                        }
+                        : null;
+                },
+                discover: () => this.boarding?.discover(BOARDING_DERELICT_ID, {
+                    systemId: BOARDING_SYSTEM_ID
+                }),
+                recover: (reason = 'runtime-recovery') => this._recoverBoarding(reason),
+                setOxygen: (seconds) => this.boarding?.setOxygenForDebug(seconds),
+                checkpoint: (reason = 'debug-boarding-checkpoint') => (
+                    this.boarding?.checkpoint(this._captureBoardingPlayer(), reason)
+                ),
+                getPresentationState: () => this.boardingPresentation?.getState() ?? null
+            },
             patrol: {
                 getState: () => this.patrol?.getState() ?? { unavailable: this.patrolError },
                 getInfluence: (systemId = 'entry_hub') => this.patrol?.getInfluence(systemId),
@@ -4385,12 +4847,22 @@ export class App {
                 return result ? this.playerController.getDebugState() : false;
             },
             boardShip: () => {
+                if (this._boardingSessionActive()) {
+                    return this._recoverBoarding('runtime-recovery');
+                }
                 const result = this.playerController.boardShip?.() ?? false;
                 this.playerController.updateCamera(this.camera);
                 this._syncDebugDomState();
                 return result ? this.playerController.getDebugState() : false;
             },
             teleportEvaToggle: () => {
+                if (this._boardingSessionActive()) {
+                    return {
+                        action: 'boardingRecovery',
+                        result: this._recoverBoarding('runtime-recovery'),
+                        player: this.playerController.getDebugState()
+                    };
+                }
                 const action = this.playerController.teleportEvaToggle?.() ?? false;
                 this.playerController.updateCamera(this.camera);
                 this._syncDebugDomState();
@@ -4680,6 +5152,11 @@ export class App {
                 available: false,
                 error: this.surfaceOutpostError
             },
+            boarding: this.boarding?.getState() ?? {
+                available: false,
+                error: this.boardingError
+            },
+            boardingPresentation: this.boardingPresentation?.getState() ?? null,
             patrol: this.patrol?.getState() ?? {
                 available: false,
                 error: this.patrolError
@@ -4717,11 +5194,12 @@ export class App {
 
     _getActiveAnchorState() {
         const surfaceActive = this.playerController.getState() === PLAYER_STATE.SURFACE;
-        const position = surfaceActive
+        const boardingActive = this._boardingSessionActive();
+        const position = surfaceActive || boardingActive
             ? this.playerRig.object3D.getWorldPosition(new THREE.Vector3())
             : this.ship.position.clone();
         return {
-            kind: surfaceActive ? 'player' : 'ship',
+            kind: surfaceActive || boardingActive ? 'player' : 'ship',
             position: position.toArray(),
             distanceFromOrigin: position.length()
         };

@@ -2,6 +2,7 @@ import { createInitialNpcState } from './npcs.js';
 import { createInitialSurfaceState } from './surfaceOutposts.js';
 import { createInitialPatrolState, migratePatrolStateV1 } from './patrols.js';
 import { createInitialCombatState } from './combat.js';
+import { createInitialBoardingState } from './boarding.js';
 import { RPG_STATE_VERSION } from './state.js';
 
 // Add one entry per historical version when RPG_STATE_VERSION is increased.
@@ -23,7 +24,8 @@ export const RPG_STATE_MIGRATIONS = Object.freeze({
         patrol: state.patrol?.version === 2
             ? structuredClone(state.patrol)
             : migratePatrolStateV1(state.patrol)
-    })
+    }),
+    7: (state) => ({ ...state, version: 8, boarding: createInitialBoardingState() })
 });
 
 export function migrateRpgState(value) {

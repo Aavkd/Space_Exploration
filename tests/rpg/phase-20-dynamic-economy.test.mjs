@@ -113,7 +113,7 @@ function downgradePatrolToV1(patrol) {
     };
 }
 
-test('Phase 19 version-8 save migrates to version 9 without offline economy catch-up', () => {
+test('Phase 19 version-8 save migrates through Phase 21 without offline economy catch-up', () => {
     const current = createSaveEnvelope({
         slotId: 'slot-phase20-migration',
         now: '2026-06-27T00:00:00.000Z',
@@ -127,10 +127,10 @@ test('Phase 19 version-8 save migrates to version 9 without offline economy catc
     delete previous.simulation.economy;
 
     const migrated = sanitizeSaveEnvelope(previous);
-    assert.equal(migrated.version, 9);
-    assert.equal(migrated.rpg.version, 7);
+    assert.equal(migrated.version, 10);
+    assert.equal(migrated.rpg.version, 8);
     assert.equal(migrated.rpg.patrol.version, 2);
-    assert.equal(migrated.autosave.reason, 'phase-20-v8');
+    assert.equal(migrated.autosave.reason, 'phase-21-v9');
     assert.equal(migrated.simulation.economy.lastTickGameTime, 1234);
     assert.equal(migrated.ship.credits, 1150);
     assert.deepEqual(

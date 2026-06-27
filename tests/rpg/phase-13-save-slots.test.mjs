@@ -42,7 +42,7 @@ test('Phase 11 version-1 fixture migrates into a version-2 envelope without outc
     const { slots } = createHarness({ storage });
     const envelope = slots.getActiveEnvelope();
 
-    assert.equal(envelope.version, 9);
+    assert.equal(envelope.version, 10);
     assert.equal(envelope.autosave.kind, 'migration');
     assert.equal(envelope.autosave.reason, 'phase-11-v1');
     assert.equal(envelope.rpg.missions.byId.port_meridian_route_packet.outcomeId, 'commonwealth');
@@ -54,7 +54,9 @@ test('Phase 11 version-1 fixture migrates into a version-2 envelope without outc
     );
     assert.equal(envelope.rpg.eventLog.length, 2);
     assert.equal(envelope.rpg.worldFlags['port_meridian.route_packet_owner'], 'commonwealth');
-    assert.deepEqual(envelope.player, {});
+    assert.equal(envelope.player.version, 1);
+    assert.equal(envelope.player.location, 'ship');
+    assert.equal(envelope.player.encounterId, null);
     assert.equal(envelope.ship.version, 2);
     assert.equal(envelope.ship.credits, 300);
     assert.deepEqual(envelope.settings, {});
@@ -108,7 +110,7 @@ test('validated import creates a new slot and rejects changed, corrupt, and futu
     assert.equal(slots.getStatus().activeSlotId, originalId);
     assert.throws(() => slots.previewImport('{broken'), /Save import rejected/);
     const future = JSON.stringify({ ...JSON.parse(exported), version: 99 });
-    assert.throws(() => slots.previewImport(future), /newer than supported version 9/);
+    assert.throws(() => slots.previewImport(future), /newer than supported version 10/);
     assert.equal(slots.listSlots().length, 1);
 
     const imported = slots.importPreviewed(exported, slots.previewImport(exported).token);

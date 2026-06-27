@@ -13,6 +13,7 @@ export {
     migrateVersion6Envelope,
     migrateVersion7Envelope,
     migrateVersion8Envelope,
+    migrateVersion9Envelope,
     sanitizeSaveEnvelope
 } from './SaveEnvelope.js';
 export {

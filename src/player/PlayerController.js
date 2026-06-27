@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { RelativeLocomotion } from './RelativeLocomotion.js';
 import { SurfaceLocomotion } from './SurfaceLocomotion.js';
+import {
+    BOARDING_ENCOUNTER_ID,
+    BOARDING_LIMITS
+} from '../rpg/boarding.js';
 
 // Player states. Locomotion and piloting are deliberately SEPARATE states:
 //   WALKING  - on foot inside the ship, ship-local relative locomotion.
@@ -13,7 +17,8 @@ export const PLAYER_STATE = Object.freeze({
     WALKING: 'walking',
     PILOTING: 'piloting',
     EVA: 'eva',
-    SURFACE: 'surface'
+    SURFACE: 'surface',
+    DERELICT_INTERIOR: 'derelict-interior'
 });
 
 const LOOK_SENSITIVITY = 0.0022; // rad per pixel
@@ -39,7 +44,9 @@ export class PlayerController {
         surfaceLocomotion,
         getSurfaceProvider = () => null,
         getSurfaceParent = () => null,
-        getSurfaceInteraction = () => null
+        getSurfaceInteraction = () => null,
+        getBoardingContext = () => null,
+        derelictLocomotion = null
     } = {}) {
         this.ship = ship;
         this.rig = playerRig;
@@ -49,6 +56,21 @@ export class PlayerController {
         this.getSurfaceProvider = getSurfaceProvider;
         this.getSurfaceParent = getSurfaceParent;
         this.getSurfaceInteraction = getSurfaceInteraction;
+        this.getBoardingContext = getBoardingContext;
+        this.derelictLocomotion = derelictLocomotion ?? new RelativeLocomotion({
+            volumes: [{
+                id: 'wayfarerDerelictRoom',
+                min: [
+                    BOARDING_LIMITS.interiorBounds.minX,
+                    BOARDING_LIMITS.interiorBounds.minZ
+                ],
+                max: [
+                    BOARDING_LIMITS.interiorBounds.maxX,
+                    BOARDING_LIMITS.interiorBounds.maxZ
+                ]
+            }],
+            config: { walkSpeed: 2.4, runSpeed: 3.2, deckHeight: 0 }
+        });
 
         this.state = PLAYER_STATE.WALKING;
         this.prompt = null;
@@ -79,6 +101,7 @@ export class PlayerController {
         this._surfaceSpawn = new THREE.Vector3();
         this._shipOutward = new THREE.Vector3();
         this._surfaceForward = new THREE.Vector3();
+        this.evaVelocity = new THREE.Vector3();
 
         this._enterWalking(this.anchorPoints.interiorSpawn?.pos);
     }
@@ -140,6 +163,12 @@ export class PlayerController {
             case 'openCrew':
                 return action;
             case 'openSurfaceOutpost':
+                return action;
+            case 'beginBoardingEva':
+            case 'enterDerelict':
+            case 'recoverDerelictLog':
+            case 'exitDerelict':
+            case 'returnBoardingShip':
                 return action;
             case 'leaveControls':
                 this._leaveControls();
@@ -205,6 +234,7 @@ export class PlayerController {
         if (this.state === PLAYER_STATE.WALKING) this._updateWalking(dt, keys, gamepad);
         else if (this.state === PLAYER_STATE.EVA) this._updateEVA(dt, keys, gamepad);
         else if (this.state === PLAYER_STATE.SURFACE) this._updateSurface(dt, keys, gamepad);
+        else if (this.state === PLAYER_STATE.DERELICT_INTERIOR) this._updateDerelict(dt, keys, gamepad);
         // PILOTING: the rig stays anchored at the seat; the ship is flown by
         // ShipControls from App._tick. Head look is applied via applyMouseLook.
 
@@ -230,9 +260,25 @@ export class PlayerController {
             strafe: clampAxis(axis(keys, WALK_KEYS.strafeRight, WALK_KEYS.strafeLeft) + (axes?.leftX ?? 0)),
             vertical: clampAxis(axis(keys, WALK_KEYS.up, WALK_KEYS.down) + buttonAxis(button('dpadUp'), button('dpadDown')))
         };
-        const boost = !this.comfortMode && (keys.has(WALK_KEYS.run) || button('cross'));
+        const untethered = this.rig.state.referenceFrame === 'boarding-local';
+        const boost = !untethered && !this.comfortMode && (keys.has(WALK_KEYS.run) || button('cross'));
         const orientation = this.rig.getLocalOrientation(this._orientation);
-        this.locomotion.floatEVA(this.rig.position, orientation, move, dt, { boost });
+        if (untethered) {
+            this.locomotion.floatEVAInertial(
+                this.rig.position,
+                this.evaVelocity,
+                orientation,
+                move,
+                dt,
+                {
+                    acceleration: BOARDING_LIMITS.evaAcceleration,
+                    maxSpeed: BOARDING_LIMITS.evaMaxSpeed,
+                    damping: BOARDING_LIMITS.evaDamping
+                }
+            );
+        } else {
+            this.locomotion.floatEVA(this.rig.position, orientation, move, dt, { boost });
+        }
     }
 
     _updateSurface(dt, keys, gamepad) {
@@ -247,6 +293,15 @@ export class PlayerController {
         const run = !this.comfortMode && keys.has(WALK_KEYS.run);
         const step = this.surfaceLocomotion.walk(this.rig.position, this.rig.yaw, move, dt, { run });
         this._applySurfaceFrame(step);
+    }
+
+    _updateDerelict(dt, keys, gamepad) {
+        const axes = gamepad?.connected ? gamepad.axes : null;
+        const move = {
+            forward: clampAxis(axis(keys, WALK_KEYS.forward, WALK_KEYS.back) - (axes?.leftY ?? 0)),
+            strafe: clampAxis(axis(keys, WALK_KEYS.strafeRight, WALK_KEYS.strafeLeft) + (axes?.leftX ?? 0))
+        };
+        this.derelictLocomotion.walk(this.rig.position, this.rig.yaw, move, dt, { run: false });
     }
 
     /** Place App.camera at the rig's converted world pose. */
@@ -269,11 +324,31 @@ export class PlayerController {
             if (this._near('cargoTerminalStation')) return 'openCargoTerminal';
             if (this._near('crewMessAnchor') && this.ship.isCrewAvatarVisible?.()) return 'openCrew';
             if (this._near('pilotControls')) return 'takeControls';
-            if (this._near('exitAirlock')) return this._canSurfaceDisembark() ? 'disembarkSurface' : 'exitAirlock';
+            if (this._near('exitAirlock')) {
+                const boarding = this._boardingContext();
+                if (
+                    boarding?.departure?.allowed
+                    || (
+                        boarding?.state?.activeSystemId === 'drifter_convergence'
+                        && !['undiscovered', 'completed'].includes(boarding?.state?.progress?.checkpoint)
+                    )
+                ) {
+                    return 'beginBoardingEva';
+                }
+                return this._canSurfaceDisembark() ? 'disembarkSurface' : 'exitAirlock';
+            }
             return null;
         }
 
         if (this.state === PLAYER_STATE.EVA) {
+            if (this.rig.state.referenceFrame === 'boarding-local') {
+                const boarding = this._boardingContext();
+                if (this._nearWorld(boarding?.shipAirlockWorld, 2.6)) return 'returnBoardingShip';
+                if (this._nearWorld(boarding?.hatchWorld, BOARDING_LIMITS.hatchRangeMetres)) {
+                    return 'enterDerelict';
+                }
+                return null;
+            }
             if (this._near('exteriorSpawn', 2.2) || this._near('exitAirlock', 2.6)) return 'enterShip';
             return null;
         }
@@ -282,6 +357,16 @@ export class PlayerController {
             const interaction = this._surfaceInteraction();
             if (interaction?.available) return 'openSurfaceOutpost';
             if (this._nearSurfaceBoardPoint()) return 'boardSurface';
+            return null;
+        }
+        if (this.state === PLAYER_STATE.DERELICT_INTERIOR) {
+            const boarding = this._boardingContext();
+            if (!boarding?.logRecovered && this._nearWorld(boarding?.logWorld, BOARDING_LIMITS.logRangeMetres)) {
+                return 'recoverDerelictLog';
+            }
+            if (this._nearWorld(boarding?.interiorHatchWorld, BOARDING_LIMITS.hatchRangeMetres)) {
+                return 'exitDerelict';
+            }
             return null;
         }
         return null;
@@ -328,6 +413,16 @@ export class PlayerController {
                 return 'Press C / Triangle - board the ship';
             case 'openSurfaceOutpost':
                 return 'Press C / Triangle - access outpost terminal';
+            case 'beginBoardingEva':
+                return 'Press C / Triangle - secure ship and begin untethered EVA';
+            case 'enterDerelict':
+                return 'Press C / Triangle - enter the Wayfarer wreck';
+            case 'recoverDerelictLog':
+                return 'Press C / Triangle - recover the operations log';
+            case 'exitDerelict':
+                return 'Press C / Triangle - exit the Wayfarer wreck';
+            case 'returnBoardingShip':
+                return 'Press C / Triangle - return aboard';
             default:
                 return null;
         }
@@ -366,6 +461,8 @@ export class PlayerController {
             prompt: this.prompt,
             lastStep: this.state === PLAYER_STATE.SURFACE ? this.surfaceLocomotion.lastStep : this.locomotion.lastStep,
             surface
+            ,
+            boarding: this.getBoardingPlayerState()
         };
     }
 
@@ -429,6 +526,104 @@ export class PlayerController {
         this.rig.setBodyVisible(false);
         this.state = PLAYER_STATE.EVA;
         this.shipControls?.setPilotActive(false);
+        this.evaVelocity.set(0, 0, 0);
+    }
+
+    enterUntetheredEva(frame, worldSpawn) {
+        if (!frame || !worldSpawn?.isVector3) throw new Error('Untethered EVA requires a boarding frame and spawn.');
+        frame.attach(this.rig.object3D);
+        this.rig.position.copy(frame.worldToLocal(worldSpawn.clone()));
+        this.rig.setReferenceFrame('boarding-local');
+        this.rig.setLook(-Math.PI / 2, 0);
+        this.rig.setBodyVisible(false);
+        this.evaVelocity.set(0, 0, 0);
+        this.shipControls?.setPilotActive(false);
+        this.state = PLAYER_STATE.EVA;
+        return this.getDebugState();
+    }
+
+    enterDerelictInterior(interiorRoot, localSpawn) {
+        if (!interiorRoot || !localSpawn?.isVector3) throw new Error('Derelict entry requires an interior root and spawn.');
+        interiorRoot.add(this.rig.object3D);
+        this.rig.position.copy(localSpawn);
+        this.rig.setReferenceFrame('derelict-local');
+        this.rig.setLook(Math.PI, 0);
+        this.rig.setBodyVisible(false);
+        this.evaVelocity.set(0, 0, 0);
+        this.state = PLAYER_STATE.DERELICT_INTERIOR;
+        return this.getDebugState();
+    }
+
+    exitDerelictInterior(frame, worldSpawn) {
+        if (!frame || !worldSpawn?.isVector3) throw new Error('Derelict exit requires a boarding frame and spawn.');
+        frame.add(this.rig.object3D);
+        this.rig.position.copy(frame.worldToLocal(worldSpawn.clone()));
+        this.rig.setReferenceFrame('boarding-local');
+        this.rig.setLook(Math.PI, 0);
+        this.evaVelocity.set(0, 0, 0);
+        this.state = PLAYER_STATE.EVA;
+        return this.getDebugState();
+    }
+
+    returnFromBoarding() {
+        this._ensureRigParent(this.ship.interiorRoot);
+        const airlock = this.anchorPoints.exitAirlock ?? this.anchorPoints.interiorSpawn;
+        const inside = airlock ? new THREE.Vector3(airlock.pos.x, 0, airlock.pos.z) : null;
+        this.evaVelocity.set(0, 0, 0);
+        this._enterWalking(inside, { yaw: 0 });
+        return this.getDebugState();
+    }
+
+    restoreBoardingPlayer(player, presentation) {
+        if (player.location === 'ship') return this.returnFromBoarding();
+        if (!presentation?.frame) throw new Error('Boarding restore requires a presentation frame.');
+        if (player.location === 'eva') {
+            presentation.frame.add(this.rig.object3D);
+            this.rig.position.fromArray(player.position);
+            this.rig.setReferenceFrame('boarding-local');
+            this.evaVelocity.fromArray(player.velocity);
+            this.state = PLAYER_STATE.EVA;
+        } else {
+            const interiorRoot = presentation.getInteriorRoot();
+            interiorRoot.add(this.rig.object3D);
+            this.rig.position.fromArray(player.position);
+            this.rig.setReferenceFrame('derelict-local');
+            this.evaVelocity.set(0, 0, 0);
+            this.state = PLAYER_STATE.DERELICT_INTERIOR;
+        }
+        this.rig.setLook(player.yaw, player.pitch);
+        this.rig.setBodyVisible(false);
+        this.shipControls?.setPilotActive(false);
+        return this.getDebugState();
+    }
+
+    getPersistentPlayerState(gameTime, oxygenRemaining = BOARDING_LIMITS.oxygenSeconds) {
+        if (this.rig.state.referenceFrame === 'boarding-local') {
+            return persistentPlayer('eva', 'boarding-local', this.rig, this.evaVelocity, gameTime, oxygenRemaining);
+        }
+        if (this.rig.state.referenceFrame === 'derelict-local') {
+            return persistentPlayer(
+                'derelict',
+                'derelict-local',
+                this.rig,
+                new THREE.Vector3(),
+                gameTime,
+                oxygenRemaining
+            );
+        }
+        return persistentPlayer('ship', 'ship-local', this.rig, new THREE.Vector3(), gameTime, BOARDING_LIMITS.oxygenSeconds);
+    }
+
+    getBoardingPlayerState() {
+        if (!['boarding-local', 'derelict-local'].includes(this.rig.state.referenceFrame)) return null;
+        const boarding = this._boardingContext();
+        return {
+            referenceFrame: this.rig.state.referenceFrame,
+            velocity: this.evaVelocity.toArray(),
+            shipDistance: worldDistance(this.rig.object3D, boarding?.shipAirlockWorld),
+            hatchDistance: worldDistance(this.rig.object3D, boarding?.hatchWorld),
+            logDistance: worldDistance(this.rig.object3D, boarding?.logWorld)
+        };
     }
 
     _enterFromEVA() {
@@ -528,9 +723,39 @@ export class PlayerController {
         return this.getSurfaceInteraction?.(this._worldPos) ?? null;
     }
 
+    _boardingContext() {
+        return this.getBoardingContext?.() ?? null;
+    }
+
+    _nearWorld(position, radius) {
+        if (!position?.isVector3) return false;
+        this.rig.object3D.getWorldPosition(this._worldPos);
+        return this._worldPos.distanceTo(position) <= radius;
+    }
+
     _ensureRigParent(parent) {
         if (parent && this.rig.object3D.parent !== parent) parent.add(this.rig.object3D);
     }
+}
+
+function persistentPlayer(location, referenceFrame, rig, velocity, gameTime, oxygenRemaining) {
+    return {
+        version: 1,
+        location,
+        referenceFrame,
+        encounterId: location === 'ship' ? null : BOARDING_ENCOUNTER_ID,
+        position: rig.position.toArray(),
+        velocity: velocity.toArray(),
+        yaw: rig.yaw,
+        pitch: rig.pitch,
+        oxygenRemaining,
+        oxygenUpdatedAtGameTime: gameTime
+    };
+}
+
+function worldDistance(object, position) {
+    if (!position?.isVector3) return null;
+    return object.getWorldPosition(new THREE.Vector3()).distanceTo(position);
 }
 
 function axis(keys, positive, negative) {

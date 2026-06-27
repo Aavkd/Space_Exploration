@@ -369,6 +369,12 @@ Acceptance:
 
 ### Phase 21 - Untethered EVA And Derelict Boarding
 
+**Status:** Implementation and T0–T3 automated verification complete with 83
+passing RPG regressions and 112 source files passing syntax checks. Owner-
+performed Chromium normal-control, checkpoint, gamepad, and PCVR/WebXR signoff
+remains open, so the phase is partial; see
+[`phase-21-eva-boarding.md`](phase-21-eva-boarding.md).
+
 **Proof loop:** secure the ship near a derelict, EVA across, enter, recover one
 item/log, and return.
 

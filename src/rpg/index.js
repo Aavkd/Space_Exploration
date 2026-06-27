@@ -3,6 +3,25 @@ export { RPG_STATE_MIGRATIONS, migrateRpgState } from './migrations.js';
 export { RpgRuntime, createRpgRuntime } from './RpgRuntime.js';
 export { DELIVERY_MISSION_ID, DeliveryRuntime } from './DeliveryRuntime.js';
 export {
+    BOARDING_CHECKPOINTS,
+    BOARDING_DEFINITION,
+    BOARDING_DERELICT_ID,
+    BOARDING_ENCOUNTER_ID,
+    BOARDING_LIMITS,
+    BOARDING_LOG_ID,
+    BOARDING_MISSION_ID,
+    BOARDING_RECOVERY_REASONS,
+    BOARDING_SYSTEM_ID,
+    advanceEvaMotion,
+    boardingCheckpointIndex,
+    consumeBoardingOxygen,
+    createInitialBoardingState,
+    evaluateBoardingSecureGate,
+    findBoardingPoiForSystem,
+    getBoardingDefinition,
+    sanitizeBoardingState
+} from './boarding.js';
+export {
     ECONOMY_SEED,
     ECONOMY_STATE_VERSION,
     ECONOMY_TICK_SECONDS,
@@ -23,6 +42,7 @@ export {
     sanitizeEconomyState
 } from './economy.js';
 export { SurfaceOutpostRuntime } from './SurfaceOutpostRuntime.js';
+export { EvaBoardingRuntime } from './EvaBoardingRuntime.js';
 export { PATROL_PHASE_DURATIONS, PatrolRuntime } from './PatrolRuntime.js';
 export {
     COMBAT_FIXED_STEP,

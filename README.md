@@ -29,6 +29,8 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
   Phase 18 repair consequences.
 - Three seeded markets with active-play production/consumption, bounded integer
   prices and stock, atomic trade, stale remote reports, and contraband appraisal.
+- A non-hostile Wayfarer derelict loop with secured untethered EVA, active-play
+  oxygen, one placeholder interior, exact-once log recovery, and safe return.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -45,8 +47,8 @@ Then open [http://localhost:5177/](http://localhost:5177/).
 
 The dependency-free RPG suite covers missions, slots and clock, cargo/fuel,
 crew, surface placement, faction patrol, condition/repair, ship combat, and the
-Phase 20 economy's migration, deterministic failures, atomicity, checkpoint
-reloads, and long-run invariants:
+Phase 20 economy plus Phase 21 boarding migration, deterministic failures,
+atomicity, checkpoint reloads, recovery, and long-run invariants:
 
 ```powershell
 node --experimental-default-type=module --test tests/rpg/*.test.mjs
@@ -96,6 +98,7 @@ Notes:
 | `R` / `F` | EVA up / down |
 | `C` | Contextual interact: take controls, open cockpit comms, leave controls, exit airlock, re-enter ship |
 | `T` | Teleport/toggle inside-outside EVA for testing |
+| `Y` | Safe return during Wayfarer boarding EVA/interior |
 | `V` | Return to the first-person player camera |
 
 ### Piloting
@@ -157,8 +160,9 @@ window.__deepSpaceDebug.rpg.reset();
 Walk to the observation-bay ship computer and press `C` / Triangle / XR select
 to inspect `A Clean Copy`, manage three isolated local slots, export validated
 JSON, preview/import it into a new slot, and inspect active-play time. Phase 11
-version-1 browser saves migrate automatically through the current Phase 20
-version-9 envelope / ship version 2 / RPG version 7; Phase 13–19 slots migrate
+version-1 browser saves migrate automatically through the current Phase 21
+version-10 envelope / player version 1 / ship version 2 / RPG version 8;
+Phase 13–20 slots migrate
 non-destructively.
 There is no cloud synchronization or offline simulation.
 
@@ -240,6 +244,25 @@ from Commonwealth patrols at Port Meridian. Authored destinations reserve
 navigation-computer rows before procedural systems, so all three markets remain
 visible in the eight-entry cockpit list.
 
+### Untethered EVA and derelict boarding
+
+Phase 21 adds the peaceful `Wayfarer Survey Wreck [EVA]` contact:
+
+1. Travel to `Wayfarer Exchange [RPG]`, enter its system, and lock the pinned
+   wreck contact on the cockpit navigation computer.
+2. Approach within 75 m, slow below 1.5 m/s, leave the controls, and walk to the
+   airlock.
+3. Press `C` / Triangle / XR select to secure the ship and begin untethered EVA.
+   Use the existing EVA movement controls to cross to the cyan-lit hatch.
+4. Enter the one-room wreck, recover its operations log, exit, and return through
+   the ship airlock.
+
+The HUD shows the 180-second active-play oxygen budget and range to the ship and
+wreck. `Y`, gamepad Circle, or the XR right-face/A button performs a consequence-
+free safe return. Oxygen exhaustion or exceeding 150 m recovers automatically.
+Returning before the log leaves the mission retryable; returning with it resolves
+the objective exactly once.
+
 ### Gamepad and VR
 
 - DualSense and standard gamepads are supported on desktop and in VR.
@@ -305,6 +328,10 @@ window.__deepSpaceDebug.economy.getState();
 window.__deepSpaceDebug.economy.getReports();
 window.__deepSpaceDebug.economy.buy('field_rations', 1);
 window.__deepSpaceDebug.economy.sell('field_rations', 1);
+window.__deepSpaceDebug.boarding.getState();
+window.__deepSpaceDebug.boarding.getPlacement();
+window.__deepSpaceDebug.boarding.recover();
+window.__deepSpaceDebug.boarding.setOxygen(30);
 ```
 
 The Phase 11A-E implementation and verification checklist are documented in
@@ -329,6 +356,7 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-18-ship-condition.md](docs/phase-18-ship-condition.md) - persistent condition, one-shot salvage/hazard, repair inventory, and recovery
 - [docs/phase-19-ship-combat.md](docs/phase-19-ship-combat.md) - opt-in targeting, weapons, Tier 2 enemy, damage, recovery, and cleanup
 - [docs/phase-20-dynamic-economy.md](docs/phase-20-dynamic-economy.md) - three markets, active-play ticks, atomic trade, stale intel, and contraband value
+- [docs/phase-21-eva-boarding.md](docs/phase-21-eva-boarding.md) - secured untethered EVA, one derelict interior, log recovery, and safe return
 - [docs/rpg-future-development-roadmap.md](docs/rpg-future-development-roadmap.md) - post-Phase-11 vertical slices, dependencies, tests, and acceptance gates
 - [docs/rpg-phase-agent-prompts.md](docs/rpg-phase-agent-prompts.md) - copy-paste implementation prompts for each future RPG phase
 
@@ -336,7 +364,9 @@ The Phase 11A-E implementation and verification checklist are documented in
 
 - The imported ship mesh is heavy for VR and may need a decimated or LOD variant for sustained headset performance.
 - The interior collision model is an abstract ship-local blockout, not full collision against the authored GLB interior.
-- Untethered world-frame EVA, full physical hazards, and a 3D radar/map are still future work.
+- Phase 21 untethered EVA is limited to one secured, 150 m encounter frame; free
+  world-frame EVA, moving-ship assault, full physical hazards, and a 3D radar/map
+  remain future work.
 - Phase 20 is a three-market proof only. It has no docking, cargo meshes, NPC
   logistics, crafting, finance, autonomous faction budgets, or offline
   simulation. Full normal-control route, gamepad, and PCVR signoff is pending.
@@ -355,3 +385,7 @@ The Phase 11A-E implementation and verification checklist are documented in
   fleets, missiles, shields, capital ships, boarding, ammunition, or equipment
   progression. Full browser normal-control, gamepad, and PCVR device signoff
   remains pending.
+- Phase 21 has one peaceful placeholder wreck and a single abstract room. There
+  is no docking, hostile boarding, close-quarters combat, general loot,
+  procedural interior generation, or life-support-condition coupling. Automated
+  verification passes; owner-performed browser/gamepad/PCVR signoff remains open.

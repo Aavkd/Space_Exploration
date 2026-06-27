@@ -1,0 +1,150 @@
+{
+  "version": 9,
+  "slot": {
+    "id": "slot-phase21-fixture",
+    "name": "Phase 20 Fixture",
+    "createdAt": "2026-06-27T22:00:00.000Z",
+    "updatedAt": "2026-06-27T22:00:00.000Z"
+  },
+  "autosave": {
+    "kind": "auto",
+    "reason": "phase-20-fixture",
+    "savedAt": "2026-06-27T22:00:00.000Z",
+    "sequence": 20
+  },
+  "player": {},
+  "ship": {
+    "version": 2,
+    "credits": 2345,
+    "fuel": { "current": 100, "capacity": 100, "reserve": 15 },
+    "cargo": { "capacityMass": 40, "stacks": [] },
+    "travel": { "currentSystemId": null, "pendingJump": null },
+    "condition": {
+      "hull": { "current": 100, "maximum": 100 },
+      "systems": {
+        "engine": { "condition": 100 },
+        "hyperdrive": { "condition": 100 },
+        "sensors": { "condition": 100 },
+        "comms": { "condition": 100 },
+        "life_support": { "condition": 100 },
+        "weapons": { "condition": 100 }
+      }
+    },
+    "inventory": { "repairParts": 0, "hullPlates": 0 },
+    "maintenance": {
+      "salvageSources": {
+        "index_k7_derelict_cache": { "claimed": false, "claimedAtGameTime": null }
+      },
+      "hazards": {
+        "index_k7_micrometeoroid_shear": { "triggered": false, "triggeredAtGameTime": null }
+      }
+    }
+  },
+  "rpg": {
+    "version": 7,
+    "createdAt": "2026-06-26T00:00:00.000Z",
+    "updatedAt": "2026-06-27T22:00:00.000Z",
+    "factions": { "byId": {} },
+    "namedSystems": { "byId": {} },
+    "contacts": { "byId": {} },
+    "missions": { "byId": {} },
+    "patrol": {
+      "version": 2,
+      "presenceSystemId": null,
+      "nextSequence": 1,
+      "activeEncounter": null,
+      "history": []
+    },
+    "combat": {
+      "version": 1,
+      "enemy": {
+        "id": "scavenger_red_knife",
+        "disposition": "available",
+        "destroyedAtGameTime": null
+      },
+      "wreck": {
+        "id": "scavenger_red_knife_wreck",
+        "claimed": false,
+        "claimedAtGameTime": null
+      },
+      "lastOutcome": null,
+      "history": []
+    },
+    "comms": { "activeContactId": null, "llmFlavorEnabled": false },
+    "eventLog": [],
+    "worldFlags": { "phase20.fixture-preserved": true }
+  },
+  "simulation": {
+    "gameTime": 321,
+    "economy": {
+      "version": 1,
+      "seed": "deep-space-vr-economy-v1",
+      "lastTickGameTime": 321,
+      "nextLedgerSequence": 1,
+      "markets": {
+        "byId": {
+          "port_meridian_exchange": {
+            "id": "port_meridian_exchange",
+            "systemId": "entry_hub",
+            "lastUpdatedAtGameTime": 321,
+            "goods": {
+              "field_rations": { "stock": 80 },
+              "navigation_components": { "stock": 15 },
+              "unregistered_signal_scrambler": { "stock": 5 }
+            }
+          },
+          "index_k7_exchange": {
+            "id": "index_k7_exchange",
+            "systemId": "index_hq",
+            "lastUpdatedAtGameTime": 321,
+            "goods": {
+              "field_rations": { "stock": 20 },
+              "navigation_components": { "stock": 80 },
+              "unregistered_signal_scrambler": { "stock": 20 }
+            }
+          },
+          "wayfarer_exchange": {
+            "id": "wayfarer_exchange",
+            "systemId": "drifter_convergence",
+            "lastUpdatedAtGameTime": 321,
+            "goods": {
+              "field_rations": { "stock": 17 },
+              "navigation_components": { "stock": 25 },
+              "unregistered_signal_scrambler": { "stock": 70 }
+            }
+          }
+        }
+      },
+      "intel": {
+        "byMarketId": {
+          "port_meridian_exchange": {
+            "observedAtGameTime": 321,
+            "goods": {
+              "field_rations": { "stock": 80, "buyPrice": 8, "sellPrice": 6 },
+              "navigation_components": { "stock": 15, "buyPrice": 44, "sellPrice": 38 },
+              "unregistered_signal_scrambler": { "stock": 5, "buyPrice": 92, "sellPrice": 82 }
+            }
+          },
+          "index_k7_exchange": {
+            "observedAtGameTime": 321,
+            "goods": {
+              "field_rations": { "stock": 20, "buyPrice": 14, "sellPrice": 12 },
+              "navigation_components": { "stock": 80, "buyPrice": 23, "sellPrice": 19 },
+              "unregistered_signal_scrambler": { "stock": 20, "buyPrice": 82, "sellPrice": 74 }
+            }
+          },
+          "wayfarer_exchange": {
+            "observedAtGameTime": 321,
+            "goods": {
+              "field_rations": { "stock": 15, "buyPrice": 15, "sellPrice": 13 },
+              "navigation_components": { "stock": 25, "buyPrice": 40, "sellPrice": 36 },
+              "unregistered_signal_scrambler": { "stock": 70, "buyPrice": 51, "sellPrice": 45 }
+            }
+          }
+        }
+      },
+      "ledger": []
+    }
+  },
+  "settings": {}
+}
