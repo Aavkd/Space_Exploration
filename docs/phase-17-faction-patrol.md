@@ -226,8 +226,9 @@ git diff --check
 
 - There is one Commonwealth patrol policy in one authored system.
 - The patrol craft and hail presentation use placeholder primitives and text.
-- Contraband can be injected through validated test/debug setup but cannot be
-  purchased in normal play because markets remain a later phase.
+- Phase 20 now permits normal-play purchase of one contraband good and adds an
+  appraised value to the immutable scan snapshot; Phase 17 policy still only
+  refuses passage and never confiscates cargo or credits.
 - Patrol movement is local presentation around the player ship; it has no
   collision, weapons, damage, or autonomous strategic agenda.
 - The hail is a desktop DOM presentation. A diegetic in-headset hail surface

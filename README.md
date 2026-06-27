@@ -27,6 +27,8 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
 - Warned K-7 ship combat with two pulse hardpoints, deterministic targeting,
   one Tier 2 raider, flee/victory/tow outcomes, persistent wreck state, and
   Phase 18 repair consequences.
+- Three seeded markets with active-play production/consumption, bounded integer
+  prices and stock, atomic trade, stale remote reports, and contraband appraisal.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -41,11 +43,10 @@ Then open [http://localhost:5177/](http://localhost:5177/).
 
 ## RPG regression tests
 
-The dependency-free RPG suite covers Phase 11 mission behavior, Phase 13 slots
-and clock, Phase 14 cargo/fuel delivery, Phase 15 crew state, Phase 16 surface
-placement, Phase 17 faction patrol policy, and Phase 18 ship condition,
-salvage, hazard, repair, migration, failures, checkpoint reloads, and exact-once
-transactions:
+The dependency-free RPG suite covers missions, slots and clock, cargo/fuel,
+crew, surface placement, faction patrol, condition/repair, ship combat, and the
+Phase 20 economy's migration, deterministic failures, atomicity, checkpoint
+reloads, and long-run invariants:
 
 ```powershell
 node --experimental-default-type=module --test tests/rpg/*.test.mjs
@@ -156,8 +157,8 @@ window.__deepSpaceDebug.rpg.reset();
 Walk to the observation-bay ship computer and press `C` / Triangle / XR select
 to inspect `A Clean Copy`, manage three isolated local slots, export validated
 JSON, preview/import it into a new slot, and inspect active-play time. Phase 11
-version-1 browser saves migrate automatically through the current Phase 19
-version-8 envelope / ship version 2 / RPG version 6; Phase 13–18 slots migrate
+version-1 browser saves migrate automatically through the current Phase 20
+version-9 envelope / ship version 2 / RPG version 7; Phase 13–19 slots migrate
 non-destructively.
 There is no cloud synchronization or offline simulation.
 
@@ -226,6 +227,19 @@ Open distance to flee, destroy the raider and claim its exact-once wreck
 salvage, or press `Y` after defeat for a recoverable tow. Combat damage
 persists into the Phase 18 maintenance loop.
 
+### Dynamic economy and trade
+
+The observation-bay cargo terminal now exposes Port Meridian, Index Relay K-7,
+and the placeholder Drifter stop `Wayfarer Exchange`. Port Meridian begins with
+surplus field rations while Wayfarer begins short: buy rations at Port, travel
+to `Wayfarer Exchange [RPG]`, then sell them and observe stock rise and the sell
+price fall. Only local quotes settle trades; remote reports retain an
+observation time and display their age. Economy ticks use active-play time only.
+Signal scramblers bought at Wayfarer receive a dynamic prohibited-value snapshot
+from Commonwealth patrols at Port Meridian. Authored destinations reserve
+navigation-computer rows before procedural systems, so all three markets remain
+visible in the eight-entry cockpit list.
+
 ### Gamepad and VR
 
 - DualSense and standard gamepads are supported on desktop and in VR.
@@ -287,6 +301,10 @@ window.__deepSpaceDebug.combat.toggleMode();
 window.__deepSpaceDebug.combat.cycleTarget();
 window.__deepSpaceDebug.combat.fire();
 window.__deepSpaceDebug.combat.rescue();
+window.__deepSpaceDebug.economy.getState();
+window.__deepSpaceDebug.economy.getReports();
+window.__deepSpaceDebug.economy.buy('field_rations', 1);
+window.__deepSpaceDebug.economy.sell('field_rations', 1);
 ```
 
 The Phase 11A-E implementation and verification checklist are documented in
@@ -310,6 +328,7 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-17-faction-patrol.md](docs/phase-17-faction-patrol.md) - deterministic faction influence, cargo policy, and one safe local patrol
 - [docs/phase-18-ship-condition.md](docs/phase-18-ship-condition.md) - persistent condition, one-shot salvage/hazard, repair inventory, and recovery
 - [docs/phase-19-ship-combat.md](docs/phase-19-ship-combat.md) - opt-in targeting, weapons, Tier 2 enemy, damage, recovery, and cleanup
+- [docs/phase-20-dynamic-economy.md](docs/phase-20-dynamic-economy.md) - three markets, active-play ticks, atomic trade, stale intel, and contraband value
 - [docs/rpg-future-development-roadmap.md](docs/rpg-future-development-roadmap.md) - post-Phase-11 vertical slices, dependencies, tests, and acceptance gates
 - [docs/rpg-phase-agent-prompts.md](docs/rpg-phase-agent-prompts.md) - copy-paste implementation prompts for each future RPG phase
 
@@ -318,14 +337,16 @@ The Phase 11A-E implementation and verification checklist are documented in
 - The imported ship mesh is heavy for VR and may need a decimated or LOD variant for sustained headset performance.
 - The interior collision model is an abstract ship-local blockout, not full collision against the authored GLB interior.
 - Untethered world-frame EVA, full physical hazards, and a 3D radar/map are still future work.
-- Phase 14 prices are static; dynamic markets, free trading, docking, cargo
-  meshes, and general NPC traffic remain future work.
+- Phase 20 is a three-market proof only. It has no docking, cargo meshes, NPC
+  logistics, crafting, finance, autonomous faction budgets, or offline
+  simulation. Full normal-control route, gamepad, and PCVR signoff is pending.
 - Phase 16 ships one placeholder outpost only; procedural settlements, interiors,
   combat, crowds, markets, and spatial transform persistence remain deferred.
 - Phase 17 ships one placeholder Commonwealth patrol and one territory policy.
   There are no weapons, damage, fleets, confiscation, dynamic agendas, or
-  normal-play contraband acquisition yet. The hail is currently a desktop DOM
-  panel rather than a diegetic in-headset surface.
+  autonomous budgets. Phase 20 adds one purchasable contraband good and dynamic
+  appraisal, but the hail remains a desktop DOM panel rather than a diegetic
+  in-headset surface.
 - Phase 18 has one text-presented derelict cache and one deterministic hazard.
   There is no boarding, general loot generation, repair animation, crafting,
   salvage market, hostile damage source, or usable weapon system. Full

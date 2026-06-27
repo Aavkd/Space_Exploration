@@ -2,6 +2,26 @@ export { LocalRpgPersistence, RPG_LOCAL_STORAGE_KEY } from './persistence.js';
 export { RPG_STATE_MIGRATIONS, migrateRpgState } from './migrations.js';
 export { RpgRuntime, createRpgRuntime } from './RpgRuntime.js';
 export { DELIVERY_MISSION_ID, DeliveryRuntime } from './DeliveryRuntime.js';
+export {
+    ECONOMY_SEED,
+    ECONOMY_STATE_VERSION,
+    ECONOMY_TICK_SECONDS,
+    MARKET_DEFINITIONS,
+    MARKET_IDS,
+    MAX_ECONOMY_TICKS_PER_UPDATE,
+    MAX_TRADE_LEDGER_ENTRIES,
+    TRADE_GOOD_IDS,
+    EconomyRuntime,
+    advanceEconomy,
+    calculateMarketQuote,
+    createInitialEconomyState,
+    createMarketReport,
+    getContrabandAppraisal,
+    getMarketDefinition,
+    getMarketIdForSystem,
+    refreshMarketIntel,
+    sanitizeEconomyState
+} from './economy.js';
 export { SurfaceOutpostRuntime } from './SurfaceOutpostRuntime.js';
 export { PATROL_PHASE_DURATIONS, PatrolRuntime } from './PatrolRuntime.js';
 export {
@@ -118,6 +138,7 @@ export {
     PATROL_PHASES,
     PATROL_STATE_VERSION,
     createInitialPatrolState,
+    migratePatrolStateV1,
     sanitizePatrolState
 } from './patrols.js';
 export {

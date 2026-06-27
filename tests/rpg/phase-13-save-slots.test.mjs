@@ -42,7 +42,7 @@ test('Phase 11 version-1 fixture migrates into a version-2 envelope without outc
     const { slots } = createHarness({ storage });
     const envelope = slots.getActiveEnvelope();
 
-    assert.equal(envelope.version, 8);
+    assert.equal(envelope.version, 9);
     assert.equal(envelope.autosave.kind, 'migration');
     assert.equal(envelope.autosave.reason, 'phase-11-v1');
     assert.equal(envelope.rpg.missions.byId.port_meridian_route_packet.outcomeId, 'commonwealth');
@@ -108,7 +108,7 @@ test('validated import creates a new slot and rejects changed, corrupt, and futu
     assert.equal(slots.getStatus().activeSlotId, originalId);
     assert.throws(() => slots.previewImport('{broken'), /Save import rejected/);
     const future = JSON.stringify({ ...JSON.parse(exported), version: 99 });
-    assert.throws(() => slots.previewImport(future), /newer than supported version 8/);
+    assert.throws(() => slots.previewImport(future), /newer than supported version 9/);
     assert.equal(slots.listSlots().length, 1);
 
     const imported = slots.importPreviewed(exported, slots.previewImport(exported).token);

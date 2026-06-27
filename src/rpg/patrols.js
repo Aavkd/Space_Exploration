@@ -6,7 +6,7 @@ import {
 } from './factionTerritory.js';
 import { FACTION_IDS, NAMED_SYSTEM_IDS } from './registries.js';
 
-export const PATROL_STATE_VERSION = 1;
+export const PATROL_STATE_VERSION = 2;
 export const PATROL_PHASES = Object.freeze(['spawn', 'approach', 'hail', 'wait', 'depart', 'abort']);
 export const PATROL_OUTCOMES = Object.freeze([
     'welcome',
@@ -28,11 +28,40 @@ export function createInitialPatrolState() {
     };
 }
 
+export function migratePatrolStateV1(value) {
+    if (!value || value.version !== 1) {
+        throw new Error(`Expected patrol state version 1, received ${value?.version ?? 'missing'}.`);
+    }
+    const migrateEncounter = (encounter) => {
+        if (!encounter) return encounter;
+        const matches = (encounter.cargoScan?.matches ?? []).map((match) => ({
+            ...match,
+            unitValue: 0,
+            totalValue: 0
+        }));
+        return {
+            ...encounter,
+            cargoScan: {
+                ...encounter.cargoScan,
+                matches,
+                contrabandValue: 0
+            }
+        };
+    };
+    return {
+        ...structuredClone(value),
+        version: PATROL_STATE_VERSION,
+        activeEncounter: migrateEncounter(value.activeEncounter),
+        history: (value.history ?? []).map(migrateEncounter)
+    };
+}
+
 export function sanitizePatrolState(value) {
     if (value === undefined || value === null) return createInitialPatrolState();
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error('rpg.patrol must be an object.');
     }
+    if (value.version === 1) value = migratePatrolStateV1(value);
     if (value.version !== PATROL_STATE_VERSION) {
         throw new Error(`Unsupported patrol state version: ${value.version ?? 'missing'}.`);
     }
@@ -118,10 +147,28 @@ function sanitizeCargoScan(value, label) {
             cargoId: match.cargoId,
             quantity,
             restrictedTags: sanitizeTags(match.restrictedTags, `${label}.restrictedTags`),
-            prohibitedTags: sanitizeTags(match.prohibitedTags, `${label}.prohibitedTags`)
+            prohibitedTags: sanitizeTags(match.prohibitedTags, `${label}.prohibitedTags`),
+            unitValue: sanitizeNonNegativeSafeInteger(match.unitValue, `${label}.${match.cargoId}.unitValue`),
+            totalValue: sanitizeNonNegativeSafeInteger(match.totalValue, `${label}.${match.cargoId}.totalValue`)
         };
     }).sort((a, b) => a.cargoId.localeCompare(b.cargoId));
-    return { status: value.status, matches };
+    for (const match of matches) {
+        if (match.totalValue !== match.unitValue * match.quantity) {
+            throw new Error(`${label}.${match.cargoId} appraisal total is invalid.`);
+        }
+    }
+    const contrabandValue = sanitizeNonNegativeSafeInteger(
+        value.contrabandValue,
+        `${label}.contrabandValue`
+    );
+    const expectedContrabandValue = matches.reduce(
+        (total, match) => total + (match.prohibitedTags.length ? match.totalValue : 0),
+        0
+    );
+    if (contrabandValue !== expectedContrabandValue) {
+        throw new Error(`${label}.contrabandValue does not match prohibited cargo appraisals.`);
+    }
+    return { status: value.status, matches, contrabandValue };
 }
 
 function sanitizeTags(value, label) {
@@ -140,6 +187,14 @@ function sanitizeSystemId(value, label) {
 function sanitizePositiveInteger(value, label) {
     const number = Number(value);
     if (!Number.isInteger(number) || number < 1) throw new Error(`${label} must be a positive integer.`);
+    return number;
+}
+
+function sanitizeNonNegativeSafeInteger(value, label) {
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || number < 0) {
+        throw new Error(`${label} must be a non-negative safe integer.`);
+    }
     return number;
 }
 

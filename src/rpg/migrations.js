@@ -1,6 +1,6 @@
 import { createInitialNpcState } from './npcs.js';
 import { createInitialSurfaceState } from './surfaceOutposts.js';
-import { createInitialPatrolState } from './patrols.js';
+import { createInitialPatrolState, migratePatrolStateV1 } from './patrols.js';
 import { createInitialCombatState } from './combat.js';
 import { RPG_STATE_VERSION } from './state.js';
 
@@ -11,8 +11,19 @@ export const RPG_STATE_MIGRATIONS = Object.freeze({
     1: (state) => ({ ...state, version: 2 }),
     2: (state) => ({ ...state, version: 3, npcs: createInitialNpcState() }),
     3: (state) => ({ ...state, version: 4, surface: createInitialSurfaceState() }),
-    4: (state) => ({ ...state, version: 5, patrol: createInitialPatrolState() }),
-    5: (state) => ({ ...state, version: 6, combat: createInitialCombatState() })
+    4: (state) => ({
+        ...state,
+        version: 5,
+        patrol: { ...createInitialPatrolState(), version: 1 }
+    }),
+    5: (state) => ({ ...state, version: 6, combat: createInitialCombatState() }),
+    6: (state) => ({
+        ...state,
+        version: 7,
+        patrol: state.patrol?.version === 2
+            ? structuredClone(state.patrol)
+            : migratePatrolStateV1(state.patrol)
+    })
 });
 
 export function migrateRpgState(value) {

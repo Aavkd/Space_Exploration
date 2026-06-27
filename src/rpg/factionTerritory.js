@@ -79,7 +79,9 @@ export function classifyReputation(value, previousBand = null) {
     return 'neutral';
 }
 
-export function scanCargoLegality(ship, policyId) {
+export function scanCargoLegality(ship, policyId, {
+    appraise = () => ({ unitValue: 0, totalValue: 0 })
+} = {}) {
     const policy = getFactionTerritoryPolicy(policyId);
     const matches = [];
     let hasRestricted = false;
@@ -93,11 +95,19 @@ export function scanCargoLegality(ship, policyId) {
         const restrictedTags = cargo.legalityTags.filter((tag) => policy.inspectionTags.includes(tag));
         const prohibitedTags = cargo.legalityTags.filter((tag) => policy.prohibitedTags.includes(tag));
         if (restrictedTags.length || prohibitedTags.length) {
+            const appraisal = appraise(cargo.id, quantity);
+            const unitValue = sanitizeAppraisalValue(appraisal?.unitValue, `${cargo.id} unit value`);
+            const totalValue = sanitizeAppraisalValue(appraisal?.totalValue, `${cargo.id} total value`);
+            if (totalValue !== unitValue * quantity) {
+                throw new Error(`Cargo appraisal total does not match unit value and quantity: ${cargo.id}`);
+            }
             matches.push({
                 cargoId: cargo.id,
                 quantity,
                 restrictedTags: [...restrictedTags].sort(),
-                prohibitedTags: [...prohibitedTags].sort()
+                prohibitedTags: [...prohibitedTags].sort(),
+                unitValue,
+                totalValue
             });
         }
         hasRestricted ||= restrictedTags.length > 0;
@@ -106,7 +116,11 @@ export function scanCargoLegality(ship, policyId) {
     matches.sort((a, b) => a.cargoId.localeCompare(b.cargoId));
     return {
         status: hasContraband ? 'contraband' : hasRestricted ? 'restricted' : 'clear',
-        matches
+        matches,
+        contrabandValue: matches.reduce(
+            (total, match) => total + (match.prohibitedTags.length ? match.totalValue : 0),
+            0
+        )
     };
 }
 
@@ -141,7 +155,8 @@ export function createPatrolEncounterId({
     sequence,
     gameTime,
     reputationSnapshot,
-    cargoFingerprint
+    cargoFingerprint,
+    contrabandValue = 0
 } = {}) {
     const canonical = [
         worldSeed,
@@ -150,7 +165,8 @@ export function createPatrolEncounterId({
         sequence,
         Number(gameTime).toFixed(3),
         Number(reputationSnapshot).toFixed(6),
-        cargoFingerprint
+        cargoFingerprint,
+        sanitizeAppraisalValue(contrabandValue, 'encounter contraband value')
     ].join('|');
     return `patrol-${stableHash(canonical)}`;
 }
@@ -162,4 +178,12 @@ function stableHash(text) {
         hash = Math.imul(hash, 16777619);
     }
     return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function sanitizeAppraisalValue(value, label) {
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || number < 0) {
+        throw new Error(`Cargo appraisal ${label} must be a non-negative safe integer.`);
+    }
+    return number;
 }

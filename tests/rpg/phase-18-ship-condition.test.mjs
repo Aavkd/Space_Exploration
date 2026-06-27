@@ -95,9 +95,9 @@ test('Phase 17 envelope v6 / ship v1 migrates to v7 / ship v2 without prior-stat
     previous.rpg.worldFlags['index_hq.archive_delivery_complete'] = true;
 
     const migrated = sanitizeSaveEnvelope(previous);
-    assert.equal(migrated.version, 8);
+    assert.equal(migrated.version, 9);
     assert.equal(migrated.ship.version, 2);
-    assert.equal(migrated.autosave.reason, 'phase-19-v7');
+    assert.equal(migrated.autosave.reason, 'phase-20-v8');
     assert.equal(migrated.ship.credits, 1150);
     assert.equal(migrated.ship.fuel.current, 61);
     assert.equal(migrated.ship.condition.hull.current, 100);

@@ -13,6 +13,7 @@ import {
     createInitialPatrolState,
     sanitizePatrolState
 } from './patrols.js';
+import { TRADE_GOOD_IDS, getContrabandAppraisal } from './economy.js';
 import { cloneRpgValue, sanitizeRpgState } from './state.js';
 
 export const PATROL_PHASE_DURATIONS = Object.freeze({
@@ -195,9 +196,14 @@ export class PatrolRuntime {
         const previousBand = [...patrol.history].reverse()
             .find((entry) => entry.factionId === policy.factionId)?.reputationBand ?? null;
         const reputationBand = classifyReputation(reputationSnapshot, previousBand);
-        const ship = this.slots.getActiveEnvelope().ship;
+        const envelope = this.slots.getActiveEnvelope();
+        const ship = envelope.ship;
         const cargoFingerprint = createCargoFingerprint(ship);
-        const cargoScan = scanCargoLegality(ship, policy.id);
+        const cargoScan = scanCargoLegality(ship, policy.id, {
+            appraise: (cargoId, quantity) => TRADE_GOOD_IDS.includes(cargoId)
+                ? getContrabandAppraisal(envelope.simulation.economy, cargoId, quantity, gameTime)
+                : { unitValue: 0, totalValue: 0 }
+        });
         return {
             id: createPatrolEncounterId({
                 worldSeed: this.worldSeed,
@@ -206,7 +212,8 @@ export class PatrolRuntime {
                 sequence,
                 gameTime,
                 reputationSnapshot,
-                cargoFingerprint
+                cargoFingerprint,
+                contrabandValue: cargoScan.contrabandValue
             }),
             policyId: policy.id,
             agentId: policy.agentId,

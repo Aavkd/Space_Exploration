@@ -346,6 +346,13 @@ Out of scope: fleets, capital ships, Tier 3 weapons, and boarding.
 
 ### Phase 20 - Dynamic Economy And Trade
 
+**Status:** Implementation and T0–T3 automated verification complete with 74
+passing RPG regressions and a live Chromium render/runtime smoke. The physical
+terminal route, checkpoint checklist, gamepad, and PCVR/WebXR signoff remain
+open. The authored-POI allocator now reserves all three market destinations in
+the eight-row cockpit navigation list after Wayfarer was found to be clipped;
+see [`phase-20-dynamic-economy.md`](phase-20-dynamic-economy.md).
+
 **Proof loop:** inspect three markets, move a good from surplus to shortage,
 profit, and observe supply/price response.
 

@@ -49,6 +49,10 @@ import {
     CombatRuntime,
     CrewRuntime,
     DeliveryRuntime,
+    EconomyRuntime,
+    MARKET_DEFINITIONS,
+    TRADE_GOOD_IDS,
+    getCargoDefinition,
     PatrolRuntime,
     ShipConditionRuntime,
     SurfaceOutpostRuntime,
@@ -313,6 +317,8 @@ export class App {
         this._syncCrewPresence();
         this.deliveryError = null;
         this.delivery = this._createDeliveryRuntimeSafely();
+        this.economyError = null;
+        this.economy = this._createEconomyRuntimeSafely();
         this.conditionError = null;
         this.condition = this._createConditionRuntimeSafely();
         this._shipCapabilities = this.condition?.getState().capabilities ?? null;
@@ -514,6 +520,7 @@ export class App {
         });
         this._syncPatrolFromSettledScale();
         this._syncSurfaceOutpostProgress();
+        if (clockActive) this._updateEconomySafely();
         if (!this.paused) this.patrol?.update(this.gameClock.getTime());
         this._syncPatrolPresentation();
         if (clockActive && this.combat) {
@@ -784,6 +791,7 @@ export class App {
             const systemId = this._findActiveRpgNamedSystemId();
             this.rpg.setActiveNamedSystem(systemId);
             this.delivery?.syncSystem(systemId);
+            this.economy?.syncSystem(systemId);
             this.condition?.syncSystem(systemId);
             this.combat?.syncSystem(systemId);
             return true;
@@ -920,6 +928,38 @@ export class App {
             };
             console.warn('Phase 17 patrol runtime unavailable; flight remains active.', error);
             return null;
+        }
+    }
+
+    _createEconomyRuntimeSafely() {
+        try {
+            return new EconomyRuntime({
+                slots: this.saveSlots,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.economyError = {
+                context: 'economy runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 20 economy runtime unavailable; flight remains active.', error);
+            return null;
+        }
+    }
+
+    _updateEconomySafely() {
+        if (!this.economy) return false;
+        try {
+            const result = this.economy.update(this.gameClock.getTime());
+            if (result.changed && this.cargoTerminalOpen) this._renderCargoTerminalPanel();
+            return result.changed;
+        } catch (error) {
+            this.economyError = {
+                context: 'economy tick',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Economy tick failed; flight remains active.', error);
+            return false;
         }
     }
 
@@ -1634,6 +1674,7 @@ export class App {
         this._lastClockCheckpoint = this.gameClock.getTime();
         this.rpg.reload();
         this.delivery?.reload();
+        this.economy?.reload();
         this.condition?.reload();
         this._refreshShipCapabilities();
         this.surfaceOutpost?.reload();
@@ -1906,7 +1947,9 @@ export class App {
         const outcome = patrolOutcomeText(encounter.outcomeId);
         const waiting = ['hail', 'wait'].includes(encounter.phase);
         const manifest = encounter.cargoScan.matches.length
-            ? encounter.cargoScan.matches.map((entry) => `${entry.cargoId} × ${entry.quantity}`).join(', ')
+            ? encounter.cargoScan.matches.map((entry) => (
+                `${entry.cargoId} × ${entry.quantity} @ ${entry.unitValue} cr = ${entry.totalValue} cr`
+            )).join(', ')
             : 'no flagged cargo';
         const controls = encounter.scanPending
             ? '<button data-patrol-action="scan">Transmit cargo manifest</button><button data-patrol-action="close">Hide channel</button>'
@@ -1921,6 +1964,7 @@ export class App {
             <p>Commonwealth local patrol. Hold course and identify.</p>
             <p>Transponder band: ${escapeHtml(encounter.reputationBand)} /
                manifest policy: ${escapeHtml(encounter.cargoScan.status)}</p>
+            <p>Appraised prohibited value: ${encounter.cargoScan.contrabandValue} credits</p>
             ${encounter.scanPending ? `<p>Inspection requested: ${escapeHtml(manifest)}</p>` : ''}
             ${outcome ? `<p class="${encounter.outcomeId === 'warning_refusal' || encounter.outcomeId === 'safe_hostility' ? 'patrol-warn' : 'patrol-ok'}">${escapeHtml(outcome)}</p>` : ''}
             ${this.patrolError?.context === 'patrol hail action' ? `<p class="patrol-warn">${escapeHtml(this.patrolError.message)}</p>` : ''}
@@ -2115,6 +2159,13 @@ export class App {
             } else if (action.startsWith('repair-')) {
                 if (!this.condition) throw new Error(this.conditionError?.message ?? 'Ship condition runtime is unavailable.');
                 result = this.condition.repair(action.slice('repair-'.length));
+            } else if (action.startsWith('market:')) {
+                if (!this.economy) throw new Error(this.economyError?.message ?? 'Economy runtime is unavailable.');
+                const [, side, cargoId, rawQuantity] = action.split(':');
+                const quantity = Number(rawQuantity);
+                if (side === 'buy') result = this.economy.buy(cargoId, quantity);
+                else if (side === 'sell') result = this.economy.sell(cargoId, quantity);
+                else throw new Error(`Unknown market transaction side: ${side}`);
             } else {
                 if (!this.delivery) throw new Error(this.deliveryError?.message ?? 'Cargo runtime is unavailable.');
                 if (action === 'load') result = this.delivery.loadMissionCargo();
@@ -2156,6 +2207,7 @@ export class App {
         const ship = state.ship;
         const mission = state.mission;
         const conditionState = this.condition?.getState() ?? null;
+        const economyState = this.economy?.getState() ?? null;
         const stacks = ship.cargo.stacks.map((stack) => (
             `<li>${escapeHtml(stack.cargoId)} × ${stack.quantity}</li>`
         )).join('') || '<li>Empty</li>';
@@ -2180,6 +2232,32 @@ export class App {
                 `<li>${escapeHtml(id)}: ${(value * 100).toFixed(0)}%</li>`
             )).join('')
             : '';
+        const marketReports = economyState
+            ? economyState.reports.map((report) => {
+                const rows = TRADE_GOOD_IDS.map((cargoId) => {
+                    const quote = report.goods[cargoId];
+                    const listing = MARKET_DEFINITIONS[report.marketId].goods[cargoId];
+                    const cargoName = getCargoDefinition(cargoId).name;
+                    const balance = quote.stock > listing.targetStock
+                        ? 'SURPLUS'
+                        : quote.stock < listing.targetStock
+                            ? 'SHORTAGE'
+                            : 'BALANCED';
+                    const controls = report.local
+                        ? `${listing.buyAllowed ? `<button data-cargo-action="market:buy:${escapeHtml(cargoId)}:1">Buy 1</button><button data-cargo-action="market:buy:${escapeHtml(cargoId)}:5">Buy 5</button>` : ''}
+                           ${listing.sellAllowed ? `<button data-cargo-action="market:sell:${escapeHtml(cargoId)}:1">Sell 1</button><button data-cargo-action="market:sell:${escapeHtml(cargoId)}:5">Sell 5</button>` : ''}`
+                        : '';
+                    return `<li>${escapeHtml(cargoName)} (${escapeHtml(cargoId)}): ${balance}, stock ${quote.stock}, buy ${quote.buyPrice}, sell ${quote.sellPrice} ${controls}</li>`;
+                }).join('');
+                return `
+                    <section>
+                        <h3>${escapeHtml(report.name)} ${report.local ? '[LOCAL / LIVE]' : '[REMOTE]'}</h3>
+                        <p>Observed at ${formatGameTime(report.observedAtGameTime)}; age ${formatGameTime(report.ageSeconds)}</p>
+                        <ul>${rows}</ul>
+                    </section>
+                `;
+            }).join('')
+            : `<section><h3>Markets unavailable</h3><p class="terminal-error">${escapeHtml(this.economyError?.message ?? 'Economy runtime unavailable.')}</p></section>`;
         this.cargoTerminalContentNode.innerHTML = `
             <div style="display:flex;justify-content:space-between"><h2>CARGO / FUEL / MAINTENANCE</h2><button data-cargo-action="close">Close</button></div>
             <div class="cargo-grid">
@@ -2220,9 +2298,10 @@ export class App {
                     <button data-cargo-action="salvage">Recover K-7 derelict cache</button>
                     <button data-cargo-action="stabilize">Emergency stabilization</button>
                 </section>
+                ${marketReports}
             </div>
             <p>${escapeHtml(this.cargoTerminalMessage)}</p>
-            <small>Static prices and deterministic repairs. No market, crafting, combat, boarding, or cargo confiscation.</small>
+            <small>Local trades settle atomically at integer prices. Remote reports are age-stamped. No crafting, finance, autonomous budgets, or cargo confiscation.</small>
         `;
     }
 
@@ -4049,6 +4128,17 @@ export class App {
                 openTerminal: () => this._openCargoTerminalPanel(),
                 closeTerminal: () => this._closeCargoTerminalPanel()
             },
+            economy: {
+                getState: () => this.economy?.getState() ?? { unavailable: this.economyError },
+                getMarket: (marketId) => this.economy?.getMarket(marketId),
+                getReports: () => this.economy?.getReports(),
+                syncSystem: (systemId) => this.economy?.syncSystem(systemId),
+                update: (gameTime = this.gameClock.getTime()) => this.economy?.update(gameTime),
+                buy: (cargoId, quantity = 1) => this.economy?.buy(cargoId, quantity),
+                sell: (cargoId, quantity = 1) => this.economy?.sell(cargoId, quantity),
+                openTerminal: () => this._openCargoTerminalPanel(),
+                closeTerminal: () => this._closeCargoTerminalPanel()
+            },
             condition: {
                 getState: () => this.condition?.getState() ?? { unavailable: this.conditionError },
                 getCapabilities: () => this.condition?.getState().capabilities ?? null,
@@ -4594,6 +4684,10 @@ export class App {
                 available: false,
                 error: this.patrolError
             },
+            economy: this.economy?.getState() ?? {
+                available: false,
+                error: this.economyError
+            },
             combat: this.combat?.getState() ?? {
                 available: false,
                 error: this.combatError
@@ -4676,6 +4770,7 @@ function patrolPanelRenderKey(encounter, error) {
         encounter?.outcomeId,
         encounter?.scanPending,
         encounter?.cargoScan?.status,
+        encounter?.cargoScan?.contrabandValue,
         error?.context === 'patrol hail action' ? error.message : ''
     ].join('|');
 }

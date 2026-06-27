@@ -13,6 +13,18 @@ export const CARGO_DEFINITIONS = Object.freeze({
         unitMass: 10,
         legalityTags: Object.freeze(['legal', 'industrial'])
     }),
+    field_rations: Object.freeze({
+        id: 'field_rations',
+        name: 'Long-voyage field rations',
+        unitMass: 2,
+        legalityTags: Object.freeze(['legal', 'provisions'])
+    }),
+    navigation_components: Object.freeze({
+        id: 'navigation_components',
+        name: 'Calibrated navigation components',
+        unitMass: 4,
+        legalityTags: Object.freeze(['legal', 'industrial', 'navigation'])
+    }),
     unregistered_signal_scrambler: Object.freeze({
         id: 'unregistered_signal_scrambler',
         name: 'Unregistered signal scrambler',

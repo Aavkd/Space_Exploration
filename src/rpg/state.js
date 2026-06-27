@@ -16,7 +16,7 @@ import { createInitialSurfaceState, sanitizeSurfaceState } from './surfaceOutpos
 import { createInitialPatrolState, sanitizePatrolState } from './patrols.js';
 import { createInitialCombatState, sanitizeCombatState } from './combat.js';
 
-export const RPG_STATE_VERSION = 6;
+export const RPG_STATE_VERSION = 7;
 export const INITIAL_RPG_TIMESTAMP = '2026-06-26T00:00:00.000Z';
 
 export function createInitialRpgState() {

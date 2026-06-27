@@ -1,8 +1,9 @@
 import { createInitialShipState, sanitizeShipState } from '../rpg/cargo.js';
+import { createInitialEconomyState, sanitizeEconomyState } from '../rpg/economy.js';
 import { migrateRpgState } from '../rpg/migrations.js';
 import { createInitialRpgState, sanitizeRpgState } from '../rpg/state.js';
 
-export const SAVE_ENVELOPE_VERSION = 8;
+export const SAVE_ENVELOPE_VERSION = 9;
 export const MAX_EVENT_LOG_ENTRIES = 500;
 export const PROTECTED_EVENT_TYPES = Object.freeze([
     'mission.resolved',
@@ -36,7 +37,8 @@ export function createSaveEnvelope({
         ship: createInitialShipState(),
         rpg,
         simulation: {
-            gameTime
+            gameTime,
+            economy: createInitialEconomyState(gameTime)
         },
         settings: {}
     });
@@ -52,6 +54,7 @@ export function sanitizeSaveEnvelope(value) {
     if (value.version === 5) value = migrateVersion5Envelope(value);
     if (value.version === 6) value = migrateVersion6Envelope(value);
     if (value.version === 7) value = migrateVersion7Envelope(value);
+    if (value.version === 8) value = migrateVersion8Envelope(value);
     if (value.version !== SAVE_ENVELOPE_VERSION) {
         throw new Error(
             value.version > SAVE_ENVELOPE_VERSION
@@ -66,6 +69,7 @@ export function sanitizeSaveEnvelope(value) {
     const rpg = sanitizeRpgState(migrateRpgState(value.rpg));
     rpg.eventLog = compactEventLog(rpg.eventLog);
 
+    const gameTime = sanitizeNonNegativeNumber(value.simulation?.gameTime, 'simulation.gameTime');
     return {
         version: SAVE_ENVELOPE_VERSION,
         slot: {
@@ -79,7 +83,8 @@ export function sanitizeSaveEnvelope(value) {
         ship: sanitizeShipState(value.ship),
         rpg,
         simulation: {
-            gameTime: sanitizeNonNegativeNumber(value.simulation?.gameTime, 'simulation.gameTime')
+            gameTime,
+            economy: sanitizeEconomyState(value.simulation?.economy, { gameTime })
         },
         settings: sanitizeEmptyDomain(value.settings, 'settings')
     };
@@ -212,6 +217,32 @@ export function migrateVersion7Envelope(value) {
         autosave: {
             kind: 'migration',
             reason: 'phase-19-v7',
+            savedAt,
+            sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
+        }
+    };
+}
+
+export function migrateVersion8Envelope(value) {
+    if (!value || value.version !== 8) {
+        throw new Error(`Expected save envelope version 8, received ${value?.version ?? 'missing'}.`);
+    }
+    const savedAt = typeof value.slot?.updatedAt === 'string'
+        ? value.slot.updatedAt
+        : new Date().toISOString();
+    const gameTime = sanitizeNonNegativeNumber(value.simulation?.gameTime, 'simulation.gameTime');
+    return {
+        ...structuredClone(value),
+        version: 9,
+        rpg: migrateRpgState(value.rpg),
+        simulation: {
+            ...structuredClone(value.simulation),
+            gameTime,
+            economy: createInitialEconomyState(gameTime)
+        },
+        autosave: {
+            kind: 'migration',
+            reason: 'phase-20-v8',
             savedAt,
             sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
         }

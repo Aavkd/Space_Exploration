@@ -8,6 +8,7 @@ import { NebulaField } from './universe/NebulaField.js';
 import { SpatialIndex } from './universe/SpatialIndex.js';
 import { StarField } from './universe/StarField.js';
 import { UniverseEvents } from './universe/UniverseEvents.js';
+import { calculateSystemPoiLimit } from './universe/poiAllocation.js';
 import { UniverseLighting } from './universe/UniverseLighting.js';
 import { disposeObject3D } from './universe/dispose.js';
 import { createSeededRandom, deriveSeed } from './universe/rng.js';
@@ -162,7 +163,11 @@ export class Universe {
             .sort((a, b) => a.distance - b.distance);
 
         const authoredSystems = this.starField.getAuthoredSystemPOIs({ position: shipPosition });
-        const starLimit = Math.max(1, Math.min(4, Math.floor(limit * 0.35)));
+        // Authored systems are player-critical destinations and must consume
+        // system slots before the procedural-star quota. With three authored
+        // markets, the old 35% quota yielded only two slots in the eight-row
+        // navigation computer and silently removed Wayfarer Exchange.
+        const starLimit = calculateSystemPoiLimit(limit, authoredSystems.length);
         const proceduralStarLimit = Math.max(0, starLimit - authoredSystems.length);
         const stars = proceduralStarLimit > 0
             ? this.starField.getSystemPOIs({

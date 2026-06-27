@@ -120,7 +120,7 @@ export class LocalSaveSlots {
         }
     }
 
-    saveDomains({ rpg, ship, gameTime }, { kind = 'auto', reason = 'state-change' } = {}) {
+    saveDomains({ rpg, ship, economy, gameTime }, { kind = 'auto', reason = 'state-change' } = {}) {
         const now = this.now();
         const next = sanitizeSaveEnvelope({
             ...this.activeEnvelope,
@@ -134,7 +134,8 @@ export class LocalSaveSlots {
             ship: ship ?? this.activeEnvelope.ship,
             rpg: rpg ?? this.activeEnvelope.rpg,
             simulation: {
-                gameTime: gameTime ?? this.activeEnvelope.simulation.gameTime
+                gameTime: gameTime ?? this.activeEnvelope.simulation.gameTime,
+                economy: economy ?? this.activeEnvelope.simulation.economy
             }
         });
         try {

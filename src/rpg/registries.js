@@ -64,9 +64,18 @@ export const NAMED_SYSTEM_DEFINITIONS = Object.freeze({
     }),
     drifter_convergence: Object.freeze({
         id: 'drifter_convergence',
+        name: 'Wayfarer Exchange',
+        navigationLabel: 'Wayfarer Exchange',
         role: 'Drifter convergence - ship-born meeting point',
         startingTier: 2,
-        startingFactionId: 'drifters'
+        startingFactionId: 'drifters',
+        seed: 'rpg-drifter-convergence-v1',
+        position: Object.freeze([34000, -2800, 26000]),
+        star: Object.freeze({
+            color: '#ffb27a',
+            temperatureK: 4300,
+            luminosity: 0.9
+        })
     }),
     concordance_pilgrimage_site: Object.freeze({
         id: 'concordance_pilgrimage_site',
