@@ -34,12 +34,17 @@ import { DiegeticStatusPanel } from '../ui/DiegeticStatusPanel.js';
 import { DiegeticNavigationPanel } from '../ui/DiegeticNavigationPanel.js';
 import { DiegeticRadioPanel } from '../ui/DiegeticRadioPanel.js';
 import { UniverseNavigation } from '../ui/UniverseNavigation.js';
+import {
+    findAuthoredNavigationReplacement,
+    navigationTargetBelongsToDepth
+} from '../ui/navigationTargetFrame.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
 import { AudioDirector } from '../audio/AudioDirector.js';
 import {
     createRpgRuntime,
     CrewRuntime,
     DeliveryRuntime,
+    PatrolRuntime,
     SurfaceOutpostRuntime,
     SURFACE_OUTPOST_ID,
     isMeteredAuthoredRoute,
@@ -265,6 +270,7 @@ export class App {
         this.activeUniversePreset = 'default';
         this.commsPanelOpen = false;
         this.selectedNavigationTarget = null;
+        this.selectedNavigationTargetDepth = null;
         this.navigationPanelOpen = false;
         this.radioOpen = false;
         this.shipComputerOpen = false;
@@ -276,6 +282,10 @@ export class App {
         this.crewPanelOpen = false;
         this.surfaceOutpostPanelOpen = false;
         this.surfaceOutpostMessage = '';
+        this.patrolHailOpen = false;
+        this.patrolHailDismissedId = null;
+        this.patrolPanelEncounter = null;
+        this.patrolPanelRenderKey = null;
         this.radioPower = true;
         this.radioVolume = 0.5;
         this.activeRadioStationIndex = 0;
@@ -295,6 +305,11 @@ export class App {
         this.delivery = this._createDeliveryRuntimeSafely();
         this.surfaceOutpostError = null;
         this.surfaceOutpost = this._createSurfaceOutpostRuntimeSafely();
+        this.patrolError = null;
+        this.patrol = this._createPatrolRuntimeSafely();
+        this.patrolAgentVisual = null;
+        this.patrolVisualState = null;
+        this._observedPatrolSystemId = undefined;
         this._installDebugHooks();
         this._applyRuntimeConfig();
         this._loadInitialJsonPreset();
@@ -371,7 +386,10 @@ export class App {
             cameraPosition: this.camera.position,
             hyperdriveLevel: this.ship.getHyperdriveLevel()
         });
+        this._syncPatrolFromSettledScale();
         this._syncSurfaceOutpostProgress();
+        if (!this.paused) this.patrol?.update(this.gameClock.getTime());
+        this._syncPatrolPresentation();
         this.sky.update(dt, this.camera.position);
 
         this._updateSpeedFx(dt, xrActive);
@@ -426,6 +444,15 @@ export class App {
         if (buttons.triangle.justPressed && this.cameraMode === 'player') {
             if (this.surfaceOutpostPanelOpen) {
                 this._closeSurfaceOutpostPanel();
+                this.input.gamepad.pulse({ duration: 70, weak: 0.18, strong: 0.28 });
+                return;
+            }
+            if (this.patrolHailOpen) {
+                this._closePatrolHailPanel();
+                if (this.shipControls.pilotActive) {
+                    const action = this.playerController.interact();
+                    if (action) this._handlePlayerInteraction(action);
+                }
                 this.input.gamepad.pulse({ duration: 70, weak: 0.18, strong: 0.28 });
                 return;
             }
@@ -523,7 +550,14 @@ export class App {
         }
 
         // Shift the active navigation target coordinate by the rebase offset
-        if (this.selectedNavigationTarget && this.selectedNavigationTarget.position) {
+        if (
+            this.selectedNavigationTarget
+            && this.selectedNavigationTarget.position
+            && navigationTargetBelongsToDepth(
+                this.selectedNavigationTargetDepth,
+                this.scaleStack.depth
+            )
+        ) {
             this.selectedNavigationTarget.position.sub(offset);
         }
 
@@ -558,6 +592,7 @@ export class App {
         this.gravityField.setAttractors(level.universe.getAttractors());
         this._applyUniverseRuntimeConfig();
         this._syncActiveRpgSystem();
+        this._syncAuthoredNavigationTarget();
         this._syncSurfaceNavigationTarget();
         this._syncSurfaceOutpostProgress();
         this._syncDebugDomState();
@@ -582,6 +617,33 @@ export class App {
             if (rpg?.namedSystemId) return rpg.namedSystemId;
         }
         return null;
+    }
+
+    _syncPatrolFromSettledScale() {
+        if (!this.patrol || this.scaleStack?.isTransitioning) return false;
+        const systemId = this._findActiveRpgNamedSystemId();
+        if (
+            this._observedPatrolSystemId === undefined
+            && systemId === null
+            && this.patrol.getState().activeEncounter
+        ) {
+            this._observedPatrolSystemId = systemId;
+            return false;
+        }
+        if (this._observedPatrolSystemId === systemId) return false;
+        try {
+            this.patrol.syncSystem(systemId);
+            this._observedPatrolSystemId = systemId;
+            this._syncPatrolPresentation();
+            return true;
+        } catch (error) {
+            this.patrolError = {
+                context: 'patrol system synchronization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Patrol system synchronization failed; scale traversal remains active.', error);
+            return false;
+        }
     }
 
     _createRpgRuntimeSafely() {
@@ -640,14 +702,36 @@ export class App {
         }
     }
 
+    _createPatrolRuntimeSafely() {
+        try {
+            return new PatrolRuntime({
+                slots: this.saveSlots,
+                rpg: this.rpg,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.patrolError = {
+                context: 'patrol runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 17 patrol runtime unavailable; flight remains active.', error);
+            return null;
+        }
+    }
+
     _handlePlayerInteraction(action) {
-        if (action === 'openComms') this._openCommsPanel();
+        if (action === 'openComms') {
+            const encounter = this.patrol?.getState().activeEncounter;
+            if (encounter && ['hail', 'wait'].includes(encounter.phase)) this._openPatrolHailPanel();
+            else this._openCommsPanel();
+        }
         else if (action === 'openNavigation') this._openNavigationPanel();
         else if (action === 'openRadio') this._openRadioPanel();
         else if (action === 'openShipComputer') this._openShipComputerPanel();
         else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
         else if (action === 'openCrew') this._openCrewPanel();
         else if (action === 'openSurfaceOutpost') this._openSurfaceOutpostPanel();
+        else if (action === 'takeControls' || action === 'leaveControls') this._onPilotModeChanged();
         else if (action === 'boardSurface') {
             const checkpoint = this.surfaceOutpost?.getState().progress.checkpoint;
             if (checkpoint === 'objective_complete') this.surfaceOutpost.recordBoarded();
@@ -675,6 +759,22 @@ export class App {
             .find((poi) => poi.rpg?.surfacePoiId === surfacePoiId);
         if (!replacement) return false;
         this.selectedNavigationTarget = replacement;
+        this.selectedNavigationTargetDepth = this.scaleStack.depth;
+        return true;
+    }
+
+    _syncAuthoredNavigationTarget() {
+        const namedSystemId = this.selectedNavigationTarget?.rpg?.namedSystemId;
+        if (!namedSystemId || this.selectedNavigationTarget?.rpg?.surfacePoiId) return false;
+        const authored = this.environment.getAuthoredSystemPOIs?.(this.ship.position) ?? [];
+        const visible = this.environment.getPOIs?.(this.ship.position, 64) ?? [];
+        const replacement = findAuthoredNavigationReplacement(
+            [...authored, ...visible],
+            namedSystemId
+        );
+        if (!replacement) return false;
+        this.selectedNavigationTarget = replacement;
+        this.selectedNavigationTargetDepth = this.scaleStack.depth;
         return true;
     }
 
@@ -828,6 +928,15 @@ export class App {
             this._closeSurfaceOutpostPanel();
             this.xr.pulse({ duration: 70, strength: 0.25 });
             return 'closeSurfaceOutpost';
+        }
+        if (this.patrolHailOpen) {
+            this._closePatrolHailPanel();
+            if (this.shipControls.pilotActive) {
+                const action = this.playerController.interact();
+                if (action) this._handlePlayerInteraction(action);
+            }
+            this.xr.pulse({ duration: 70, strength: 0.25 });
+            return 'closePatrolHail';
         }
         if (this.crewPanelOpen) {
             this._closeCrewPanel();
@@ -1068,6 +1177,7 @@ export class App {
         this._createCargoTerminalPanel();
         this._createCrewPanel();
         this._createSurfaceOutpostPanel();
+        this._createPatrolHailPanel();
         this._createNavigationPanel();
         this._createRadioPanel();
     }
@@ -1197,6 +1307,11 @@ export class App {
         this.rpg.reload();
         this.delivery?.reload();
         this.surfaceOutpost?.reload();
+        this.patrol?.reload();
+        this._observedPatrolSystemId = undefined;
+        this.patrolHailOpen = false;
+        this.patrolHailDismissedId = null;
+        this.patrolPanelEncounter = null;
         this._syncActiveRpgSystem();
         this._syncCrewPresence();
         this._syncDebugDomState();
@@ -1283,6 +1398,264 @@ export class App {
             <p class="${storageError ? 'computer-error' : ''}">${escapeHtml(storageError?.message ?? this.shipComputerMessage ?? '')}</p>
             <small>Envelope v${envelope.version}; imports always create a new slot.</small>
         `;
+    }
+
+    _createPatrolHailPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'patrol-hail-panel';
+        panel.innerHTML = `
+            <style>
+                #patrol-hail-panel {
+                    position: fixed; right: 5%; top: 14%; width: min(430px, 86vw);
+                    z-index: 27; display: none; overflow: auto; padding: 18px;
+                    pointer-events: auto; isolation: isolate;
+                    color: #fff0cf; background: rgba(15, 10, 4, 0.96);
+                    border: 1px solid #f0b866;
+                    font: 13px/1.5 "Consolas", "Courier New", monospace;
+                    box-shadow: 0 0 28px rgba(240, 184, 102, 0.16);
+                }
+                #patrol-hail-panel button {
+                    margin: 5px 5px 0 0; padding: 7px 10px; color: #fff0cf;
+                    background: #33200b; border: 1px solid #f0b866;
+                }
+                #patrol-hail-panel .patrol-warn { color: #ff9f86; }
+                #patrol-hail-panel .patrol-ok { color: #8dffc2; }
+            </style>
+            <div data-patrol-hail-content></div>
+        `;
+        document.body.appendChild(panel);
+        panel.tabIndex = -1;
+        this.patrolHailPanel = panel;
+        this.patrolHailContentNode = panel.querySelector('[data-patrol-hail-content]');
+        panel.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-patrol-action]');
+            if (!target) return;
+            this._handlePatrolAction(target.dataset.patrolAction);
+        });
+    }
+
+    _openPatrolHailPanel() {
+        const encounter = this.patrol?.getState().activeEncounter ?? this.patrolPanelEncounter;
+        if (!encounter) return null;
+        this.patrolHailOpen = true;
+        this.patrolHailDismissedId = null;
+        this.patrolPanelEncounter = structuredClone(encounter);
+        this.patrolPanelRenderKey = null;
+        this._exitPointerLock();
+        this._renderPatrolHailPanel();
+        this.patrolHailPanel.focus({ preventScroll: true });
+        return encounter;
+    }
+
+    _closePatrolHailPanel() {
+        const encounter = this.patrol?.getState().activeEncounter;
+        this.patrolHailOpen = false;
+        this.patrolPanelRenderKey = null;
+        this.patrolHailDismissedId = encounter?.id ?? this.patrolPanelEncounter?.id ?? null;
+        if (this.patrolHailPanel) this.patrolHailPanel.style.display = 'none';
+        this._syncPatrolPresentation();
+        return false;
+    }
+
+    _handlePatrolKeydown(event) {
+        if (!this.patrolHailOpen) return false;
+        if (event.code === 'Escape') {
+            event.preventDefault();
+            this._closePatrolHailPanel();
+            return true;
+        }
+        if (event.code === 'KeyC') {
+            event.preventDefault();
+            this._closePatrolHailPanel();
+            if (this.shipControls.pilotActive) {
+                const action = this.playerController.interact();
+                if (action) this._handlePlayerInteraction(action);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    _handlePatrolAction(action) {
+        try {
+            if (action === 'close') {
+                return this._closePatrolHailPanel();
+            }
+            if (!this.patrol) throw new Error(this.patrolError?.message ?? 'Patrol runtime is unavailable.');
+            if (action === 'acknowledge') this.patrol.acknowledgeHail();
+            else if (action === 'scan') this.patrol.submitCargoScan();
+            else if (action === 'ignore') this.patrol.ignoreHail();
+            else throw new Error(`Unknown patrol hail action: ${action}`);
+            this.patrolPanelEncounter = this.patrol.getState().activeEncounter;
+        } catch (error) {
+            this.patrolError = {
+                context: 'patrol hail action',
+                message: error instanceof Error ? error.message : String(error)
+            };
+        }
+        this._syncPatrolPresentation();
+        this._renderPatrolHailPanel();
+        this._syncDebugDomState();
+        return true;
+    }
+
+    _renderPatrolHailPanel() {
+        if (!this.patrolHailPanel || !this.patrolHailContentNode) return;
+        this.patrolHailPanel.style.display = this.patrolHailOpen ? 'block' : 'none';
+        if (!this.patrolHailOpen) return;
+        const live = this.patrol?.getState().activeEncounter ?? null;
+        const encounter = live ?? this.patrolPanelEncounter;
+        if (!encounter) {
+            this.patrolHailContentNode.innerHTML = '<p>Patrol channel closed.</p>';
+            return;
+        }
+        this.patrolPanelEncounter = structuredClone(encounter);
+        this.patrolPanelRenderKey = patrolPanelRenderKey(encounter, this.patrolError);
+        const outcome = patrolOutcomeText(encounter.outcomeId);
+        const waiting = ['hail', 'wait'].includes(encounter.phase);
+        const manifest = encounter.cargoScan.matches.length
+            ? encounter.cargoScan.matches.map((entry) => `${entry.cargoId} × ${entry.quantity}`).join(', ')
+            : 'no flagged cargo';
+        const controls = encounter.scanPending
+            ? '<button data-patrol-action="scan">Transmit cargo manifest</button><button data-patrol-action="close">Hide channel</button>'
+            : waiting
+                ? '<button data-patrol-action="acknowledge">Answer hail</button><button data-patrol-action="ignore">Ignore hail</button>'
+                : '<button data-patrol-action="close">Close channel</button>';
+        this.patrolHailContentNode.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:12px">
+                <h2>MERIDIAN WATCH ONE</h2>
+                <small>${escapeHtml(encounter.phase.toUpperCase())}</small>
+            </div>
+            <p>Commonwealth local patrol. Hold course and identify.</p>
+            <p>Transponder band: ${escapeHtml(encounter.reputationBand)} /
+               manifest policy: ${escapeHtml(encounter.cargoScan.status)}</p>
+            ${encounter.scanPending ? `<p>Inspection requested: ${escapeHtml(manifest)}</p>` : ''}
+            ${outcome ? `<p class="${encounter.outcomeId === 'warning_refusal' || encounter.outcomeId === 'safe_hostility' ? 'patrol-warn' : 'patrol-ok'}">${escapeHtml(outcome)}</p>` : ''}
+            ${this.patrolError?.context === 'patrol hail action' ? `<p class="patrol-warn">${escapeHtml(this.patrolError.message)}</p>` : ''}
+            <div>${controls}</div>
+            <small>Hide preserves the encounter. Use the physical cockpit comms station to resume it.</small>
+        `;
+    }
+
+    _syncPatrolPresentation() {
+        if (!this.patrol) {
+            this._removePatrolAgentVisual();
+            return null;
+        }
+        const encounter = this.patrol.getState().activeEncounter;
+        if (encounter) {
+            this._updatePatrolAgentVisual(encounter);
+            if (
+                this.shipControls.pilotActive
+                && ['hail', 'wait'].includes(encounter.phase)
+                && this.patrolHailDismissedId !== encounter.id
+            ) {
+                if (!this.patrolHailOpen) this._openPatrolHailPanel();
+            }
+            if (this.patrolHailOpen) {
+                this.patrolPanelEncounter = structuredClone(encounter);
+                const renderKey = patrolPanelRenderKey(encounter, this.patrolError);
+                if (renderKey !== this.patrolPanelRenderKey) this._renderPatrolHailPanel();
+            }
+        } else {
+            this._removePatrolAgentVisual();
+        }
+        return encounter;
+    }
+
+    _updatePatrolAgentVisual(encounter) {
+        if (!this.patrolAgentVisual) {
+            const group = new THREE.Group();
+            group.name = 'commonwealth-meridian-watch-placeholder';
+            const hull = new THREE.Mesh(
+                new THREE.ConeGeometry(3.6, 11, 6),
+                new THREE.MeshStandardMaterial({
+                    color: 0x98652f,
+                    emissive: 0x5b280d,
+                    emissiveIntensity: 0.55,
+                    metalness: 0.72,
+                    roughness: 0.34
+                })
+            );
+            hull.rotation.x = Math.PI / 2;
+            group.add(hull);
+            const beacon = new THREE.PointLight(0xffb45d, 5.5, 70);
+            beacon.position.set(0, 2.6, 0);
+            group.add(beacon);
+            const runningLight = new THREE.Mesh(
+                new THREE.SphereGeometry(0.65, 10, 8),
+                new THREE.MeshBasicMaterial({ color: 0xffd08a })
+            );
+            runningLight.position.set(0, 2.6, 0);
+            group.add(runningLight);
+            this.scene.add(group);
+            this.patrolAgentVisual = group;
+        }
+        const gameTime = this.gameClock.getTime();
+        const elapsed = Math.max(0, gameTime - encounter.phaseStartedAtGameTime);
+        if (this.patrolVisualState?.encounterId !== encounter.id) {
+            this.patrolVisualState = {
+                encounterId: encounter.id,
+                lastGameTime: gameTime,
+                terminalPhase: null,
+                terminalOrigin: null,
+                terminalDirection: null
+            };
+            this.patrolAgentVisual.position.copy(
+                this.ship.localToWorld(new THREE.Vector3(0, 4, -75))
+            );
+        }
+        const visual = this.patrolVisualState;
+        const dt = Math.max(0, Math.min(0.1, gameTime - visual.lastGameTime));
+        visual.lastGameTime = gameTime;
+
+        if (['depart', 'abort'].includes(encounter.phase)) {
+            if (visual.terminalPhase !== encounter.phase) {
+                visual.terminalPhase = encounter.phase;
+                visual.terminalOrigin = this.patrolAgentVisual.position.clone();
+                visual.terminalDirection = new THREE.Vector3(
+                    encounter.phase === 'depart' ? 0.82 : 0.68,
+                    encounter.phase === 'depart' ? 0.24 : 0.36,
+                    encounter.phase === 'depart' ? 0.52 : 0.64
+                ).applyQuaternion(this.ship.object3D.quaternion).normalize();
+            }
+            const speed = encounter.phase === 'depart' ? 24 : 42;
+            this.patrolAgentVisual.position.copy(visual.terminalOrigin)
+                .addScaledVector(visual.terminalDirection, elapsed * speed);
+        } else {
+            const stationKeeping = new THREE.Vector3(
+                8 + Math.sin(gameTime * 0.43) * 2.2,
+                5 + Math.sin(gameTime * 0.71) * 1.1,
+                -30 + Math.cos(gameTime * 0.37) * 2.8
+            );
+            const desiredLocal = encounter.phase === 'spawn'
+                ? new THREE.Vector3(0, 4, -75)
+                : encounter.phase === 'approach'
+                    ? new THREE.Vector3(2, 5, -56).lerp(stationKeeping, Math.min(1, elapsed / 5))
+                    : stationKeeping;
+            const desiredWorld = this.ship.localToWorld(desiredLocal);
+            const response = encounter.phase === 'approach' ? 0.75 : 0.32;
+            this.patrolAgentVisual.position.lerp(
+                desiredWorld,
+                1 - Math.exp(-response * Math.max(dt, 1 / 120))
+            );
+        }
+        this.patrolAgentVisual.lookAt(this.ship.position);
+        this.patrolAgentVisual.rotateY(Math.PI);
+        this.patrolAgentVisual.visible = true;
+    }
+
+    _removePatrolAgentVisual() {
+        if (!this.patrolAgentVisual) return false;
+        this.scene.remove(this.patrolAgentVisual);
+        this.patrolAgentVisual.traverse((node) => {
+            node.geometry?.dispose?.();
+            if (Array.isArray(node.material)) node.material.forEach((material) => material.dispose?.());
+            else node.material?.dispose?.();
+        });
+        this.patrolAgentVisual = null;
+        this.patrolVisualState = null;
+        return true;
     }
 
     _createCargoTerminalPanel() {
@@ -1410,7 +1783,7 @@ export class App {
                 </section>
             </div>
             <p>${escapeHtml(this.cargoTerminalMessage)}</p>
-            <small>Static prices. No market, trading, docking, or patrol simulation.</small>
+            <small>Static prices. No market, trading, docking, or cargo confiscation.</small>
         `;
     }
 
@@ -2369,8 +2742,10 @@ export class App {
         if (poi) {
             if (this.selectedNavigationTarget && this.selectedNavigationTarget.name === poi.name) {
                 this.selectedNavigationTarget = null;
+                this.selectedNavigationTargetDepth = null;
             } else {
                 this.selectedNavigationTarget = poi;
+                this.selectedNavigationTargetDepth = this.scaleStack.depth;
                 if (poi.rpg?.surfacePoiId && this.surfaceOutpost) {
                     try {
                         this.surfaceOutpost.scan(poi.rpg.surfacePoiId, {
@@ -2485,6 +2860,12 @@ export class App {
             );
         }
         if (this.cargoTerminalMessage) lines.push(`<span class="warn">${escapeHtml(this.cargoTerminalMessage)}</span>`);
+        const patrolEncounter = this.patrol?.getState().activeEncounter;
+        if (patrolEncounter) {
+            lines.push(
+                `<b>PATROL</b> ${escapeHtml(patrolEncounter.agentId)} / ${escapeHtml(patrolEncounter.phase)}`
+            );
+        }
 
         if (nearest) {
             lines.push(
@@ -2644,6 +3025,7 @@ export class App {
         window.addEventListener('keydown', (event) => {
             this._unlockAudioFromGesture();
 
+            if (this._handlePatrolKeydown(event)) return;
             if (this._handleSurfaceOutpostKeydown(event)) return;
             if (this._handleCrewKeydown(event)) return;
             if (this._handleCargoTerminalKeydown(event)) return;
@@ -2793,7 +3175,7 @@ export class App {
         this.canvas.addEventListener('pointerdown', () => this._unlockAudioFromGesture(), { passive: true });
         this.canvas.addEventListener('click', () => {
             this._unlockAudioFromGesture();
-            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen && !this.shipComputerOpen && !this.cargoTerminalOpen && !this.crewPanelOpen && !this.surfaceOutpostPanelOpen) {
+            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen && !this.shipComputerOpen && !this.cargoTerminalOpen && !this.crewPanelOpen && !this.surfaceOutpostPanelOpen && !this.patrolHailOpen) {
                 this.canvas.requestPointerLock?.();
             }
         });
@@ -3183,6 +3565,37 @@ export class App {
                 openTerminal: () => this._openSurfaceOutpostPanel(),
                 closeTerminal: () => this._closeSurfaceOutpostPanel()
             },
+            patrol: {
+                getState: () => this.patrol?.getState() ?? { unavailable: this.patrolError },
+                getInfluence: (systemId = 'entry_hub') => this.patrol?.getInfluence(systemId),
+                syncSystem: (systemId) => {
+                    const state = this.patrol?.syncSystem(systemId);
+                    this._syncPatrolPresentation();
+                    return state;
+                },
+                update: (gameTime = this.gameClock.getTime()) => {
+                    const state = this.patrol?.update(gameTime);
+                    this._syncPatrolPresentation();
+                    return state;
+                },
+                acknowledge: () => this._handlePatrolAction('acknowledge'),
+                submitScan: () => this._handlePatrolAction('scan'),
+                ignore: () => this._handlePatrolAction('ignore'),
+                abort: () => {
+                    const state = this.patrol?.abort('debug-abort');
+                    this._syncPatrolPresentation();
+                    return state;
+                },
+                restartVisit: (systemId = 'entry_hub') => {
+                    this.patrol?.syncSystem(null);
+                    const state = this.patrol?.syncSystem(systemId);
+                    this.patrolHailDismissedId = null;
+                    this._syncPatrolPresentation();
+                    return state;
+                },
+                openHail: () => this._openPatrolHailPanel(),
+                closeHail: () => this._closePatrolHailPanel()
+            },
             saves: {
                 getStatus: () => this.saveSlots.getStatus(),
                 list: () => this.saveSlots.listSlots(),
@@ -3477,6 +3890,7 @@ export class App {
             this.debugCamera.mode = 'pilot';
         } else {
             this.debugCamera.mode = this.debugCamera.freeMode;
+            if (this.patrolHailOpen) this._closePatrolHailPanel();
         }
 
         this._syncDebugDomState();
@@ -3539,6 +3953,10 @@ export class App {
                 available: false,
                 error: this.surfaceOutpostError
             },
+            patrol: this.patrol?.getState() ?? {
+                available: false,
+                error: this.patrolError
+            },
             saves: {
                 ...this.saveSlots.getStatus(),
                 slots: this.saveSlots.listSlots(),
@@ -3597,6 +4015,28 @@ function escapeHtml(value) {
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+}
+
+function patrolOutcomeText(outcomeId) {
+    return {
+        welcome: 'Transponder recognized. Welcome to Port Meridian. Maintain a safe approach.',
+        inspection_clear: 'Manifest inspection clear. You may proceed.',
+        warning_refusal: 'Passage refused under Commonwealth traffic policy. Turn away safely.',
+        ignored_hail: 'No response received. Your transponder has been logged; the patrol is disengaging.',
+        safe_hostility: 'Hostile transponder recognized. Passage refused. No engagement authorized; depart safely.',
+        aborted: 'Patrol contact aborted as the ship left local territory.'
+    }[outcomeId] ?? '';
+}
+
+function patrolPanelRenderKey(encounter, error) {
+    return [
+        encounter?.id,
+        encounter?.phase,
+        encounter?.outcomeId,
+        encounter?.scanPending,
+        encounter?.cargoScan?.status,
+        error?.context === 'patrol hail action' ? error.message : ''
+    ].join('|');
 }
 
 function formatGameTime(seconds) {

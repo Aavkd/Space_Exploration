@@ -12,6 +12,12 @@ export const CARGO_DEFINITIONS = Object.freeze({
         name: 'Maintenance supplies',
         unitMass: 10,
         legalityTags: Object.freeze(['legal', 'industrial'])
+    }),
+    unregistered_signal_scrambler: Object.freeze({
+        id: 'unregistered_signal_scrambler',
+        name: 'Unregistered signal scrambler',
+        unitMass: 5,
+        legalityTags: Object.freeze(['restricted', 'commonwealth_contraband'])
     })
 });
 

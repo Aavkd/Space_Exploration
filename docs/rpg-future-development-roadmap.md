@@ -281,6 +281,11 @@ Out of scope: procedural settlements, combat, crowds, interiors, and markets.
 
 ### Phase 17 - Faction Territory And Patrol
 
+**Status:** Implementation complete with 46 passing RPG regressions and an
+owner-verified core browser loop. Extended manual policy/device checks remain
+open before final phase signoff; see
+[`phase-17-faction-patrol.md`](phase-17-faction-patrol.md).
+
 **Proof loop:** enter Commonwealth space and be welcomed, inspected, warned, or
 refused by one patrol according to reputation and cargo.
 

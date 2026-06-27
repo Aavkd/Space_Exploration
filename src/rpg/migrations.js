@@ -1,5 +1,6 @@
 import { createInitialNpcState } from './npcs.js';
 import { createInitialSurfaceState } from './surfaceOutposts.js';
+import { createInitialPatrolState } from './patrols.js';
 import { RPG_STATE_VERSION } from './state.js';
 
 // Add one entry per historical version when RPG_STATE_VERSION is increased.
@@ -8,7 +9,8 @@ import { RPG_STATE_VERSION } from './state.js';
 export const RPG_STATE_MIGRATIONS = Object.freeze({
     1: (state) => ({ ...state, version: 2 }),
     2: (state) => ({ ...state, version: 3, npcs: createInitialNpcState() }),
-    3: (state) => ({ ...state, version: 4, surface: createInitialSurfaceState() })
+    3: (state) => ({ ...state, version: 4, surface: createInitialSurfaceState() }),
+    4: (state) => ({ ...state, version: 5, patrol: createInitialPatrolState() })
 });
 
 export function migrateRpgState(value) {

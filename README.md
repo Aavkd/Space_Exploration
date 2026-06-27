@@ -18,6 +18,9 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
 - Validated surface-outpost loop at Index Relay K-7: pinned orbit scanner,
   true-radius descent and landing, surface walking, a physical terminal,
   return-to-ship reporting, and versioned checkpoint persistence.
+- Deterministic Commonwealth territory patrol at Port Meridian: one local
+  agent, reputation bands, cargo inspection, safe refusal, ignored hails, and
+  reload/scale deduplication without combat.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -33,9 +36,9 @@ Then open [http://localhost:5177/](http://localhost:5177/).
 ## RPG regression tests
 
 The dependency-free RPG suite covers Phase 11 mission behavior, Phase 13 slots
-and clock, Phase 14 cargo/fuel delivery, Phase 15 crew state, and Phase 16
-surface placement, migration, failures, checkpoint reloads, and exact-once
-completion:
+and clock, Phase 14 cargo/fuel delivery, Phase 15 crew state, Phase 16 surface
+placement, and Phase 17 faction patrol policy, migration, failures, checkpoint
+reloads, and exact-once completion:
 
 ```powershell
 node --experimental-default-type=module --test tests/rpg/*.test.mjs
@@ -143,8 +146,8 @@ window.__deepSpaceDebug.rpg.reset();
 Walk to the observation-bay ship computer and press `C` / Triangle / XR select
 to inspect `A Clean Copy`, manage three isolated local slots, export validated
 JSON, preview/import it into a new slot, and inspect active-play time. Phase 11
-version-1 browser saves migrate automatically through the current Phase 16
-version-5 envelope / RPG version 4; Phase 13–15 slots migrate non-destructively.
+version-1 browser saves migrate automatically through the current Phase 17
+version-6 envelope / RPG version 5; Phase 13–16 slots migrate non-destructively.
 There is no cloud synchronization or offline simulation.
 
 ### Cargo delivery
@@ -177,6 +180,17 @@ Static refuel and emergency rescue controls are available at the cargo terminal.
 The outpost has fixed authored geography and uses the same terrain sampling as
 rendering, collision, landing, and walking. It is not placed on gas giants or
 unrelated planets.
+
+### Faction patrol
+
+Entering Port Meridian creates one deterministic Commonwealth patrol encounter
+per system visit. `Meridian Watch One` spawns ahead of the cockpit, approaches
+on an independent world-space flight path, and waits 60 seconds of active play
+for an answer. Reputation and the spawn-time cargo manifest produce a welcome,
+inspection, warning/refusal, ignored hail, or safe-hostility departure. No
+outcome attacks, damages, confiscates cargo, or forces combat. Leaving the
+pilot seat hides but does not resolve the hail; use the cockpit comms station
+to resume it.
 
 ### Gamepad and VR
 
@@ -227,6 +241,9 @@ window.__deepSpaceDebug.saves.getGameTime();
 window.__deepSpaceDebug.delivery.getState();
 window.__deepSpaceDebug.surfaceOutpost.getState();
 window.__deepSpaceDebug.surfaceOutpost.getPlacement();
+window.__deepSpaceDebug.patrol.getState();
+window.__deepSpaceDebug.patrol.getInfluence('entry_hub');
+window.__deepSpaceDebug.patrol.restartVisit('entry_hub');
 ```
 
 The Phase 11A-E implementation and verification checklist are documented in
@@ -247,6 +264,7 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-13-save-slots-and-clock.md](docs/phase-13-save-slots-and-clock.md) - versioned world envelope, local slots, ship log, and active-play clock
 - [docs/phase-14-cargo-fuel-delivery.md](docs/phase-14-cargo-fuel-delivery.md) - persistent cargo, fuel, recovery, and two-system delivery
 - [docs/phase-16-surface-outpost.md](docs/phase-16-surface-outpost.md) - authored planet POI, surface terminal mission, and checkpoint persistence
+- [docs/phase-17-faction-patrol.md](docs/phase-17-faction-patrol.md) - deterministic faction influence, cargo policy, and one safe local patrol
 - [docs/rpg-future-development-roadmap.md](docs/rpg-future-development-roadmap.md) - post-Phase-11 vertical slices, dependencies, tests, and acceptance gates
 - [docs/rpg-phase-agent-prompts.md](docs/rpg-phase-agent-prompts.md) - copy-paste implementation prompts for each future RPG phase
 
@@ -255,7 +273,11 @@ The Phase 11A-E implementation and verification checklist are documented in
 - The imported ship mesh is heavy for VR and may need a decimated or LOD variant for sustained headset performance.
 - The interior collision model is an abstract ship-local blockout, not full collision against the authored GLB interior.
 - Untethered world-frame EVA, full physical hazards, and a 3D radar/map are still future work.
-- Phase 14 prices are static; dynamic markets, free trading, patrol scans,
-  docking, cargo meshes, and NPC ships remain future work.
+- Phase 14 prices are static; dynamic markets, free trading, docking, cargo
+  meshes, and general NPC traffic remain future work.
 - Phase 16 ships one placeholder outpost only; procedural settlements, interiors,
   combat, crowds, markets, and spatial transform persistence remain deferred.
+- Phase 17 ships one placeholder Commonwealth patrol and one territory policy.
+  There are no weapons, damage, fleets, confiscation, dynamic agendas, or
+  normal-play contraband acquisition yet. The hail is currently a desktop DOM
+  panel rather than a diegetic in-headset surface.

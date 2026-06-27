@@ -3,6 +3,7 @@ export { RPG_STATE_MIGRATIONS, migrateRpgState } from './migrations.js';
 export { RpgRuntime, createRpgRuntime } from './RpgRuntime.js';
 export { DELIVERY_MISSION_ID, DeliveryRuntime } from './DeliveryRuntime.js';
 export { SurfaceOutpostRuntime } from './SurfaceOutpostRuntime.js';
+export { PATROL_PHASE_DURATIONS, PatrolRuntime } from './PatrolRuntime.js';
 export {
     CREW_INTERACTION_STATES,
     CrewRuntime,
@@ -53,6 +54,27 @@ export {
     isMeteredAuthoredRoute,
     sanitizeShipState
 } from './cargo.js';
+export {
+    FACTION_TERRITORY_POLICIES,
+    FACTION_TERRITORY_POLICY_IDS,
+    PATROL_WORLD_SEED,
+    REPUTATION_BANDS,
+    classifyReputation,
+    createCargoFingerprint,
+    createPatrolEncounterId,
+    evaluatePatrolPolicy,
+    getFactionTerritoryPolicy,
+    queryFactionInfluence,
+    scanCargoLegality
+} from './factionTerritory.js';
+export {
+    MAX_PATROL_HISTORY,
+    PATROL_OUTCOMES,
+    PATROL_PHASES,
+    PATROL_STATE_VERSION,
+    createInitialPatrolState,
+    sanitizePatrolState
+} from './patrols.js';
 export {
     SURFACE_CHECKPOINTS,
     SURFACE_MISSION_ID,
