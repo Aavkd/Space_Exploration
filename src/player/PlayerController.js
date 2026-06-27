@@ -38,7 +38,8 @@ export class PlayerController {
         locomotion,
         surfaceLocomotion,
         getSurfaceProvider = () => null,
-        getSurfaceParent = () => null
+        getSurfaceParent = () => null,
+        getSurfaceInteraction = () => null
     } = {}) {
         this.ship = ship;
         this.rig = playerRig;
@@ -47,6 +48,7 @@ export class PlayerController {
         this.surfaceLocomotion = surfaceLocomotion ?? new SurfaceLocomotion();
         this.getSurfaceProvider = getSurfaceProvider;
         this.getSurfaceParent = getSurfaceParent;
+        this.getSurfaceInteraction = getSurfaceInteraction;
 
         this.state = PLAYER_STATE.WALKING;
         this.prompt = null;
@@ -136,6 +138,8 @@ export class PlayerController {
             case 'openCargoTerminal':
                 return action;
             case 'openCrew':
+                return action;
+            case 'openSurfaceOutpost':
                 return action;
             case 'leaveControls':
                 this._leaveControls();
@@ -275,6 +279,8 @@ export class PlayerController {
         }
 
         if (this.state === PLAYER_STATE.SURFACE) {
+            const interaction = this._surfaceInteraction();
+            if (interaction?.available) return 'openSurfaceOutpost';
             if (this._nearSurfaceBoardPoint()) return 'boardSurface';
             return null;
         }
@@ -320,6 +326,8 @@ export class PlayerController {
                 return 'Press C / Triangle - enter the ship';
             case 'boardSurface':
                 return 'Press C / Triangle - board the ship';
+            case 'openSurfaceOutpost':
+                return 'Press C / Triangle - access outpost terminal';
             default:
                 return null;
         }
@@ -512,6 +520,12 @@ export class PlayerController {
             ? this._surfaceForward.fromArray(step.baseForward)
             : this._surfaceForward.set(0, 0, -1);
         this.rig.setSurfaceFrame(surfaceSample.normal, base);
+    }
+
+    _surfaceInteraction() {
+        if (this.state !== PLAYER_STATE.SURFACE) return null;
+        this.rig.object3D.getWorldPosition(this._worldPos);
+        return this.getSurfaceInteraction?.(this._worldPos) ?? null;
     }
 
     _ensureRigParent(parent) {

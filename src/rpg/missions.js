@@ -116,6 +116,48 @@ export const MISSION_DEFINITIONS = Object.freeze({
                 })
             })
         })
+    }),
+    index_k7_surface_verification: Object.freeze({
+        id: 'index_k7_surface_verification',
+        name: 'K-7 Surface Verification',
+        namedSystemId: 'index_hq',
+        contactId: 'index_hq_archivist',
+        initialStatus: MISSION_STATUSES.UNAVAILABLE,
+        requiresExternalResolution: true,
+        description: 'Verify the K-7 Cartography Annex beacon from the surface and report from the ship.',
+        surfacePoiId: 'index_k7_cartography_outpost',
+        objectives: Object.freeze({
+            discover_k7_outpost: Object.freeze({
+                id: 'discover_k7_outpost',
+                label: 'Acquire the K-7 Cartography Annex scanner contact.'
+            }),
+            land_at_k7_outpost: Object.freeze({
+                id: 'land_at_k7_outpost',
+                label: 'Land inside the marked safe area.'
+            }),
+            access_k7_surface_terminal: Object.freeze({
+                id: 'access_k7_surface_terminal',
+                label: 'Verify the archive beacon at the surface terminal.'
+            }),
+            return_to_ship: Object.freeze({
+                id: 'return_to_ship',
+                label: 'Return to and board the ship.'
+            }),
+            report_k7_surface_survey: Object.freeze({
+                id: 'report_k7_surface_survey',
+                label: 'Report the survey from the ship log.'
+            })
+        }),
+        branches: Object.freeze({
+            survey_reported: Object.freeze({
+                id: 'survey_reported',
+                label: 'Reported the verified K-7 surface beacon.',
+                worldFlags: Object.freeze({
+                    'index_hq.k7_surface_verification_complete': true
+                })
+            })
+        }),
+        failureOutcomes: Object.freeze({})
     })
 });
 

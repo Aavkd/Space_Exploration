@@ -1,0 +1,53 @@
+{
+  "version": 4,
+  "slot": {
+    "id": "slot-phase15",
+    "name": "Phase 15 Flight",
+    "createdAt": "2026-06-27T00:00:00.000Z",
+    "updatedAt": "2026-06-27T04:00:00.000Z"
+  },
+  "autosave": {
+    "kind": "auto",
+    "reason": "crew-relationship-choice",
+    "savedAt": "2026-06-27T04:00:00.000Z",
+    "sequence": 12
+  },
+  "player": {},
+  "ship": {
+    "version": 1,
+    "credits": 1150,
+    "fuel": { "current": 72, "capacity": 100, "reserve": 15 },
+    "cargo": { "capacityMass": 40, "stacks": [] },
+    "travel": { "currentSystemId": "index_hq", "pendingJump": null }
+  },
+  "rpg": {
+    "version": 3,
+    "createdAt": "2026-06-26T00:00:00.000Z",
+    "updatedAt": "2026-06-27T04:00:00.000Z",
+    "factions": { "byId": { "index": { "reputation": 0.15 } } },
+    "namedSystems": { "byId": {} },
+    "contacts": { "byId": {} },
+    "missions": { "byId": {} },
+    "npcs": {
+      "crewCapacity": 4,
+      "crewRoster": ["crew_quartermaster_lyra"],
+      "byId": {
+        "crew_quartermaster_lyra": {
+          "id": "crew_quartermaster_lyra",
+          "presence": "aboard",
+          "locationId": "crewMessAnchor",
+          "relationship": 0.15,
+          "mood": "warm",
+          "memoryReferences": ["crew.choice.trusted-judgment"],
+          "alive": true,
+          "recruited": true
+        }
+      }
+    },
+    "comms": { "activeContactId": null, "llmFlavorEnabled": false },
+    "eventLog": [],
+    "worldFlags": { "index_hq.archive_delivery_complete": true }
+  },
+  "simulation": { "gameTime": 456.25 },
+  "settings": {}
+}

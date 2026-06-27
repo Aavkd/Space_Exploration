@@ -6,6 +6,7 @@ import { DebrisField } from './DebrisField.js';
 import { starBodyRadius } from './starColor.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 import { DESCENT } from '../../config/scaleTiers.js';
+import { findSurfacePoiForPlanet } from '../../rpg/surfaceOutposts.js';
 
 const PLANET_ENTRY = Object.freeze({
     scale: DESCENT.planetEntryRadiusScale,
@@ -69,15 +70,22 @@ export class SystemContents {
     }
 
     getPOIs(shipPosition = new THREE.Vector3(), limit = 12) {
-        const pois = [
+        const surfaceSignals = this._getSurfaceOutpostSignals();
+        const ordinaryPois = [
             this.star.getPOI(),
             ...this.planets.map((planet) => planet.getPOI()),
             ...(this.debrisField?.getPOIs(shipPosition, 3) ?? [])
-        ];
-        return pois
+        ]
             .map((poi) => ({ ...poi, distance: shipPosition.distanceTo(poi.position) }))
-            .sort((a, b) => a.distance - b.distance)
-            .slice(0, limit);
+            .sort((a, b) => a.distance - b.distance);
+        const pinnedSignals = surfaceSignals.map((poi) => ({
+            ...poi,
+            distance: shipPosition.distanceTo(poi.position)
+        }));
+        return [
+            ...pinnedSignals,
+            ...ordinaryPois.slice(0, Math.max(0, limit - pinnedSignals.length))
+        ].slice(0, limit);
     }
 
     // Planets the ship can descend into from this System level (§4.1). Each
@@ -222,6 +230,21 @@ export class SystemContents {
                 hasRings,
                 starProfile: this.anchor
             });
+            const namedSystemId = this.anchor.rpg?.namedSystemId ?? null;
+            const planetId = namedSystemId ? `${namedSystemId}_planet_${i + 1}` : null;
+            const surfacePoi = findSurfacePoiForPlanet({
+                systemId: namedSystemId,
+                planetId,
+                planetIndex: i,
+                kind,
+                landable: descriptor.landable
+            });
+            descriptor.rpg = {
+                namedSystemId,
+                planetId,
+                planetIndex: i,
+                surfacePoiId: surfacePoi?.id ?? null
+            };
             const planet = new PlanetBody({
                 name,
                 kind,
@@ -261,6 +284,7 @@ export class SystemContents {
         return {
             name: this.anchor.name,
             seed: this.seed,
+            rpg: this.anchor.rpg ? { ...this.anchor.rpg } : null,
             systemTime: this._time,
             star: {
                 name: this.star.name,
@@ -278,6 +302,33 @@ export class SystemContents {
                     planet.getWorldPosition(new THREE.Vector3()).sub(systemOrigin)
                 ))
         };
+    }
+
+    _getSurfaceOutpostSignals() {
+        const namedSystemId = this.anchor.rpg?.namedSystemId ?? null;
+        return this.planets.flatMap((planet, planetIndex) => {
+            const planetId = namedSystemId ? `${namedSystemId}_planet_${planetIndex + 1}` : null;
+            const surfacePoi = findSurfacePoiForPlanet({
+                systemId: namedSystemId,
+                planetId,
+                planetIndex,
+                kind: planet.kind,
+                landable: planet.descriptor?.landable === true
+            });
+            if (!surfacePoi) return [];
+            return [{
+                type: 'surface outpost signal',
+                name: `${surfacePoi.name} [SURFACE SCAN]`,
+                position: planet.getWorldPosition(new THREE.Vector3()),
+                radius: planet.radius,
+                rpg: {
+                    namedSystemId: surfacePoi.systemId,
+                    planetId: surfacePoi.planetId,
+                    surfacePoiId: surfacePoi.id,
+                    markerScale: 'system'
+                }
+            }];
+        });
     }
 
     _planetEphemeris(planet, position) {

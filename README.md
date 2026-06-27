@@ -15,6 +15,9 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
 - DualSense / standard gamepad support, WebXR controller support, and runtime debug hooks.
 - Validated first RPG loop at Port Meridian: cockpit comms, a deterministic two-branch mission, persistent faction reputation, world flags, and conversation outcomes.
 - Validated two-system delivery loop: persistent cargo, capacity, credits, protected-reserve fuel, exact-once rewards, and the placeholder Index Relay K-7 destination.
+- Validated surface-outpost loop at Index Relay K-7: pinned orbit scanner,
+  true-radius descent and landing, surface walking, a physical terminal,
+  return-to-ship reporting, and versioned checkpoint persistence.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -30,8 +33,9 @@ Then open [http://localhost:5177/](http://localhost:5177/).
 ## RPG regression tests
 
 The dependency-free RPG suite covers Phase 11 mission behavior, Phase 13 slots
-and clock, plus Phase 14 cargo, fuel, migration, failures, checkpoint reloads,
-and exact-once delivery:
+and clock, Phase 14 cargo/fuel delivery, Phase 15 crew state, and Phase 16
+surface placement, migration, failures, checkpoint reloads, and exact-once
+completion:
 
 ```powershell
 node --experimental-default-type=module --test tests/rpg/*.test.mjs
@@ -139,8 +143,8 @@ window.__deepSpaceDebug.rpg.reset();
 Walk to the observation-bay ship computer and press `C` / Triangle / XR select
 to inspect `A Clean Copy`, manage three isolated local slots, export validated
 JSON, preview/import it into a new slot, and inspect active-play time. Phase 11
-version-1 browser saves migrate automatically into the current version-3 world
-envelope; Phase 13 version-2 slots migrate non-destructively.
+version-1 browser saves migrate automatically through the current Phase 16
+version-5 envelope / RPG version 4; Phase 13–15 slots migrate non-destructively.
 There is no cloud synchronization or offline simulation.
 
 ### Cargo delivery
@@ -156,6 +160,23 @@ There is no cloud synchronization or offline simulation.
 
 The route consumes deterministic fuel while preserving a protected reserve.
 Static refuel and emergency rescue controls are available at the cargo terminal.
+
+### Surface outpost
+
+`K-7 Surface Verification` connects the existing flight and surface-EVA stacks:
+
+1. Enter `Index Relay K-7 [RPG]`.
+2. Use the cockpit navigation computer and lock
+   `K-7 Cartography Annex [SURFACE SCAN]`.
+3. Descend to the marked first terrestrial world and land inside the safe-area
+   marker.
+4. Leave through the airlock, walk to the cyan outpost terminal, and press
+   `C` / Triangle / XR select to verify its beacon.
+5. Return to the ship, board, and report at the observation-bay ship log.
+
+The outpost has fixed authored geography and uses the same terrain sampling as
+rendering, collision, landing, and walking. It is not placed on gas giants or
+unrelated planets.
 
 ### Gamepad and VR
 
@@ -204,6 +225,8 @@ window.__deepSpaceDebug.saves.list();
 window.__deepSpaceDebug.saves.getActive();
 window.__deepSpaceDebug.saves.getGameTime();
 window.__deepSpaceDebug.delivery.getState();
+window.__deepSpaceDebug.surfaceOutpost.getState();
+window.__deepSpaceDebug.surfaceOutpost.getPlacement();
 ```
 
 The Phase 11A-E implementation and verification checklist are documented in
@@ -223,6 +246,7 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-12-radio-transceiver.md](docs/phase-12-radio-transceiver.md) - radio transceiver system, custom music folders, and cosmic beacons
 - [docs/phase-13-save-slots-and-clock.md](docs/phase-13-save-slots-and-clock.md) - versioned world envelope, local slots, ship log, and active-play clock
 - [docs/phase-14-cargo-fuel-delivery.md](docs/phase-14-cargo-fuel-delivery.md) - persistent cargo, fuel, recovery, and two-system delivery
+- [docs/phase-16-surface-outpost.md](docs/phase-16-surface-outpost.md) - authored planet POI, surface terminal mission, and checkpoint persistence
 - [docs/rpg-future-development-roadmap.md](docs/rpg-future-development-roadmap.md) - post-Phase-11 vertical slices, dependencies, tests, and acceptance gates
 - [docs/rpg-phase-agent-prompts.md](docs/rpg-phase-agent-prompts.md) - copy-paste implementation prompts for each future RPG phase
 
@@ -233,3 +257,5 @@ The Phase 11A-E implementation and verification checklist are documented in
 - Untethered world-frame EVA, full physical hazards, and a 3D radar/map are still future work.
 - Phase 14 prices are static; dynamic markets, free trading, patrol scans,
   docking, cargo meshes, and NPC ships remain future work.
+- Phase 16 ships one placeholder outpost only; procedural settlements, interiors,
+  combat, crowds, markets, and spatial transform persistence remain deferred.

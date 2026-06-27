@@ -255,6 +255,10 @@ Decision gate: provisional crew cap and whether the first avatar is a stand-in.
 
 ### Phase 16 - Surface Outpost Vertical Slice
 
+**Status:** Complete; deterministic, migration, checkpoint, exclusion, browser,
+normal-control, gamepad, and WebXR evidence is recorded in
+[`phase-16-surface-outpost.md`](phase-16-surface-outpost.md).
+
 **Objective:** connect orbit, landing, walking, a surface interaction, and a
 mission objective on one authored planet.
 

@@ -40,6 +40,8 @@ import {
     createRpgRuntime,
     CrewRuntime,
     DeliveryRuntime,
+    SurfaceOutpostRuntime,
+    SURFACE_OUTPOST_ID,
     isMeteredAuthoredRoute,
     LocalRpgPersistence
 } from '../rpg/index.js';
@@ -166,7 +168,8 @@ export class App {
             shipControls: this.shipControls,
             locomotion: this.locomotion,
             getSurfaceProvider: () => this.environment?.getSurfaceSample ? this.environment : null,
-            getSurfaceParent: () => this.environment?.getSurfaceSample ? this.environment.group : null
+            getSurfaceParent: () => this.environment?.getSurfaceSample ? this.environment.group : null,
+            getSurfaceInteraction: (position) => this.environment?.getSurfaceInteraction?.(position) ?? null
         });
 
         // 'player' -> first-person rig drives the camera (default Phase 4 view);
@@ -271,6 +274,8 @@ export class App {
         this.cargoTerminalOpen = false;
         this.cargoTerminalMessage = '';
         this.crewPanelOpen = false;
+        this.surfaceOutpostPanelOpen = false;
+        this.surfaceOutpostMessage = '';
         this.radioPower = true;
         this.radioVolume = 0.5;
         this.activeRadioStationIndex = 0;
@@ -288,6 +293,8 @@ export class App {
         this._syncCrewPresence();
         this.deliveryError = null;
         this.delivery = this._createDeliveryRuntimeSafely();
+        this.surfaceOutpostError = null;
+        this.surfaceOutpost = this._createSurfaceOutpostRuntimeSafely();
         this._installDebugHooks();
         this._applyRuntimeConfig();
         this._loadInitialJsonPreset();
@@ -364,6 +371,7 @@ export class App {
             cameraPosition: this.camera.position,
             hyperdriveLevel: this.ship.getHyperdriveLevel()
         });
+        this._syncSurfaceOutpostProgress();
         this.sky.update(dt, this.camera.position);
 
         this._updateSpeedFx(dt, xrActive);
@@ -416,6 +424,11 @@ export class App {
         }
 
         if (buttons.triangle.justPressed && this.cameraMode === 'player') {
+            if (this.surfaceOutpostPanelOpen) {
+                this._closeSurfaceOutpostPanel();
+                this.input.gamepad.pulse({ duration: 70, weak: 0.18, strong: 0.28 });
+                return;
+            }
             if (this.crewPanelOpen) {
                 this._closeCrewPanel();
                 this.input.gamepad.pulse({ duration: 70, weak: 0.18, strong: 0.28 });
@@ -423,12 +436,7 @@ export class App {
             }
             const action = this.playerController.interact();
             if (action) {
-                if (action === 'openComms') this._openCommsPanel();
-                else if (action === 'openNavigation') this._openNavigationPanel();
-                else if (action === 'openRadio') this._openRadioPanel();
-                else if (action === 'openShipComputer') this._openShipComputerPanel();
-                else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
-                else if (action === 'openCrew') this._openCrewPanel();
+                this._handlePlayerInteraction(action);
                 this.input.gamepad.pulse({ duration: 90, weak: 0.25, strong: 0.45 });
                 this._syncDebugDomState();
             }
@@ -550,6 +558,8 @@ export class App {
         this.gravityField.setAttractors(level.universe.getAttractors());
         this._applyUniverseRuntimeConfig();
         this._syncActiveRpgSystem();
+        this._syncSurfaceNavigationTarget();
+        this._syncSurfaceOutpostProgress();
         this._syncDebugDomState();
     }
 
@@ -611,6 +621,61 @@ export class App {
             console.warn('Phase 14 delivery runtime unavailable; flight remains active.', error);
             return null;
         }
+    }
+
+    _createSurfaceOutpostRuntimeSafely() {
+        try {
+            return new SurfaceOutpostRuntime({
+                slots: this.saveSlots,
+                rpg: this.rpg,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.surfaceOutpostError = {
+                context: 'surface outpost runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 16 surface outpost runtime unavailable; flight remains active.', error);
+            return null;
+        }
+    }
+
+    _handlePlayerInteraction(action) {
+        if (action === 'openComms') this._openCommsPanel();
+        else if (action === 'openNavigation') this._openNavigationPanel();
+        else if (action === 'openRadio') this._openRadioPanel();
+        else if (action === 'openShipComputer') this._openShipComputerPanel();
+        else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
+        else if (action === 'openCrew') this._openCrewPanel();
+        else if (action === 'openSurfaceOutpost') this._openSurfaceOutpostPanel();
+        else if (action === 'boardSurface') {
+            const checkpoint = this.surfaceOutpost?.getState().progress.checkpoint;
+            if (checkpoint === 'objective_complete') this.surfaceOutpost.recordBoarded();
+        }
+        return action;
+    }
+
+    _syncSurfaceOutpostProgress() {
+        if (!this.surfaceOutpost) return null;
+        const planet = this.environment?.descriptor?.rpg ?? null;
+        const landing = this.environment?.getLandingState?.(this.ship.position) ?? null;
+        return this.surfaceOutpost.syncContext({
+            systemId: planet?.namedSystemId ?? this._findActiveRpgNamedSystemId(),
+            planetId: planet?.planetId ?? null,
+            landed: Boolean(landing?.landed),
+            withinLandingArea: Boolean(this.environment?.isWithinSurfaceOutpostLandingArea?.(this.ship.position)),
+            playerState: this.playerController.getState()
+        });
+    }
+
+    _syncSurfaceNavigationTarget() {
+        const surfacePoiId = this.selectedNavigationTarget?.rpg?.surfacePoiId;
+        if (!surfacePoiId) return false;
+        const replacement = this.environment.getPOIs(this.ship.position, 18)
+            .find((poi) => poi.rpg?.surfacePoiId === surfacePoiId);
+        if (!replacement) return false;
+        this.selectedNavigationTarget = replacement;
+        return true;
     }
 
     _recordRpgError(context, error) {
@@ -759,6 +824,11 @@ export class App {
     _handleXrSelect() {
         this._unlockAudioFromGesture();
         if (this.cameraMode !== 'player') return false;
+        if (this.surfaceOutpostPanelOpen) {
+            this._closeSurfaceOutpostPanel();
+            this.xr.pulse({ duration: 70, strength: 0.25 });
+            return 'closeSurfaceOutpost';
+        }
         if (this.crewPanelOpen) {
             this._closeCrewPanel();
             this.xr.pulse({ duration: 70, strength: 0.25 });
@@ -766,12 +836,7 @@ export class App {
         }
         const action = this.playerController.interact();
         if (action) {
-            if (action === 'openComms') this._openCommsPanel();
-            else if (action === 'openNavigation') this._openNavigationPanel();
-            else if (action === 'openRadio') this._openRadioPanel();
-            else if (action === 'openShipComputer') this._openShipComputerPanel();
-            else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
-            else if (action === 'openCrew') this._openCrewPanel();
+            this._handlePlayerInteraction(action);
             this.xr.pulse({ duration: 80, strength: 0.34 });
             this._syncDebugDomState();
         }
@@ -1002,6 +1067,7 @@ export class App {
         this._createShipComputerPanel();
         this._createCargoTerminalPanel();
         this._createCrewPanel();
+        this._createSurfaceOutpostPanel();
         this._createNavigationPanel();
         this._createRadioPanel();
     }
@@ -1095,6 +1161,25 @@ export class App {
                 this.saveSlots.resetActiveSlot();
                 this._reloadActiveSlot();
                 this.shipComputerMessage = 'Reset only the active slot.';
+            } else if (action === 'report-surface') {
+                if (!this.surfaceOutpost) {
+                    throw new Error(this.surfaceOutpostError?.message ?? 'Surface outpost runtime unavailable.');
+                }
+                const checkpoint = this.surfaceOutpost.getState().progress.checkpoint;
+                // The physical ship log is reachable only after boarding. If an
+                // older live build missed the board edge, recover that checkpoint
+                // here before reporting instead of leaving a valid save stuck.
+                if (
+                    checkpoint === 'objective_complete'
+                    && this.playerController.getState() === PLAYER_STATE.WALKING
+                ) {
+                    this.surfaceOutpost.recordBoarded(SURFACE_OUTPOST_ID);
+                }
+                const result = this.surfaceOutpost.report(SURFACE_OUTPOST_ID);
+                if (!result) throw new Error(this.surfaceOutpostError?.message ?? 'Surface outpost runtime unavailable.');
+                this.shipComputerMessage = result.changed
+                    ? 'K-7 surface verification reported and saved.'
+                    : 'K-7 surface verification was already reported.';
             } else {
                 throw new Error(`Unknown ship-computer action: ${action}`);
             }
@@ -1111,6 +1196,7 @@ export class App {
         this._lastClockCheckpoint = this.gameClock.getTime();
         this.rpg.reload();
         this.delivery?.reload();
+        this.surfaceOutpost?.reload();
         this._syncActiveRpgSystem();
         this._syncCrewPresence();
         this._syncDebugDomState();
@@ -1136,6 +1222,12 @@ export class App {
         const mission = this.rpg.getMission('port_meridian_route_packet');
         const deliveryMission = this.rpg.getMission('index_archive_delivery');
         const deliveryState = this.delivery?.getState() ?? null;
+        const surfaceState = this.surfaceOutpost?.getState() ?? null;
+        const canReportSurface = surfaceState?.progress.checkpoint === 'returned'
+            || (
+                surfaceState?.progress.checkpoint === 'objective_complete'
+                && this.playerController.getState() === PLAYER_STATE.WALKING
+            );
         const events = this.rpg.queryEvents({ missionId: mission.id, newestFirst: true, limit: 20 });
         const storageError = this.saveSlots.getStatus().lastError;
         const slotRows = slots.map((slot) => `
@@ -1172,6 +1264,14 @@ export class App {
                     <h3>The Weight of a Copy</h3>
                     <p>Status: ${escapeHtml(deliveryMission.state.status)} / Outcome: ${escapeHtml(deliveryMission.state.outcomeId ?? 'none')}</p>
                     <p>Credits: ${deliveryState?.ship.credits ?? 'unavailable'} / Fuel: ${deliveryState?.ship.fuel.current ?? 'unavailable'} / Cargo mass: ${deliveryState?.usedCargoMass ?? 'unavailable'}</p>
+                </section>
+                <section class="computer-card">
+                    <h3>K-7 Surface Verification</h3>
+                    <p>Status: ${escapeHtml(surfaceState?.mission.state.status ?? 'unavailable')} / Checkpoint: ${escapeHtml(surfaceState?.progress.checkpoint ?? 'unavailable')}</p>
+                    <button data-computer-action="report-surface" ${canReportSurface ? '' : 'disabled'}>Report surface survey</button>
+                    ${surfaceState?.progress.checkpoint === 'objective_complete' && canReportSurface
+                        ? '<small>Return checkpoint will be recovered from your physical ship-log access.</small>'
+                        : ''}
                 </section>
                 <section class="computer-card" style="grid-column:1/-1">
                     <h3>Validated export / import</h3>
@@ -1314,6 +1414,105 @@ export class App {
         `;
     }
 
+    _createSurfaceOutpostPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'surface-outpost-panel';
+        panel.innerHTML = `
+            <style>
+                #surface-outpost-panel {
+                    position: fixed; left: 50%; bottom: 42px; transform: translateX(-50%);
+                    width: min(560px, calc(100vw - 36px)); max-height: 58vh; overflow: auto;
+                    z-index: 25; display: none; padding: 15px; color: #dff9ff;
+                    background: rgba(2, 15, 20, .96); border: 1px solid #66d9ee;
+                    font: 13px/1.5 "Consolas", "Courier New", monospace;
+                    box-shadow: 0 0 28px rgba(70, 210, 235, .18);
+                }
+                #surface-outpost-panel .surface-head { display:flex; justify-content:space-between; gap:12px; }
+                #surface-outpost-panel .surface-status { color:#8ff3dd; text-transform:uppercase; }
+                #surface-outpost-panel .surface-error { color:#ffaaa2; }
+                #surface-outpost-panel button { margin:4px; padding:7px 9px; color:#e5fbff; background:#10313a; border:1px solid #559ca4; }
+            </style>
+            <div data-surface-outpost-content></div>
+        `;
+        document.body.appendChild(panel);
+        this.surfaceOutpostPanel = panel;
+        this.surfaceOutpostContentNode = panel.querySelector('[data-surface-outpost-content]');
+        panel.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-surface-action]');
+            if (!target) return;
+            event.preventDefault();
+            if (target.dataset.surfaceAction === 'close') this._closeSurfaceOutpostPanel();
+            else if (target.dataset.surfaceAction === 'verify') this._verifySurfaceOutpostTerminal();
+        });
+    }
+
+    _openSurfaceOutpostPanel() {
+        if (!this.surfaceOutpost) {
+            this.surfaceOutpostMessage = this.surfaceOutpostError?.message ?? 'Surface outpost runtime unavailable.';
+        }
+        this.surfaceOutpostPanelOpen = true;
+        this._exitPointerLock();
+        this._renderSurfaceOutpostPanel();
+        return this.surfaceOutpost?.getState() ?? null;
+    }
+
+    _closeSurfaceOutpostPanel() {
+        this.surfaceOutpostPanelOpen = false;
+        if (this.surfaceOutpostPanel) this.surfaceOutpostPanel.style.display = 'none';
+        return false;
+    }
+
+    _handleSurfaceOutpostKeydown(event) {
+        if (!this.surfaceOutpostPanelOpen) return false;
+        if (event.code === 'Escape' || event.code === 'KeyC') {
+            event.preventDefault();
+            this._closeSurfaceOutpostPanel();
+            return true;
+        }
+        if (event.code === 'Enter') {
+            event.preventDefault();
+            this._verifySurfaceOutpostTerminal();
+            return true;
+        }
+        return false;
+    }
+
+    _verifySurfaceOutpostTerminal() {
+        try {
+            if (!this.surfaceOutpost) throw new Error(this.surfaceOutpostError?.message ?? 'Surface outpost runtime unavailable.');
+            const playerPosition = this.playerRig.object3D.getWorldPosition(new THREE.Vector3());
+            const interaction = this.environment?.getSurfaceInteraction?.(playerPosition);
+            const result = this.surfaceOutpost.interact(SURFACE_OUTPOST_ID, {
+                playerState: this.playerController.getState(),
+                distanceMetres: interaction?.distance
+            });
+            this.surfaceOutpostMessage = result.changed
+                ? 'Archive beacon verified. Return to the ship.'
+                : 'Archive beacon was already verified.';
+        } catch (error) {
+            this.surfaceOutpostMessage = error instanceof Error ? error.message : String(error);
+        }
+        this._renderSurfaceOutpostPanel();
+        this._syncDebugDomState();
+        return true;
+    }
+
+    _renderSurfaceOutpostPanel() {
+        if (!this.surfaceOutpostPanel || !this.surfaceOutpostContentNode) return;
+        this.surfaceOutpostPanel.style.display = this.surfaceOutpostPanelOpen ? 'block' : 'none';
+        if (!this.surfaceOutpostPanelOpen) return;
+        const state = this.surfaceOutpost?.getState() ?? null;
+        this.surfaceOutpostContentNode.innerHTML = `
+            <div class="surface-head"><div><h2>K-7 CARTOGRAPHY ANNEX</h2>
+            <div class="surface-status">${escapeHtml(state?.progress.checkpoint ?? 'unavailable')}</div></div>
+            <button data-surface-action="close">Close</button></div>
+            <p>Index survey terminal / beacon channel 07. This deterministic terminal records one verification only.</p>
+            <button data-surface-action="verify">Verify archive beacon</button>
+            <p class="surface-error">${escapeHtml(this.surfaceOutpostMessage)}</p>
+            <small>No market, interior, combat, or generated authority is connected.</small>
+        `;
+    }
+
     _createCrewPanel() {
         const panel = document.createElement('div');
         panel.id = 'crew-dialogue-panel';
@@ -1429,7 +1628,7 @@ export class App {
 
     _syncCrewPresence() {
         const present = Boolean(this.crew?.isPresent?.());
-        this.ship.setCrewAvatarVisible(present);
+        this.ship.setCrewAvatarVisible?.(present);
         if (!present && this.crewPanelOpen) this._closeCrewPanel();
         return present;
     }
@@ -2172,6 +2371,16 @@ export class App {
                 this.selectedNavigationTarget = null;
             } else {
                 this.selectedNavigationTarget = poi;
+                if (poi.rpg?.surfacePoiId && this.surfaceOutpost) {
+                    try {
+                        this.surfaceOutpost.scan(poi.rpg.surfacePoiId, {
+                            systemId: poi.rpg.namedSystemId,
+                            planetId: poi.rpg.planetId
+                        });
+                    } catch (error) {
+                        this.surfaceOutpostMessage = error instanceof Error ? error.message : String(error);
+                    }
+                }
             }
             this._updateNavigationPanel();
             this._syncDebugDomState();
@@ -2435,6 +2644,7 @@ export class App {
         window.addEventListener('keydown', (event) => {
             this._unlockAudioFromGesture();
 
+            if (this._handleSurfaceOutpostKeydown(event)) return;
             if (this._handleCrewKeydown(event)) return;
             if (this._handleCargoTerminalKeydown(event)) return;
             if (this._handleShipComputerKeydown(event)) return;
@@ -2529,12 +2739,7 @@ export class App {
                 event.preventDefault();
                 if (!event.repeat && this.cameraMode === 'player') {
                     const action = this.playerController.interact();
-                    if (action === 'openComms') this._openCommsPanel();
-                    else if (action === 'openNavigation') this._openNavigationPanel();
-                    else if (action === 'openRadio') this._openRadioPanel();
-                    else if (action === 'openShipComputer') this._openShipComputerPanel();
-                    else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
-                    else if (action === 'openCrew') this._openCrewPanel();
+                    this._handlePlayerInteraction(action);
                     this._syncDebugDomState();
                 }
                 return;
@@ -2588,7 +2793,7 @@ export class App {
         this.canvas.addEventListener('pointerdown', () => this._unlockAudioFromGesture(), { passive: true });
         this.canvas.addEventListener('click', () => {
             this._unlockAudioFromGesture();
-            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen && !this.shipComputerOpen && !this.cargoTerminalOpen && !this.crewPanelOpen) {
+            if (this.cameraMode === 'player' && !this.postPanel.visible && !this.universePanel.visible && !this.commsPanelOpen && !this.navigationPanelOpen && !this.radioOpen && !this.shipComputerOpen && !this.cargoTerminalOpen && !this.crewPanelOpen && !this.surfaceOutpostPanelOpen) {
                 this.canvas.requestPointerLock?.();
             }
         });
@@ -2953,6 +3158,31 @@ export class App {
                 },
                 syncPresence: () => this._syncCrewPresence()
             },
+            surfaceOutpost: {
+                getState: () => this.surfaceOutpost?.getState() ?? {
+                    available: false,
+                    error: this.surfaceOutpostError
+                },
+                getDefinition: () => this.surfaceOutpost?.getState().definition ?? null,
+                scan: () => this.surfaceOutpost?.scan(SURFACE_OUTPOST_ID, {
+                    systemId: 'index_hq',
+                    planetId: 'index_hq_planet_1'
+                }),
+                sync: () => this._syncSurfaceOutpostProgress(),
+                interact: () => {
+                    const position = this.playerRig.object3D.getWorldPosition(new THREE.Vector3());
+                    const interaction = this.environment?.getSurfaceInteraction?.(position);
+                    return this.surfaceOutpost?.interact(SURFACE_OUTPOST_ID, {
+                        playerState: this.playerController.getState(),
+                        distanceMetres: interaction?.distance
+                    });
+                },
+                recordBoarded: () => this.surfaceOutpost?.recordBoarded(SURFACE_OUTPOST_ID),
+                report: () => this.surfaceOutpost?.report(SURFACE_OUTPOST_ID),
+                getPlacement: () => this.environment?.getSurfaceOutpostPlacement?.() ?? null,
+                openTerminal: () => this._openSurfaceOutpostPanel(),
+                closeTerminal: () => this._closeSurfaceOutpostPanel()
+            },
             saves: {
                 getStatus: () => this.saveSlots.getStatus(),
                 list: () => this.saveSlots.listSlots(),
@@ -3305,6 +3535,10 @@ export class App {
             xr: this.xr?.getDebugState?.(),
             renderPipeline: this.renderPipeline?.getState?.(),
             rpg: this._getRpgDebugState(),
+            surfaceOutpost: this.surfaceOutpost?.getState() ?? {
+                available: false,
+                error: this.surfaceOutpostError
+            },
             saves: {
                 ...this.saveSlots.getStatus(),
                 slots: this.saveSlots.listSlots(),

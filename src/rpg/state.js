@@ -12,8 +12,9 @@ import {
     OBJECTIVE_STATUSES
 } from './missions.js';
 import { createInitialNpcState, sanitizeNpcState } from './npcs.js';
+import { createInitialSurfaceState, sanitizeSurfaceState } from './surfaceOutposts.js';
 
-export const RPG_STATE_VERSION = 3;
+export const RPG_STATE_VERSION = 4;
 export const INITIAL_RPG_TIMESTAMP = '2026-06-26T00:00:00.000Z';
 
 export function createInitialRpgState() {
@@ -105,6 +106,7 @@ export function createInitialRpgState() {
             byId: missionsById
         },
         npcs: createInitialNpcState(),
+        surface: createInitialSurfaceState(),
         comms: {
             activeContactId: null,
             llmFlavorEnabled: false
@@ -144,6 +146,7 @@ export function sanitizeRpgState(value) {
             byId: { ...base.missions.byId }
         },
         npcs: sanitizeNpcState(value.npcs),
+        surface: sanitizeSurfaceState(value.surface),
         comms: sanitizeComms(value.comms, base.comms),
         eventLog: Array.isArray(value.eventLog)
             ? value.eventLog
@@ -218,6 +221,7 @@ export function createRpgSummary(state, { activeNamedSystemId = null } = {}) {
             roster: [...state.npcs.crewRoster],
             byId: cloneRpgValue(state.npcs.byId)
         },
+        surface: cloneRpgValue(state.surface),
         worldFlags: cloneRpgValue(state.worldFlags ?? {}),
         activeNamedSystemId,
         comms: createCommsSummary(state)

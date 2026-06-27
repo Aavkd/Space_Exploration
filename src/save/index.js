@@ -8,6 +8,7 @@ export {
     createSaveEnvelope,
     migrateLegacyRpgSave,
     migrateVersion2Envelope,
+    migrateVersion4Envelope,
     sanitizeSaveEnvelope
 } from './SaveEnvelope.js';
 export {

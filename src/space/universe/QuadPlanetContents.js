@@ -15,6 +15,10 @@ import {
     projectedSkyTelemetry,
     updateProjectedSystemSky
 } from './ParentSystemProjection.js';
+import {
+    directionFromLatLon,
+    findSurfacePoiForPlanet
+} from '../../rpg/surfaceOutposts.js';
 
 // --- Tier 3 rework / Tier 4: true-radius quadtree planet ------------------
 //
@@ -169,6 +173,8 @@ export class QuadPlanetContents {
             moonScale: 1
         });
         if (this.systemSky?.group) this.group.add(this.systemSky.group);
+        this.surfaceOutpost = this._createSurfaceOutpost();
+        if (this.surfaceOutpost?.group) this.group.add(this.surfaceOutpost.group);
     }
 
     // Gravity reach the App widens its field to while this level is active, so a
@@ -252,6 +258,7 @@ export class QuadPlanetContents {
         // Tiles are re-placed camera-relative every frame, so they follow for free
         // — nothing planet-scale is ever statically parented in the scene frame.
         this._centerScene.sub(offset);
+        this._updateSurfaceOutpostPlacement();
     }
 
     // --- Landing (called by App after ship physics each frame) --------------
@@ -345,13 +352,31 @@ export class QuadPlanetContents {
     }
 
     getPOIs(shipPosition = new THREE.Vector3(), limit = 12) {
-        return [{
+        const pois = [{
             type: 'planet',
             name: this.name,
             position: this._centerScene.clone(),
             radius: this.radius,
             distance: shipPosition.distanceTo(this._centerScene)
-        }].slice(0, limit);
+        }];
+        if (this.surfaceOutpost) {
+            pois.unshift({
+                type: 'surface outpost',
+                name: this.surfaceOutpost.definition.name,
+                position: this.surfaceOutpost.landingPoint.clone(),
+                radius: this.surfaceOutpost.definition.landingRadiusMetres,
+                rpg: {
+                    namedSystemId: this.surfaceOutpost.definition.systemId,
+                    planetId: this.surfaceOutpost.definition.planetId,
+                    surfacePoiId: this.surfaceOutpost.definition.id,
+                    markerScale: 'planetary'
+                }
+            });
+        }
+        return pois
+            .map((poi) => ({ ...poi, distance: shipPosition.distanceTo(poi.position) }))
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, limit);
     }
 
     getCounts() {
@@ -367,8 +392,54 @@ export class QuadPlanetContents {
         return {
             name: this.name,
             theme: `${this.type} terrestrial world (true radius)`,
-            radius: this.regionRadius
+            radius: this.regionRadius,
+            rpg: this.descriptor.rpg ?? null
         };
+    }
+
+    getSurfaceInteraction(position) {
+        if (!this.surfaceOutpost || !position?.isVector3) return null;
+        const distance = position.distanceTo(this.surfaceOutpost.interactionPoint);
+        return {
+            id: this.surfaceOutpost.definition.terminalId,
+            surfacePoiId: this.surfaceOutpost.definition.id,
+            name: `${this.surfaceOutpost.definition.name} terminal`,
+            distance,
+            radius: this.surfaceOutpost.definition.interactionRadiusMetres,
+            available: distance <= this.surfaceOutpost.definition.interactionRadiusMetres
+        };
+    }
+
+    getSurfaceOutpostPlacement() {
+        if (!this.surfaceOutpost) return null;
+        const outpost = this.surfaceOutpost;
+        const landingSample = this.getSurfaceSample(outpost.landingPoint);
+        const terminalSurface = this.projectToSurface(outpost.interactionPoint, 0, new THREE.Vector3());
+        return {
+            id: outpost.definition.id,
+            planetId: outpost.definition.planetId,
+            latitudeDeg: outpost.definition.latitudeDeg,
+            longitudeDeg: outpost.definition.longitudeDeg,
+            landingPoint: outpost.landingPoint.toArray(),
+            terminalPoint: outpost.interactionPoint.toArray(),
+            landingSlopeDeg: landingSample.slopeDeg,
+            maxLandingSlopeDeg: outpost.definition.maxLandingSlopeDeg,
+            landingAlignmentErrorMetres: Math.abs(landingSample.altitude),
+            terminalAlignmentErrorMetres: Math.max(
+                0,
+                outpost.interactionPoint.distanceTo(terminalSurface) - 1.35
+            ),
+            landingRadiusMetres: outpost.definition.landingRadiusMetres
+        };
+    }
+
+    isWithinSurfaceOutpostLandingArea(position) {
+        return Boolean(
+            this.surfaceOutpost
+            && position?.isVector3
+            && position.distanceTo(this.surfaceOutpost.landingPoint)
+                <= this.surfaceOutpost.definition.landingRadiusMetres
+        );
     }
 
     getHazardState() {
@@ -546,12 +617,120 @@ export class QuadPlanetContents {
             clearance: altitude - (this._lastShipClearance ?? FALLBACK_SHIP_CLEARANCE),
             subShipLat: lat,
             subShipLon: lon,
+            surfaceOutpost: this.getSurfaceOutpostPlacement(),
             leafTiles: this._lastLeafCount,
             maxLodDepth: this._lastMaxDepth,
             builtTiles: tileStats.totalBuilt,
             parentSystemSky: projectedSkyTelemetry(this.systemSky, this._skyState),
             ...tileStats
         };
+    }
+
+    _createSurfaceOutpost() {
+        const rpg = this.descriptor.rpg ?? {};
+        const definition = findSurfacePoiForPlanet({
+            systemId: rpg.namedSystemId,
+            planetId: rpg.planetId,
+            planetIndex: rpg.planetIndex,
+            kind: this.kind,
+            landable: this.landable
+        });
+        if (!definition) return null;
+
+        const landingDirection = new THREE.Vector3().fromArray(
+            directionFromLatLon(definition.latitudeDeg, definition.longitudeDeg)
+        );
+        const tangent = new THREE.Vector3().crossVectors(
+            Math.abs(landingDirection.y) > 0.92 ? RIGHT : UP,
+            landingDirection
+        ).normalize();
+        const terminalDirection = landingDirection.clone()
+            .addScaledVector(tangent, definition.terminalOffsetMetres / this.radius)
+            .normalize();
+        const landingPoint = this.projectToSurface(landingDirection, 0, new THREE.Vector3());
+        const terminalSurfacePoint = this.projectToSurface(terminalDirection, 0, new THREE.Vector3());
+        const landingNormal = this.getSurfaceSample(landingPoint).normal.clone();
+        const terminalNormal = this.getSurfaceSample(terminalSurfacePoint).normal.clone();
+        const landingRotation = new THREE.Quaternion().setFromUnitVectors(UP, landingNormal);
+        const terminalRotation = new THREE.Quaternion().setFromUnitVectors(UP, terminalNormal);
+
+        const group = new THREE.Group();
+        group.name = `SurfaceOutpost:${definition.id}`;
+        group.position.copy(landingPoint);
+        group.quaternion.copy(landingRotation);
+
+        const pad = new THREE.Mesh(
+            new THREE.CylinderGeometry(18, 18, 0.45, 24),
+            new THREE.MeshStandardMaterial({ color: '#263845', metalness: 0.65, roughness: 0.48 })
+        );
+        pad.name = 'K7LandingPad';
+        pad.position.y = 0.2;
+        group.add(pad);
+
+        const mast = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.55, 0.8, 14, 8),
+            new THREE.MeshStandardMaterial({ color: '#668ca0', emissive: '#163c54', emissiveIntensity: 0.5 })
+        );
+        mast.position.set(-9, 7, 6);
+        group.add(mast);
+
+        const shelter = new THREE.Mesh(
+            new THREE.BoxGeometry(12, 5, 8),
+            new THREE.MeshStandardMaterial({ color: '#334d5a', metalness: 0.45, roughness: 0.6 })
+        );
+        shelter.position.set(10, 2.6, 8);
+        group.add(shelter);
+
+        const terminal = new THREE.Group();
+        terminal.name = definition.terminalId;
+        terminal.position.copy(terminalSurfacePoint).sub(landingPoint)
+            .applyQuaternion(landingRotation.clone().invert());
+        terminal.quaternion.copy(landingRotation.clone().invert().multiply(terminalRotation));
+        const pedestal = new THREE.Mesh(
+            new THREE.BoxGeometry(1.6, 2.2, 1.2),
+            new THREE.MeshStandardMaterial({ color: '#1b3745', metalness: 0.5, roughness: 0.45 })
+        );
+        pedestal.position.y = 1.1;
+        const screen = new THREE.Mesh(
+            new THREE.BoxGeometry(1.25, 0.7, 0.08),
+            new THREE.MeshBasicMaterial({ color: '#72e8ff' })
+        );
+        screen.position.set(0, 1.65, -0.63);
+        terminal.add(pedestal, screen);
+        group.add(terminal);
+
+        const interactionPoint = terminalSurfacePoint.clone().addScaledVector(terminalNormal, 1.35);
+        return {
+            definition,
+            group,
+            landingDirection,
+            terminalDirection,
+            landingPoint,
+            terminalSurfacePoint,
+            interactionPoint
+        };
+    }
+
+    _updateSurfaceOutpostPlacement() {
+        if (!this.surfaceOutpost) return;
+        const outpost = this.surfaceOutpost;
+        const landingPoint = this.projectToSurface(outpost.landingDirection, 0, outpost.landingPoint);
+        const terminalSurface = this.projectToSurface(
+            outpost.terminalDirection,
+            0,
+            outpost.terminalSurfacePoint
+        );
+        const landingNormal = this.getSurfaceSample(landingPoint).normal;
+        const terminalNormal = this.getSurfaceSample(terminalSurface).normal;
+        const landingRotation = new THREE.Quaternion().setFromUnitVectors(UP, landingNormal);
+        const terminalRotation = new THREE.Quaternion().setFromUnitVectors(UP, terminalNormal);
+        outpost.group.position.copy(landingPoint);
+        outpost.group.quaternion.copy(landingRotation);
+        const terminal = outpost.group.getObjectByName(outpost.definition.terminalId);
+        terminal.position.copy(terminalSurface).sub(landingPoint)
+            .applyQuaternion(landingRotation.clone().invert());
+        terminal.quaternion.copy(landingRotation.clone().invert().multiply(terminalRotation));
+        outpost.interactionPoint.copy(terminalSurface).addScaledVector(terminalNormal, 1.35);
     }
 
     _slopeDegrees(dir) {

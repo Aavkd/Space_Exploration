@@ -2,6 +2,7 @@ export { LocalRpgPersistence, RPG_LOCAL_STORAGE_KEY } from './persistence.js';
 export { RPG_STATE_MIGRATIONS, migrateRpgState } from './migrations.js';
 export { RpgRuntime, createRpgRuntime } from './RpgRuntime.js';
 export { DELIVERY_MISSION_ID, DeliveryRuntime } from './DeliveryRuntime.js';
+export { SurfaceOutpostRuntime } from './SurfaceOutpostRuntime.js';
 export {
     CREW_INTERACTION_STATES,
     CrewRuntime,
@@ -52,3 +53,18 @@ export {
     isMeteredAuthoredRoute,
     sanitizeShipState
 } from './cargo.js';
+export {
+    SURFACE_CHECKPOINTS,
+    SURFACE_MISSION_ID,
+    SURFACE_OUTPOST_ID,
+    SURFACE_PLANET_ID,
+    SURFACE_POI_DEFINITIONS,
+    SURFACE_POI_IDS,
+    angularSurfaceDistanceMetres,
+    createInitialSurfaceState,
+    directionFromLatLon,
+    findSurfacePoiForPlanet,
+    getSurfacePoiDefinition,
+    sanitizeSurfaceState,
+    surfaceCheckpointIndex
+} from './surfaceOutposts.js';
