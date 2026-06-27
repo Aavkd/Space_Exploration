@@ -23,7 +23,8 @@ const HELD_KEYS = Object.freeze({
 const TOGGLE_KEYS = Object.freeze({
     pilot: 'KeyC',
     dampeners: 'KeyZ',
-    hyperdrive: 'Space'
+    hyperdrive: 'Space',
+    autopilot: 'KeyU'
 });
 
 export class ShipControls {
@@ -34,6 +35,7 @@ export class ShipControls {
         // PRECISION gear by default; hyperdrive is a latched intent (the eased
         // spool level lives in Ship). Starts disengaged.
         this.hyperdriveEngaged = false;
+        this.autopilotActive = false;
         this.heldKeys = HELD_KEYS;
         this.toggleKeys = TOGGLE_KEYS;
     }
@@ -56,11 +58,19 @@ export class ShipControls {
             this.hyperdriveEngaged = !this.hyperdriveEngaged;
             return 'hyperdrive';
         }
+        if (code === this.toggleKeys.autopilot) {
+            this.autopilotActive = !this.autopilotActive;
+            return 'autopilot';
+        }
         return null;
     }
 
     setPilotActive(active) {
         this.pilotActive = Boolean(active);
+    }
+
+    setAutopilotActive(active) {
+        this.autopilotActive = Boolean(active);
     }
 
     /**
@@ -130,7 +140,8 @@ export class ShipControls {
         return {
             pilotActive: this.pilotActive,
             dampeners: this.dampeners,
-            hyperdriveEngaged: this.hyperdriveEngaged
+            hyperdriveEngaged: this.hyperdriveEngaged,
+            autopilotActive: this.autopilotActive
         };
     }
 }

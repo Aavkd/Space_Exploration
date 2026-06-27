@@ -6,6 +6,10 @@ import { SystemContents } from '../universe/SystemContents.js';
 import { PlanetaryContents } from '../universe/PlanetaryContents.js';
 import { QuadPlanetContents } from '../universe/QuadPlanetContents.js';
 import { SCALE_TIERS, DESCENT, buildGalaxyConfig, planetHeroRadius, planetTrueRadius, USE_QUAD_PLANET } from '../../config/scaleTiers.js';
+import {
+    descentEntryRadiusForTarget,
+    LOCKED_TARGET_SEARCH_RADIUS
+} from './descentTargeting.js';
 
 // One node in the scale stack (docs/universe-scale-architecture.md §6). A level
 // owns a `Universe` as its contents, its own local floating-origin frame, and
@@ -58,30 +62,43 @@ export class Level {
     // for its child level (§5). Universe publishes galaxies plus all local
     // field-star systems; Galaxy publishes all local star systems. System is
     // currently a leaf until Planetary ships.
-    getDescentCandidates(shipPosition = null, maxRadiusOverride = null) {
+    getDescentCandidates(shipPosition = null, maxRadiusOverride = null, lockedTargetId = null, lockedTargetPosition = null) {
         if (this.tier === SCALE_TIERS.universe.tier) {
-            const galaxies = this.universe.galaxyField.getPOIs().map((galaxy) => ({
-                id: galaxy.name,
-                kind: 'galaxy',
-                // Live reference: rebased in lockstep with the rest of the universe,
-                // so it is always valid in the current frame.
-                position: galaxy.position,
-                radius: galaxy.radius,
-                entryRadius: THREE.MathUtils.clamp(
-                    galaxy.radius * DESCENT.entryRadiusScale,
-                    DESCENT.entryRadiusMin,
-                    DESCENT.entryRadiusMax
-                ),
-                descriptor: galaxy.descriptor,
-                childSeed: galaxy.descriptor?.seed ?? deriveSeed(this.seed, `galaxy:${galaxy.name}`)
-            }));
+            const galaxies = this.universe.galaxyField.getPOIs().map((galaxy) => {
+                const candidate = {
+                    id: galaxy.name,
+                    kind: 'galaxy',
+                    // Live reference: rebased in lockstep with the rest of the universe,
+                    // so it is always valid in the current frame.
+                    position: galaxy.position,
+                    radius: galaxy.radius,
+                    entryRadius: THREE.MathUtils.clamp(
+                        galaxy.radius * DESCENT.entryRadiusScale,
+                        DESCENT.entryRadiusMin,
+                        DESCENT.entryRadiusMax
+                    ),
+                    descriptor: galaxy.descriptor,
+                    childSeed: galaxy.descriptor?.seed ?? deriveSeed(this.seed, `galaxy:${galaxy.name}`)
+                };
+                candidate.entryRadius = descentEntryRadiusForTarget(
+                    candidate,
+                    candidate.entryRadius,
+                    lockedTargetId,
+                    lockedTargetPosition
+                );
+                return candidate;
+            });
 
             const fieldSystems = this.universe.starField.getSystemPOIs({
                 position: shipPosition,
-                maxDistance: maxRadiusOverride ?? DESCENT.systemEntryRadiusMax
+                maxDistance: lockedTargetId !== null
+                    ? LOCKED_TARGET_SEARCH_RADIUS
+                    : (maxRadiusOverride ?? DESCENT.systemEntryRadiusMax)
             }).map((star) => createSystemCandidate({
                 star,
-                parentSeed: this.seed
+                parentSeed: this.seed,
+                lockedTargetId,
+                lockedTargetPosition
             }));
 
             return [...galaxies, ...fieldSystems];
@@ -90,10 +107,14 @@ export class Level {
         if (this.tier === SCALE_TIERS.galaxy.tier) {
             return this.universe.starField.getSystemPOIs({
                 position: shipPosition,
-                maxDistance: maxRadiusOverride ?? DESCENT.systemEntryRadiusMax
+                maxDistance: lockedTargetId !== null
+                    ? LOCKED_TARGET_SEARCH_RADIUS
+                    : (maxRadiusOverride ?? DESCENT.systemEntryRadiusMax)
             }).map((star) => createSystemCandidate({
                 star,
-                parentSeed: this.seed
+                parentSeed: this.seed,
+                lockedTargetId,
+                lockedTargetPosition
             }));
         }
 
@@ -115,8 +136,8 @@ export class Level {
     }
 }
 
-function createSystemCandidate({ star, parentSeed }) {
-    return {
+function createSystemCandidate({ star, parentSeed, lockedTargetId = null, lockedTargetPosition = null }) {
+    const candidate = {
         id: star.name,
         kind: 'system',
         position: star.position,
@@ -133,6 +154,13 @@ function createSystemCandidate({ star, parentSeed }) {
         ),
         childSeed: star.childSeed ?? deriveSeed(parentSeed, `system:${star.name}`)
     };
+    candidate.entryRadius = descentEntryRadiusForTarget(
+        candidate,
+        candidate.entryRadius,
+        lockedTargetId,
+        lockedTargetPosition
+    );
+    return candidate;
 }
 
 // Adopt an already-built root Universe as the tier-0 level (so all of App's

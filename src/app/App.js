@@ -20,6 +20,10 @@ import { createRootLevel } from '../space/scale/Level.js';
 import { GravityField } from '../space/GravityField.js';
 import { Ship } from '../ship/Ship.js';
 import { ShipControls } from '../ship/ShipControls.js';
+import {
+    HyperdriveAutopilot,
+    isHyperdriveAutopilotTier
+} from '../ship/HyperdriveAutopilot.js';
 import { PlayerRig } from '../player/PlayerRig.js';
 import { RelativeLocomotion } from '../player/RelativeLocomotion.js';
 import { PlayerController, PLAYER_STATE } from '../player/PlayerController.js';
@@ -117,6 +121,7 @@ export class App {
         this.ship.position.set(0, 0, 0);
         this.ship.setGravityField(this.gravityField);
         this.shipControls = new ShipControls();
+        this.autopilot = new HyperdriveAutopilot();
         this.scene.add(this.ship.object3D);
 
         // Nested scale levels (docs/universe-scale-architecture.md). The current
@@ -359,7 +364,72 @@ export class App {
         // `paused` freezes only the live simulation so manual/automated stepping
         // through the debug hooks is deterministic; rendering keeps running.
         if (!this.paused) {
-            const command = this.shipControls.getCommand(this.input.keys, controlInput);
+            if (this.autopilot.isActive()) {
+                const target = this.selectedNavigationTarget;
+                const tier = this.scaleStack.active.tier;
+                const transitioning = this.scaleStack.isTransitioning;
+
+                if (target === null || !isHyperdriveAutopilotTier(tier) || transitioning) {
+                    this.shipControls.hyperdriveEngaged = false;
+                    if (transitioning) {
+                        this.selectedNavigationTarget = null;
+                        this.selectedNavigationTargetDepth = null;
+                    }
+                    this.autopilot.disengage();
+                    this.shipControls.autopilotActive = false;
+                    this._syncDebugDomState();
+                } else {
+                    let manualOverride = false;
+                    if (this.shipControls.pilotActive) {
+                        const k = this.shipControls.heldKeys;
+                        const keyboardOverride = Object.values(k).some(code => this.input.keys.has(code));
+
+                        let gamepadOverride = false;
+                        if (gamepad && gamepad.connected) {
+                            const threshold = 0.15;
+                            const sticks = Math.abs(gamepad.axes.leftX) > threshold ||
+                                           Math.abs(gamepad.axes.leftY) > threshold ||
+                                           Math.abs(gamepad.axes.rightX) > threshold ||
+                                           Math.abs(gamepad.axes.rightY) > threshold;
+
+                            const buttonsToIgnore = ['l3', 'share', 'options', 'ps'];
+                            const buttonPressed = Object.entries(gamepad.buttons).some(([name, btn]) => {
+                                if (buttonsToIgnore.includes(name)) return false;
+                                return btn.pressed || btn.value > 0.5;
+                            });
+                            gamepadOverride = sticks || buttonPressed;
+                        }
+
+                        if (keyboardOverride || gamepadOverride) {
+                            manualOverride = true;
+                        }
+                    }
+
+                    if (manualOverride) {
+                        this.autopilot.disengage();
+                        this.shipControls.autopilotActive = false;
+                        this._syncDebugDomState();
+                    } else {
+                        this.autopilot.update(this.ship, target, dt);
+
+                        if (this.autopilot.state === 'DECELERATE') {
+                            // Synchronize the manual latch with the injected
+                            // braking command so handback stays in precision.
+                            this.shipControls.hyperdriveEngaged = false;
+                        } else if (this.autopilot.state === 'HANDOFF') {
+                            // Keep the lock and autopilot alive for this frame so
+                            // ScaleStack can select the locked descent candidate.
+                            // The transition branch above clears both next frame.
+                            this.shipControls.hyperdriveEngaged = false;
+                            this._syncDebugDomState();
+                        }
+                    }
+                }
+            }
+
+            const command = this.autopilot.isActive()
+                ? this.autopilot.buildCommand(this.ship, this.selectedNavigationTarget, dt)
+                : this.shipControls.getCommand(this.input.keys, controlInput);
             const capabilities = this._shipCapabilities;
             if (capabilities) {
                 this.ship.capabilityEffects = {
@@ -391,11 +461,20 @@ export class App {
         // Updates the active level and evaluates the descend/ascend transition
         // rule (entry shell + PRECISION speed gate to sink in, exit shell to
         // climb back out), running the reparent/rescale handoff under a veil.
+        const activeNavigationTarget = navigationTargetBelongsToDepth(
+            this.selectedNavigationTargetDepth,
+            this.scaleStack.depth
+        )
+            ? this.selectedNavigationTarget
+            : null;
         this.scaleStack.update({
             shipPosition: this.ship.position,
             dt,
             cameraPosition: this.camera.position,
-            hyperdriveLevel: this.ship.getHyperdriveLevel()
+            hyperdriveLevel: this.ship.getHyperdriveLevel(),
+            lockedTargetId: activeNavigationTarget ? (activeNavigationTarget.id ?? activeNavigationTarget.name) : null,
+            lockedTargetPosition: activeNavigationTarget?.position ?? null,
+            autopilotActive: this.autopilot.isActive()
         });
         this._syncPatrolFromSettledScale();
         this._syncSurfaceOutpostProgress();
@@ -412,7 +491,8 @@ export class App {
             displayMode: this.displayMode,
             pilotActive: this.shipControls.pilotActive,
             selectedTarget: this.selectedNavigationTarget,
-            ship: this.ship
+            ship: this.ship,
+            autopilotActive: this.autopilot.isActive()
         });
         this.diegeticNavPanel.update({
             pois: this.environment.getPOIs(this.ship.position, 8),
@@ -494,6 +574,23 @@ export class App {
                 strong: 0.12,
                 minInterval: 120
             });
+        }
+
+        if (buttons.l3.justPressed && this.shipControls.pilotActive) {
+            if (this.shipControls.handleToggleKey('KeyU') === 'autopilot') {
+                const shouldActive = this.shipControls.autopilotActive;
+                if (shouldActive) {
+                    const engaged = this.autopilot.engage(this.ship, this.selectedNavigationTarget, this.scaleStack.active.tier, this.scaleStack.isTransitioning);
+                    if (!engaged) {
+                        this.shipControls.autopilotActive = false;
+                    } else {
+                        this.input.gamepad.pulse({ duration: 90, weak: 0.25, strong: 0.45 });
+                    }
+                } else {
+                    this.autopilot.disengage();
+                }
+                this._syncDebugDomState();
+            }
         }
     }
 
@@ -948,6 +1045,17 @@ export class App {
 
     // Human-readable drive state for the telemetry + diegetic HUD.
     _hyperdriveDriveLabel() {
+        if (this.autopilot.isActive()) {
+            if (this.autopilot.state === 'CRUISE') {
+                return `AUTOPILOT ◈ ${this.autopilot.alignmentPercent}%`;
+            }
+            if (this.autopilot.state === 'DECELERATE') {
+                return 'AUTOPILOT ▼ BRAKE';
+            }
+            if (this.autopilot.state === 'HANDOFF') {
+                return 'AUTOPILOT ✓ ARRIVE';
+            }
+        }
         const engaged = this.shipControls.hyperdriveEngaged;
         const level = this.ship.getHyperdriveLevel();
         if (!engaged && level < 0.01) return 'PRECISION';
@@ -2925,7 +3033,7 @@ export class App {
             ? '<span class="on">ON</span>'
             : '<span class="warn">OFF (inertial)</span>';
         const brake = command.airbrake ? '<span class="warn">AIRBRAKE</span>' : '';
-        const driveLabel = this.shipControls.hyperdriveEngaged || this.ship.getHyperdriveLevel() > 0.01
+        const driveLabel = this.shipControls.hyperdriveEngaged || this.ship.getHyperdriveLevel() > 0.01 || this.autopilot.isActive()
             ? `<span class="on">${this._hyperdriveDriveLabel()}</span>`
             : '<span class="off">PRECISION</span>';
         const padId = gamepad.id && gamepad.id.length > 34 ? `${gamepad.id.slice(0, 31)}...` : gamepad.id;
@@ -3245,6 +3353,28 @@ export class App {
                 if (!event.repeat && (this.postFxConfig.hyperdrive?.enabled ?? true)) {
                     if (this.shipControls.handleToggleKey('Space') === 'hyperdrive') {
                         this._onHyperdriveToggled();
+                    }
+                }
+                return;
+            }
+
+            // KeyU toggles autopilot.
+            if (event.code === 'KeyU') {
+                event.preventDefault();
+                if (!event.repeat && this.shipControls.pilotActive) {
+                    if (this.shipControls.handleToggleKey('KeyU') === 'autopilot') {
+                        const shouldActive = this.shipControls.autopilotActive;
+                        if (shouldActive) {
+                            const engaged = this.autopilot.engage(this.ship, this.selectedNavigationTarget, this.scaleStack.active.tier, this.scaleStack.isTransitioning);
+                            if (!engaged) {
+                                this.shipControls.autopilotActive = false;
+                            } else {
+                                this.input.gamepad.pulse({ duration: 90, weak: 0.25, strong: 0.45 });
+                            }
+                        } else {
+                            this.autopilot.disengage();
+                        }
+                        this._syncDebugDomState();
                     }
                 }
                 return;
@@ -4008,10 +4138,27 @@ export class App {
 
     _onPilotModeChanged() {
         if (this.shipControls.pilotActive) {
+            // Re-seated: manual handback rule
+            if (this.autopilot.isActive()) {
+                this.autopilot.disengage();
+                this.shipControls.autopilotActive = false;
+            }
             // Remember the free-fly mode so we can restore it on disengage.
             this.debugCamera.freeMode = this.debugCamera.mode === 'interior' ? 'interior' : 'exterior';
             this.debugCamera.mode = 'pilot';
         } else {
+            // Player left the controls: check for Unpiloted Engagement!
+            if (
+                this.shipControls.hyperdriveEngaged === true &&
+                this.selectedNavigationTarget !== null &&
+                isHyperdriveAutopilotTier(this.scaleStack.active.tier) &&
+                !this.scaleStack.isTransitioning
+            ) {
+                const engaged = this.autopilot.engage(this.ship, this.selectedNavigationTarget, this.scaleStack.active.tier, this.scaleStack.isTransitioning);
+                if (engaged) {
+                    this.shipControls.autopilotActive = true;
+                }
+            }
             this.debugCamera.mode = this.debugCamera.freeMode;
             if (this.patrolHailOpen) this._closePatrolHailPanel();
         }

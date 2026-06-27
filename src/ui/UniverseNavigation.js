@@ -9,7 +9,7 @@ export class UniverseNavigation {
         document.body.appendChild(this.element);
     }
 
-    update({ shipPosition, camera, displayMode, pilotActive, selectedTarget, ship }) {
+    update({ shipPosition, camera, displayMode, pilotActive, selectedTarget, ship, autopilotActive }) {
         // Only show HUD compass when piloting the ship
         this.element.hidden = displayMode === 'vr' || !this.visible || !pilotActive;
         
@@ -87,7 +87,9 @@ export class UniverseNavigation {
         const distStr = formatDistance(distance);
         
         let alignmentLabel = '<span style="color: #8fa6c2; font-weight: bold;">STEER TO ALIGN TARGET</span>';
-        if (isCentered) {
+        if (autopilotActive) {
+            alignmentLabel = '<span style="color: #74ffb0; font-weight: bold; text-shadow: 0 0 10px rgba(116, 255, 176, 0.7);">AUTOPILOT ACTIVE — STAND BY</span>';
+        } else if (isCentered) {
             alignmentLabel = '<span style="color: #74ffb0; font-weight: bold; text-shadow: 0 0 10px rgba(116, 255, 176, 0.7);">ALIGNMENT OPTIMAL (HYPERDRIVE READY)</span>';
         }
 

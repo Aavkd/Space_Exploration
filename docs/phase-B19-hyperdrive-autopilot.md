@@ -55,6 +55,9 @@ The autopilot feature removes all three friction points by letting the player en
 
 > **Rule:** When a navigation target is locked (`selectedNavigationTarget !== null`) and the ship is on **universe** (tier 0) or **galaxy** (tier 1) scale, the `ScaleStack` descent check is restricted to that target only. Any other object whose entry shell the ship enters is silently ignored.
 
+The matched target uses an 800 m entry radius (with a 1000 m candidate search
+radius). Unlocked objects retain their normal entry radii.
+
 **Implementation hook:** `ScaleStack._nearestUnblocked()` already filters the candidate list; we extend the filter logic so when a `lockedTargetId` is present in the context (tier 0 or tier 1 only), all candidates where `candidate.id !== lockedTargetId` are rejected.
 
 This rule applies when:
@@ -69,12 +72,12 @@ This rule applies when:
 
 Autopilot engages when **either** of the following state changes occur:
 
-1. **Unpiloted Engagement:** The player leaves the pilot seat (`shipControls.pilotActive` becomes `false`) **while** `shipControls.hyperdriveEngaged === true`, a target is locked (`selectedNavigationTarget !== null`), and `scaleStack.depth <= 1`.
+1. **Unpiloted Engagement:** The player leaves the pilot seat (`shipControls.pilotActive` becomes `false`) **while** `shipControls.hyperdriveEngaged === true`, a target is locked (`selectedNavigationTarget !== null`), and the active scale tier is Universe or Galaxy.
 2. **Seated Engagement:** The player explicitly toggles autopilot while seated in the pilot seat (`shipControls.pilotActive === true`) via gamepad **L3** (left-stick click) or keyboard **KeyU**.
 
 **General Prerequisites (must all be true to stay engaged):**
 - `selectedNavigationTarget !== null` (target is locked)
-- `scaleStack.depth <= 1` (on Universe or Galaxy scale)
+- `scaleStack.active.tier <= 1` (on Universe or Galaxy tier; stack depth is not a tier)
 - `!scaleStack.isTransitioning` (no scale transition is already running)
 
 **Manual Handback Rule:** If the player re-seats (starts piloting via interaction) or explicitly toggles autopilot off, **control is handed back immediately** with no warning or transition delay. Autopilot disengages and the ship coasts on manual input/inertia.
@@ -95,7 +98,7 @@ DECELERATE ── manual handback ───────────────�
   │
   │ (speed < arrival threshold AND near target center)
   ▼
-HANDOFF ──► clears lock, disengages hyperdrive ──► ScaleStack descent ──► IDLE
+HANDOFF ──► ScaleStack selects locked target ──► clears lock ──► IDLE
 ```
 
 **CRUISE phase:**
@@ -110,13 +113,14 @@ HANDOFF ──► clears lock, disengages hyperdrive ──► ScaleStack descen
   - **Stage 1 (Gentle):** Uses dampeners (rate 1.4/s) for the initial deceleration phase.
   - **Stage 2 (Hard):** Applies the airbrake (rate 5.0/s) as the ship gets closer to the target to bring it to a near halt.
 - Sets `shipControls.hyperdriveEngaged = false` immediately on entry to decelerate, spooling down the hyperdrive level so the scale stack speed gate can open.
+- After the high-speed safety stop, uses capped precision thrust to cover the remaining buffer and performs a final airbrake inside the handoff shell.
 - Keeps correcting bearing to keep the ship pointed directly at target during deceleration.
 
 **HANDOFF phase:**
-- When the ship is slow enough (speed < 50 m/s) **AND** has arrived near the exact target location (distance < candidate.entryRadius * 0.1):
+- When the ship is slow enough (speed < 10 m/s) **AND** is within 25 m of the target:
   1. Force `shipControls.hyperdriveEngaged = false`.
-  2. Clear target lock: `selectedNavigationTarget = null` and `selectedNavigationTargetDepth = null`.
-  3. Return state machine to `IDLE`.
+  2. Keep the target lock for the current frame so `ScaleStack` selects only the locked descent candidate.
+  3. Once the transition starts, clear the target lock and return the state machine to `IDLE`.
 - The `ScaleStack` handles the subsequent scale descent transition.
 
 ---

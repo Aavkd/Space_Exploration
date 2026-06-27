@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DESCENT, SCALE_TIERS } from '../../config/scaleTiers.js';
 import { createChildLevel } from './Level.js';
+import { matchesLockedDescentTarget } from './descentTargeting.js';
 
 // Total wall-clock length of a descend/ascend transition, and the point in that
 // window at which the (expensive) content swap happens — behind the veil's peak
@@ -75,9 +76,9 @@ export class ScaleStack {
         // the player began inside, then unblock each one independently when it is
         // left. That keeps spawn/ascend hysteresis while allowing newly approached
         // star systems to trigger even if a broad galaxy shell still overlaps.
-        const contained = this._containedDescents(ctx.shipPosition);
+        const contained = this._containedDescents(ctx.shipPosition, ctx.lockedTargetId, ctx.lockedTargetPosition);
         this._updateBlockedDescents(contained);
-        const candidate = this._nearestUnblocked(contained);
+        const candidate = this._nearestUnblocked(contained, ctx.lockedTargetId, ctx.lockedTargetPosition);
 
         // Descend only when this is a newly entered shell and the ship is slow
         // enough (PRECISION, §4.1).
@@ -158,9 +159,9 @@ export class ScaleStack {
         return best;
     }
 
-    _containedDescents(shipPosition) {
+    _containedDescents(shipPosition, lockedTargetId = null, lockedTargetPosition = null) {
         const contained = [];
-        for (const candidate of this.active.getDescentCandidates(shipPosition)) {
+        for (const candidate of this.active.getDescentCandidates(shipPosition, null, lockedTargetId, lockedTargetPosition)) {
             const distance = shipPosition.distanceTo(candidate.position);
             if (distance <= candidate.entryRadius) contained.push({ candidate, distance });
         }
@@ -180,11 +181,17 @@ export class ScaleStack {
         }
     }
 
-    _nearestUnblocked(contained) {
+    _nearestUnblocked(contained, lockedTargetId = null, lockedTargetPosition = null) {
         let best = null;
         let bestDistance = Infinity;
         for (const { candidate, distance } of contained) {
             if (this._blockedDescentKeys.has(candidateKey(candidate))) continue;
+            // Target-exclusive descent check:
+            if (this.active.tier <= SCALE_TIERS.galaxy.tier && lockedTargetId !== null) {
+                if (!matchesLockedDescentTarget(candidate, lockedTargetId, lockedTargetPosition)) {
+                    continue;
+                }
+            }
             if (distance < bestDistance) {
                 best = candidate;
                 bestDistance = distance;
