@@ -6,7 +6,10 @@ import { DebrisField } from './DebrisField.js';
 import { starBodyRadius } from './starColor.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 import { DESCENT } from '../../config/scaleTiers.js';
-import { findSurfacePoiForPlanet } from '../../rpg/surfaceOutposts.js';
+import {
+    findSurfacePoiForPlanet,
+    findSurfacePoisForPlanet
+} from '../../rpg/surfaceOutposts.js';
 import { findBoardingPoiForSystem } from '../../rpg/boarding.js';
 
 const PLANET_ENTRY = Object.freeze({
@@ -322,17 +325,16 @@ export class SystemContents {
         const namedSystemId = this.anchor.rpg?.namedSystemId ?? null;
         return this.planets.flatMap((planet, planetIndex) => {
             const planetId = namedSystemId ? `${namedSystemId}_planet_${planetIndex + 1}` : null;
-            const surfacePoi = findSurfacePoiForPlanet({
+            const surfacePois = findSurfacePoisForPlanet({
                 systemId: namedSystemId,
                 planetId,
                 planetIndex,
                 kind: planet.kind,
                 landable: planet.descriptor?.landable === true
             });
-            if (!surfacePoi) return [];
-            return [{
+            return surfacePois.map((surfacePoi) => ({
                 type: 'surface outpost signal',
-                name: `${surfacePoi.name} [SURFACE SCAN]`,
+                name: `${surfacePoi.name} [${surfacePoi.hostileEncounterId ? 'HOSTILE SURFACE' : 'SURFACE SCAN'}]`,
                 position: planet.getWorldPosition(new THREE.Vector3()),
                 radius: planet.radius,
                 rpg: {
@@ -341,7 +343,7 @@ export class SystemContents {
                     surfacePoiId: surfacePoi.id,
                     markerScale: 'system'
                 }
-            }];
+            }));
         });
     }
 

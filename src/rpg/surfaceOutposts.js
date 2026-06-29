@@ -29,6 +29,24 @@ export const SURFACE_POI_DEFINITIONS = Object.freeze({
         maxLandingSlopeDeg: 12,
         terminalId: 'index_k7_surface_terminal',
         placeholderArt: true
+    }),
+    index_k7_black_cache: Object.freeze({
+        id: 'index_k7_black_cache',
+        name: 'K-7 Black Cache',
+        type: 'hostile surface site',
+        systemId: 'index_hq',
+        planetId: SURFACE_PLANET_ID,
+        planetIndex: 0,
+        planetKind: 'terrestrial',
+        latitudeDeg: 17.006,
+        longitudeDeg: -34.008,
+        landingRadiusMetres: 150,
+        interactionRadiusMetres: 2.8,
+        terminalOffsetMetres: 70,
+        maxLandingSlopeDeg: 14,
+        terminalId: 'index_k7_stolen_survey_core',
+        hostileEncounterId: 'index_k7_black_cache_encounter',
+        placeholderArt: true
     })
 });
 
@@ -41,18 +59,20 @@ export function getSurfacePoiDefinition(id) {
 }
 
 export function findSurfacePoiForPlanet({ systemId, planetId, planetIndex, kind, landable } = {}) {
-    if (kind === 'gas' || landable === false) return null;
-    const definition = SURFACE_POI_DEFINITIONS[SURFACE_OUTPOST_ID];
-    if (
-        systemId !== definition.systemId
-        || planetId !== definition.planetId
-        || Number(planetIndex) !== definition.planetIndex
-        || kind !== definition.planetKind
-        || landable !== true
-    ) {
-        return null;
-    }
-    return structuredClone(definition);
+    return findSurfacePoisForPlanet({ systemId, planetId, planetIndex, kind, landable })[0] ?? null;
+}
+
+export function findSurfacePoisForPlanet({ systemId, planetId, planetIndex, kind, landable } = {}) {
+    if (kind === 'gas' || landable === false) return [];
+    return Object.values(SURFACE_POI_DEFINITIONS)
+        .filter((definition) => (
+            systemId === definition.systemId
+            && planetId === definition.planetId
+            && Number(planetIndex) === definition.planetIndex
+            && kind === definition.planetKind
+            && landable === true
+        ))
+        .map((definition) => structuredClone(definition));
 }
 
 export function directionFromLatLon(latitudeDeg, longitudeDeg) {

@@ -31,6 +31,9 @@ Deep Space VR is a no-build Three.js space exploration prototype built for deskt
   prices and stock, atomic trade, stale remote reports, and contraband appraisal.
 - A non-hostile Wayfarer derelict loop with secured untethered EVA, active-play
   oxygen, one placeholder interior, exact-once log recovery, and safe return.
+- A deterministic hostile K-7 surface site with one pulse carbine, one sentry
+  drone, physical cover/LOS, evasion or combat resolution, retryable defeat,
+  and an exact-once safe-return reward.
 - Live tuning panels: `F2` for post-FX, comfort, XR, and ship tuning, and `F10` for universe generation, presets, import/export, and regeneration.
 
 ## Run
@@ -46,8 +49,8 @@ Then open [http://localhost:5177/](http://localhost:5177/).
 ## RPG regression tests
 
 The dependency-free RPG suite covers missions, slots and clock, cargo/fuel,
-crew, surface placement, faction patrol, condition/repair, ship combat, and the
-Phase 20 economy plus Phase 21 boarding migration, deterministic failures,
+crew, surface placement, faction patrol, condition/repair, ship combat, economy,
+Phase 21 boarding, and Phase 22 surface-combat migration, deterministic failures,
 atomicity, checkpoint reloads, recovery, and long-run invariants:
 
 ```powershell
@@ -100,6 +103,8 @@ Notes:
 | `T` | Teleport/toggle inside-outside EVA for testing |
 | `Y` | Safe return during Wayfarer boarding EVA/interior |
 | `V` | Return to the first-person player camera |
+| `B` / gamepad D-pad Down | Arm/safe the pulse carbine while walking aboard or in EVA |
+| Primary mouse / gamepad R2 | Fire the armed pulse carbine; encounter damage applies only at the hostile site |
 
 ### Piloting
 
@@ -115,7 +120,7 @@ Notes:
 | `Z` | Toggle dampeners |
 | `X` | Airbrake |
 | `Space` | Toggle hyperdrive |
-| `B` | Toggle combat mode while piloting |
+| `B` | Toggle combat mode while piloting, walking aboard, or in EVA |
 | `Tab` | Cycle/lock a hostile combat target |
 | Primary mouse | Fire locked pulse hardpoints |
 
@@ -161,8 +166,8 @@ Walk to the observation-bay ship computer and press `C` / Triangle / XR select
 to inspect `A Clean Copy`, manage three isolated local slots, export validated
 JSON, preview/import it into a new slot, and inspect active-play time. Phase 11
 version-1 browser saves migrate automatically through the current Phase 21
-version-10 envelope / player version 1 / ship version 2 / RPG version 8;
-Phase 13–20 slots migrate
+version-11 envelope / player version 1 / ship version 2 / RPG version 9;
+Phase 13–21 slots migrate
 non-destructively.
 There is no cloud synchronization or offline simulation.
 
@@ -263,6 +268,21 @@ free safe return. Oxygen exhaustion or exceeding 150 m recovers automatically.
 Returning before the log leaves the mission retryable; returning with it resolves
 the objective exactly once.
 
+### Hostile surface site
+
+At Index Relay K-7, lock `K-7 Black Cache [HOSTILE SURFACE]`, land in its
+separate marked area, and disembark. Use the two solid barriers to break the
+sentry drone's line of sight. Recover the stolen survey core while the sentry
+is alive for the `evaded` route, or destroy it with four clear pulse-carbine
+hits for `combat_resolved`. Return aboard for the same exact-once 600-credit
+reward. Suit defeat fades back aboard with no reward and leaves the mission
+retryable.
+
+Desktop uses camera aim and primary mouse fire; gamepad uses right-stick aim
+and Cross; WebXR uses the right-controller ray/select while left select remains
+the interaction hand. The supplied `assets/desert_eagle_gun.glb` is the
+placeholder weapon model.
+
 ### Gamepad and VR
 
 - DualSense and standard gamepads are supported on desktop and in VR.
@@ -332,6 +352,11 @@ window.__deepSpaceDebug.boarding.getState();
 window.__deepSpaceDebug.boarding.getPlacement();
 window.__deepSpaceDebug.boarding.recover();
 window.__deepSpaceDebug.boarding.setOxygen(30);
+window.__deepSpaceDebug.surfaceCombat.getState();
+window.__deepSpaceDebug.surfaceCombat.getPlacement();
+window.__deepSpaceDebug.surfaceCombat.getPerformance();
+window.__deepSpaceDebug.surfaceCombat.fire();
+window.__deepSpaceDebug.surfaceCombat.recoverObjective();
 ```
 
 The Phase 11A-E implementation and verification checklist are documented in
@@ -357,6 +382,7 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-19-ship-combat.md](docs/phase-19-ship-combat.md) - opt-in targeting, weapons, Tier 2 enemy, damage, recovery, and cleanup
 - [docs/phase-20-dynamic-economy.md](docs/phase-20-dynamic-economy.md) - three markets, active-play ticks, atomic trade, stale intel, and contraband value
 - [docs/phase-21-eva-boarding.md](docs/phase-21-eva-boarding.md) - secured untethered EVA, one derelict interior, log recovery, and safe return
+- [docs/phase-22-surface-combat.md](docs/phase-22-surface-combat.md) - one hostile surface POI, cover/LOS, pulse carbine, sentry, recovery, and reward
 - [docs/phase-23-autonomous-simulation.md](docs/phase-23-autonomous-simulation.md) - simulation substrate: headless deterministic tick, simulation-LOD contract, faction agendas, tier fluidity, and economy/territory re-parenting
 - [docs/phase-24-hybrid-dialogue.md](docs/phase-24-hybrid-dialogue.md) - hybrid dialogue: authored-beat vs live-LLM arbitration, the state-safety contract, LOD-aware model routing/budget, and offline fallback
 - [docs/phase-25-biomes-and-regions.md](docs/phase-25-biomes-and-regions.md) - planet-gen depth: deterministic region/continent aggregation layer (placement substrate), plus instanced ground cover, water plane, and weather hooks
@@ -373,6 +399,10 @@ The Phase 11A-E implementation and verification checklist are documented in
 - Phase 21 untethered EVA is limited to one secured, 150 m encounter frame; free
   world-frame EVA, moving-ship assault, full physical hazards, and a 3D radar/map
   remain future work.
+- Phase 22 is implementation/automation complete but awaits owner-performed
+  browser, gamepad, and PCVR/WebXR signoff. It contains one authored sentry and
+  one weapon only; the approximately 460k-triangle supplied weapon model is a
+  specific live-performance risk until device measurements are recorded.
 - Phase 20 is a three-market proof only. It has no docking, cargo meshes, NPC
   logistics, crafting, finance, autonomous faction budgets, or offline
   simulation. Full normal-control route, gamepad, and PCVR signoff is pending.

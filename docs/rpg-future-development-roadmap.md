@@ -1,7 +1,7 @@
 # Deep Space VR - Future RPG Development Roadmap
 
 > **Status:** Proposed execution roadmap after the validated Phase 11 RPG slice.
-> **Last updated:** 2026-06-27.
+> **Last updated:** 2026-06-28.
 > **Sources:** `rpg-design-vision.md`, `worldbuilding.md`,
 > `phase-11-rpg-roadmap.md`, and `phase-12-radio-transceiver.md`.
 > **Agent prompts:** `rpg-phase-agent-prompts.md`.
@@ -403,8 +403,19 @@ Hostile boarding and close-quarters combat remain out of scope.
 
 ### Phase 22 - Hostile Surface Site
 
+**Status:** Implementation and T0–T3 automated verification complete with
+100 passing RPG regressions and 130 source/test modules passing syntax checks.
+Owner-performed browser normal-control, gamepad, and PCVR/WebXR comfort and
+performance signoff remains open, so the phase is partial; see
+[`phase-22-surface-combat.md`](phase-22-surface-combat.md).
+
 **Proof loop:** approach one hostile POI, evade or engage, resolve a small
 encounter, recover the objective, and return.
+
+The separate `K-7 Black Cache` site uses the Phase 16 terrain sampler for
+placement, collision, and LOS. One sentry and one heat/cooldown pulse carbine
+support equal-reward `evaded` and `combat_resolved` routes. Suit defeat returns
+the player safely aboard and leaves the mission retryable.
 
 Acceptance:
 

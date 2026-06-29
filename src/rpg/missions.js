@@ -196,6 +196,61 @@ export const MISSION_DEFINITIONS = Object.freeze({
             })
         }),
         failureOutcomes: Object.freeze({})
+    }),
+    index_k7_black_cache_recovery: Object.freeze({
+        id: 'index_k7_black_cache_recovery',
+        name: 'Silence in the Dust',
+        namedSystemId: 'index_hq',
+        contactId: 'index_hq_archivist',
+        initialStatus: MISSION_STATUSES.UNAVAILABLE,
+        requiresExternalResolution: true,
+        description: 'Recover a stolen Index survey core from the hostile K-7 Black Cache and return safely.',
+        surfacePoiId: 'index_k7_black_cache',
+        objectives: Object.freeze({
+            discover_black_cache: Object.freeze({
+                id: 'discover_black_cache',
+                label: 'Acquire the K-7 Black Cache hostile-site contact.'
+            }),
+            land_at_black_cache: Object.freeze({
+                id: 'land_at_black_cache',
+                label: 'Land inside the Black Cache safe area.'
+            }),
+            recover_stolen_survey_core: Object.freeze({
+                id: 'recover_stolen_survey_core',
+                label: 'Recover the stolen Index survey core.'
+            }),
+            return_safely_with_core: Object.freeze({
+                id: 'return_safely_with_core',
+                label: 'Return safely to the ship with the survey core.'
+            })
+        }),
+        branches: Object.freeze({
+            evaded: Object.freeze({
+                id: 'evaded',
+                label: 'Recovered the survey core without destroying the sentry.',
+                credits: 600,
+                worldFlags: Object.freeze({
+                    'index_hq.black_cache_recovered': true,
+                    'index_hq.black_cache_route': 'evaded'
+                })
+            }),
+            combat_resolved: Object.freeze({
+                id: 'combat_resolved',
+                label: 'Destroyed the sentry and recovered the survey core.',
+                credits: 600,
+                worldFlags: Object.freeze({
+                    'index_hq.black_cache_recovered': true,
+                    'index_hq.black_cache_route': 'combat_resolved'
+                })
+            })
+        }),
+        failureOutcomes: Object.freeze({
+            defeat: Object.freeze({
+                id: 'defeat',
+                label: 'Recovered safely after suit defeat; mission remains retryable.',
+                retryable: true
+            })
+        })
     })
 });
 

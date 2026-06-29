@@ -172,7 +172,31 @@ export {
     createInitialSurfaceState,
     directionFromLatLon,
     findSurfacePoiForPlanet,
+    findSurfacePoisForPlanet,
     getSurfacePoiDefinition,
     sanitizeSurfaceState,
     surfaceCheckpointIndex
 } from './surfaceOutposts.js';
+export {
+    SurfaceCombatRuntime,
+    SURFACE_COMBAT_FIXED_STEP,
+    SURFACE_COMBAT_MAX_STEPS
+} from './SurfaceCombatRuntime.js';
+export {
+    SURFACE_COMBAT_STATE_VERSION,
+    SURFACE_COMBAT_SYSTEM_ID,
+    SURFACE_COMBAT_PLANET_ID,
+    SURFACE_COMBAT_SITE_ID,
+    SURFACE_COMBAT_ENCOUNTER_ID,
+    SURFACE_COMBAT_MISSION_ID,
+    SURFACE_COMBAT_OBJECTIVE_ID,
+    SURFACE_COMBAT_ENEMY_ID,
+    SURFACE_COMBAT_WEAPON_ID,
+    SURFACE_COMBAT_REWARD_CREDITS,
+    SURFACE_COMBAT_LIMITS,
+    createInitialSurfaceCombatState,
+    sanitizeSurfaceCombatState,
+    selectSurfaceCombatSpawn,
+    segmentIntersectsAabb,
+    isSurfaceCombatLineClear
+} from './surfaceCombat.js';

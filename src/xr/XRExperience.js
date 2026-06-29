@@ -72,6 +72,11 @@ export class XRExperience {
         };
     }
 
+    getController(handedness = 'right') {
+        return this.controllers.find((controller) => controller.userData.handedness === handedness)
+            ?? null;
+    }
+
     setUserScale(scale) {
         const safeScale = Number.isFinite(scale) ? THREE.MathUtils.clamp(scale, 0.25, 1.5) : 1;
         this.xrScaleRoot.scale.setScalar(safeScale);
@@ -125,14 +130,19 @@ export class XRExperience {
             const ray = this._createControllerRay();
             controller.add(ray);
             this.controllerRays.push(ray);
-            controller.addEventListener('connected', () => {
+            controller.addEventListener('connected', (event) => {
                 controller.visible = true;
+                controller.userData.handedness = event.data?.handedness || (i === 0 ? 'left' : 'right');
             });
             controller.addEventListener('disconnected', () => {
                 controller.visible = false;
             });
             controller.addEventListener('selectstart', () => {
-                this.onSelect?.();
+                this.onSelect?.({
+                    index: i,
+                    handedness: controller.userData.handedness || (i === 0 ? 'left' : 'right'),
+                    controller
+                });
             });
 
             const grip = this.renderer.xr.getControllerGrip(i);

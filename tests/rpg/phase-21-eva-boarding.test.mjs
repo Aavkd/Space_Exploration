@@ -138,12 +138,12 @@ test('Phase 20 v9 fixture migrates to envelope v10/RPG v8/player v1 without prio
         'utf8'
     ));
     const migrated = sanitizeSaveEnvelope(fixture);
-    assert.equal(migrated.version, 10);
-    assert.equal(migrated.rpg.version, 8);
+    assert.equal(migrated.version, 11);
+    assert.equal(migrated.rpg.version, 9);
     assert.equal(migrated.player.version, 1);
     assert.equal(migrated.player.location, 'ship');
     assert.equal(migrated.player.oxygenUpdatedAtGameTime, 321);
-    assert.equal(migrated.autosave.reason, 'phase-21-v9');
+    assert.equal(migrated.autosave.reason, 'phase-22-v10');
     assert.equal(migrated.ship.credits, 2345);
     assert.equal(migrated.simulation.economy.markets.byId.wayfarer_exchange.goods.field_rations.stock, 17);
     assert.equal(migrated.rpg.worldFlags['phase20.fixture-preserved'], true);
@@ -334,7 +334,7 @@ test('active-slot reset removes Phase 21 progress while preserving a valid aboar
     harness = reopen(harness);
     assert.equal(harness.boarding.getState().progress.checkpoint, 'undiscovered');
     assert.equal(harness.slots.getActiveEnvelope().player.location, 'ship');
-    assert.equal(harness.slots.getActiveEnvelope().version, 10);
+    assert.equal(harness.slots.getActiveEnvelope().version, 11);
 });
 
 test('storage failure stays visible while the authoritative in-memory EVA checkpoint remains usable', () => {

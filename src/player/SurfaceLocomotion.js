@@ -16,6 +16,7 @@ export class SurfaceLocomotion {
         this.lastStep = {
             grounded: false,
             blockedSlope: false,
+            blockedStructure: false,
             slopeDeg: 0,
             altitude: Infinity,
             surfaceUp: [0, 1, 0],
@@ -74,12 +75,19 @@ export class SurfaceLocomotion {
 
         const slopeLimit = this.config.slopeLimitDeg;
         const blockedSlope = this._candidateSample.slopeDeg > slopeLimit;
-        const sample = blockedSlope ? this._sample : this._candidateSample;
+        let blockedStructure = false;
+        let sample = blockedSlope ? this._sample : this._candidateSample;
+        if (!blockedSlope && typeof this.surface.resolveSurfaceCombatMovement === 'function') {
+            const resolved = this.surface.resolveSurfaceCombatMovement(position, sample.point, 0.45);
+            blockedStructure = resolved === position;
+            if (blockedStructure) sample = this._sample;
+        }
         position.copy(sample.point);
 
         this.lastStep = {
             grounded: true,
             blockedSlope,
+            blockedStructure,
             slopeDeg: sample.slopeDeg,
             altitude: sample.altitude,
             surfaceUp: sample.up.toArray(),

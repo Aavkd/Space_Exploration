@@ -163,6 +163,7 @@ export class PlayerController {
             case 'openCrew':
                 return action;
             case 'openSurfaceOutpost':
+            case 'recoverSurfaceCombatObjective':
                 return action;
             case 'beginBoardingEva':
             case 'enterDerelict':
@@ -355,7 +356,7 @@ export class PlayerController {
 
         if (this.state === PLAYER_STATE.SURFACE) {
             const interaction = this._surfaceInteraction();
-            if (interaction?.available) return 'openSurfaceOutpost';
+            if (interaction?.available) return interaction.action ?? 'openSurfaceOutpost';
             if (this._nearSurfaceBoardPoint()) return 'boardSurface';
             return null;
         }
@@ -413,6 +414,8 @@ export class PlayerController {
                 return 'Press C / Triangle - board the ship';
             case 'openSurfaceOutpost':
                 return 'Press C / Triangle - access outpost terminal';
+            case 'recoverSurfaceCombatObjective':
+                return 'Press C / Triangle - recover stolen survey core';
             case 'beginBoardingEva':
                 return 'Press C / Triangle - secure ship and begin untethered EVA';
             case 'enterDerelict':

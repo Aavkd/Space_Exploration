@@ -28,6 +28,11 @@ import { PlayerRig } from '../player/PlayerRig.js';
 import { RelativeLocomotion } from '../player/RelativeLocomotion.js';
 import { PlayerController, PLAYER_STATE } from '../player/PlayerController.js';
 import { GamepadInput } from '../input/GamepadInput.js';
+import {
+    SURFACE_COMBAT_GAMEPAD_FIRE_BUTTON,
+    canEquipSurfaceWeaponInPlayerState,
+    canToggleCombatModeInPlayerState
+} from '../input/combatModeInput.js';
 import { SkyDeepSpace } from '../rendering/SkyDeepSpace.js';
 import { RenderPipeline } from '../rendering/RenderPipeline.js';
 import { PostProcessingPanel } from '../rendering/PostProcessingPanel.js';
@@ -40,6 +45,7 @@ import { DiegeticRadioPanel } from '../ui/DiegeticRadioPanel.js';
 import { UniverseNavigation } from '../ui/UniverseNavigation.js';
 import {
     findAuthoredNavigationReplacement,
+    findLiveNavigationReplacement,
     navigationTargetBelongsToDepth
 } from '../ui/navigationTargetFrame.js';
 import { AudioEngine } from '../audio/AudioEngine.js';
@@ -60,13 +66,16 @@ import {
     getCargoDefinition,
     PatrolRuntime,
     ShipConditionRuntime,
+    SurfaceCombatRuntime,
     SurfaceOutpostRuntime,
+    SURFACE_COMBAT_SITE_ID,
     SURFACE_OUTPOST_ID,
     isMeteredAuthoredRoute,
     LocalRpgPersistence
 } from '../rpg/index.js';
 import { CombatPresentation } from '../rpg/CombatPresentation.js';
 import { BoardingPresentation } from '../rpg/BoardingPresentation.js';
+import { SurfaceCombatPresentation } from '../rendering/SurfaceCombatPresentation.js';
 import { GameClock, LocalSaveSlots, SlotRpgPersistence } from '../save/index.js';
 
 // Rebase the world origin when the ship exceeds this distance from (0,0,0).
@@ -278,7 +287,7 @@ export class App {
             playerRig: this.playerRig,
             onSessionStart: () => this._enterVrMode(),
             onSessionEnd: () => this._leaveVrMode(),
-            onSelect: () => this._handleXrSelect()
+            onSelect: (input) => this._handleXrSelect(input)
         });
         this.xrVisualEffects = new XRVisualEffects({
             scene: this.scene,
@@ -332,6 +341,9 @@ export class App {
         this._shipCapabilities = this.condition?.getState().capabilities ?? null;
         this.surfaceOutpostError = null;
         this.surfaceOutpost = this._createSurfaceOutpostRuntimeSafely();
+        this.surfaceCombatError = null;
+        this.surfaceCombat = this._createSurfaceCombatRuntimeSafely();
+        this.surfaceCombatPresentation = this._createSurfaceCombatPresentationSafely();
         this.boardingError = null;
         this.boarding = this._createBoardingRuntimeSafely();
         this.patrolError = null;
@@ -383,7 +395,7 @@ export class App {
         this._handleHyperdriveButton(controlInput);
         if (
             controlInput?.buttons?.dpadDown?.justPressed
-            && this.shipControls.pilotActive
+            && canToggleCombatModeInPlayerState(this.playerController.getState())
         ) {
             this._toggleCombatMode();
             if (controlInput.source === 'webxr') this.xr.pulse({ duration: 90, strength: 0.36 });
@@ -547,6 +559,8 @@ export class App {
         }
         this._syncPatrolFromSettledScale();
         this._syncSurfaceOutpostProgress();
+        this._syncSurfaceCombatProgress();
+        if (clockActive) this._updateSurfaceCombat(dt);
         if (clockActive) this._updateEconomySafely();
         if (!this.paused) this.patrol?.update(this.gameClock.getTime());
         this._syncPatrolPresentation();
@@ -561,6 +575,7 @@ export class App {
         }
         this.combatPresentation?.update(this.combat?.getState());
         this._syncCombatNavigationTarget();
+        this._refreshSelectedNavigationTarget();
         this._syncCombatWarning();
         this.sky.update(dt, this.camera.position);
 
@@ -612,6 +627,15 @@ export class App {
 
         if (Object.values(buttons).some((button) => button.justPressed)) {
             this._unlockAudioFromGesture();
+        }
+
+        if (
+            buttons[SURFACE_COMBAT_GAMEPAD_FIRE_BUTTON].justPressed
+            && this._surfaceWeaponEquipped()
+        ) {
+            this._fireSurfaceWeapon();
+            this.input.gamepad.pulse({ duration: 55, weak: 0.2, strong: 0.35 });
+            return;
         }
 
         if (
@@ -977,6 +1001,36 @@ export class App {
         }
     }
 
+    _createSurfaceCombatRuntimeSafely() {
+        try {
+            return new SurfaceCombatRuntime({
+                slots: this.saveSlots,
+                rpg: this.rpg,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.surfaceCombatError = {
+                context: 'surface combat runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 22 surface combat unavailable; flight and surface walking remain active.', error);
+            return null;
+        }
+    }
+
+    _createSurfaceCombatPresentationSafely() {
+        try {
+            return new SurfaceCombatPresentation({ scene: this.scene });
+        } catch (error) {
+            this.surfaceCombatError = {
+                context: 'surface combat presentation initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 22 surface-combat presentation unavailable; simulation and flight remain active.', error);
+            return null;
+        }
+    }
+
     _createBoardingRuntimeSafely() {
         try {
             return new EvaBoardingRuntime({
@@ -1049,6 +1103,7 @@ export class App {
             const result = this.combat?.toggleCombatMode() ?? null;
             this.combatError = null;
             this.combatPresentation?.update(result);
+            this._syncSurfaceWeaponPresentation(this.surfaceCombat?.getState());
             this._syncCombatNavigationTarget();
             return result;
         } catch (error) {
@@ -1142,6 +1197,7 @@ export class App {
         else if (action === 'openCargoTerminal') this._openCargoTerminalPanel();
         else if (action === 'openCrew') this._openCrewPanel();
         else if (action === 'openSurfaceOutpost') this._openSurfaceOutpostPanel();
+        else if (action === 'recoverSurfaceCombatObjective') this._recoverSurfaceCombatObjective();
         else if (action === 'beginBoardingEva') this._beginBoardingEva();
         else if (action === 'enterDerelict') this._enterBoardingDerelict();
         else if (action === 'recoverDerelictLog') this._recoverBoardingLog();
@@ -1151,6 +1207,9 @@ export class App {
         else if (action === 'boardSurface') {
             const checkpoint = this.surfaceOutpost?.getState().progress.checkpoint;
             if (checkpoint === 'objective_complete') this.surfaceOutpost.recordBoarded();
+            if (this.surfaceCombat?.getState().saved.checkpoint === 'objective_recovered') {
+                this.surfaceCombat.recordBoarded();
+            }
         }
         return action;
     }
@@ -1656,9 +1715,17 @@ export class App {
         return `HYPERDRIVE ⟳ ${Math.round(level * 100)}%`;
     }
 
-    _handleXrSelect() {
+    _handleXrSelect(input = {}) {
         this._unlockAudioFromGesture();
         if (this.cameraMode !== 'player') return false;
+        if (
+            input.handedness === 'right'
+            && this._surfaceWeaponEquipped()
+        ) {
+            const shot = this._fireSurfaceWeapon({ controller: input.controller });
+            this.xr.pulse({ duration: 55, strength: 0.32 });
+            return shot ? 'surfaceCombatFire' : false;
+        }
         if (
             this.shipControls.pilotActive
             && this.combat?.getState().active
@@ -1886,6 +1953,23 @@ export class App {
         `;
         document.body.appendChild(hud);
         this.telemetryNode = hud.querySelector('[data-telemetry]');
+        const crosshair = document.createElement('div');
+        crosshair.id = 'surface-combat-crosshair';
+        crosshair.textContent = '+';
+        crosshair.style.cssText = [
+            'position:fixed',
+            'left:50%',
+            'top:50%',
+            'transform:translate(-50%,-50%)',
+            'color:#ffded2',
+            'font:22px/1 monospace',
+            'text-shadow:0 0 7px #ff4f35',
+            'pointer-events:none',
+            'z-index:10',
+            'display:none'
+        ].join(';');
+        document.body.appendChild(crosshair);
+        this.surfaceCombatCrosshair = crosshair;
 
         // Center-bottom contextual interaction prompt (take controls, airlock...).
         const prompt = document.createElement('div');
@@ -2055,6 +2139,7 @@ export class App {
         this.condition?.reload();
         this._refreshShipCapabilities();
         this.surfaceOutpost?.reload();
+        this.surfaceCombat?.reload();
         this.boarding?.reload();
         this.patrol?.reload();
         this.combat?.reload();
@@ -2197,6 +2282,134 @@ export class App {
         });
     }
 
+    _syncSurfaceCombatProgress() {
+        if (!this.surfaceCombat) return null;
+        const planet = this.environment?.descriptor?.rpg ?? null;
+        const landing = this.environment?.getLandingState?.(this.ship.position) ?? null;
+        const playerPosition = this.playerRig.object3D.getWorldPosition(new THREE.Vector3());
+        const withinLandingArea = Boolean(
+            this.environment?.isWithinSurfacePoiLandingArea?.(SURFACE_COMBAT_SITE_ID, this.ship.position)
+        );
+        try {
+            return this.surfaceCombat.syncContext({
+                systemId: planet?.namedSystemId ?? this._findActiveRpgNamedSystemId(),
+                planetId: planet?.planetId ?? null,
+                siteId: withinLandingArea ? SURFACE_COMBAT_SITE_ID : null,
+                landed: Boolean(landing?.landed),
+                withinLandingArea,
+                playerState: this.playerController.getState(),
+                playerPosition: playerPosition.toArray(),
+                shipPosition: this.ship.position.toArray(),
+                placement: this.environment?.getSurfaceCombatPlacement?.() ?? null
+            });
+        } catch (error) {
+            this.surfaceCombatError = {
+                context: 'surface combat context',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return null;
+        }
+    }
+
+    _updateSurfaceCombat(dt) {
+        if (!this.surfaceCombat) return null;
+        try {
+            const playerPosition = this.camera.getWorldPosition(new THREE.Vector3());
+            const previousSuit = this.surfaceCombat.getState().saved.suitIntegrity;
+            const state = this.surfaceCombat.update(dt, {
+                playerPosition: playerPosition.toArray()
+            });
+            if (state.saved.suitIntegrity < previousSuit) {
+                if (this.xr.isPresenting) this.xr.pulse({ duration: 100, strength: 0.55 });
+                else this.input.gamepad.pulse({ duration: 100, weak: 0.35, strong: 0.62 });
+            }
+            this._syncSurfaceWeaponPresentation(state);
+            if (this.surfaceCombat.consumeRecoveryRequest()) {
+                this._flashBoardingVeil();
+                this.playerController.boardShip();
+                this.playerController.updateCamera(this.camera);
+            }
+            return state;
+        } catch (error) {
+            this.surfaceCombatError = {
+                context: 'surface combat update',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            this.surfaceCombat?.cleanup('runtime-failure');
+            this.surfaceCombatPresentation?.update(null);
+            return null;
+        }
+    }
+
+    _getSurfaceAimRay({ controller = null } = {}) {
+        const source = controller ?? this.camera;
+        source.updateWorldMatrix?.(true, false);
+        const origin = source.getWorldPosition(new THREE.Vector3());
+        const direction = new THREE.Vector3(0, 0, -1)
+            .applyQuaternion(source.getWorldQuaternion(new THREE.Quaternion()))
+            .normalize();
+        return { origin: origin.toArray(), direction: direction.toArray() };
+    }
+
+    _fireSurfaceWeapon(options = {}) {
+        try {
+            if (!this._surfaceWeaponEquipped()) return false;
+            const aim = this._getSurfaceAimRay(options);
+            const muzzle = this.surfaceCombatPresentation?.getMuzzleWorldPosition?.(
+                new THREE.Vector3()
+            );
+            const result = this.surfaceCombat.fire({
+                ...aim,
+                visualOrigin: muzzle?.toArray() ?? aim.origin
+            });
+            this.surfaceCombatError = null;
+            return result;
+        } catch (error) {
+            this.surfaceCombatError = {
+                context: 'surface pulse carbine',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return false;
+        }
+    }
+
+    _surfaceWeaponEquipped() {
+        return Boolean(
+            this.cameraMode === 'player'
+            && this.combat?.getState().combatMode
+            && canEquipSurfaceWeaponInPlayerState(this.playerController.getState())
+        );
+    }
+
+    _syncSurfaceWeaponPresentation(state = null) {
+        const xrActive = this.xr.isPresenting;
+        const weaponParent = xrActive
+            ? this.xr.getController('right') ?? this.camera
+            : this.camera;
+        return this.surfaceCombatPresentation?.update(state, {
+            weaponParent,
+            xr: xrActive,
+            equipped: this._surfaceWeaponEquipped()
+        }) ?? null;
+    }
+
+    _recoverSurfaceCombatObjective() {
+        try {
+            const position = this.playerRig.object3D.getWorldPosition(new THREE.Vector3());
+            const result = this.surfaceCombat?.recoverObjective({
+                playerPosition: position.toArray()
+            });
+            this.surfaceCombatError = null;
+            return result;
+        } catch (error) {
+            this.surfaceCombatError = {
+                context: 'surface objective recovery',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            return null;
+        }
+    }
+
     _createCombatWarningPanel() {
         const panel = document.createElement('div');
         panel.id = 'combat-warning-panel';
@@ -2253,6 +2466,29 @@ export class App {
         if (!this.combatWarningOpen || event.code !== 'Escape') return false;
         event.preventDefault();
         this._closeCombatWarning();
+        return true;
+    }
+
+    _refreshSelectedNavigationTarget() {
+        if (
+            !this.selectedNavigationTarget
+            || this.selectedNavigationTarget.rpg?.combatTargetId
+            || !navigationTargetBelongsToDepth(
+                this.selectedNavigationTargetDepth,
+                this.scaleStack.depth
+            )
+        ) {
+            return false;
+        }
+        const visible = this.environment.getPOIs?.(this.ship.position, 64) ?? [];
+        const authored = this.environment.getAuthoredSystemPOIs?.(this.ship.position) ?? [];
+        const replacement = findLiveNavigationReplacement(
+            [...authored, ...visible],
+            this.selectedNavigationTarget
+        );
+        if (!replacement?.position) return false;
+        this.selectedNavigationTarget = replacement;
+        this.selectedNavigationTargetDepth = this.scaleStack.depth;
         return true;
     }
 
@@ -3653,7 +3889,20 @@ export class App {
             } else {
                 this.selectedNavigationTarget = poi;
                 this.selectedNavigationTargetDepth = this.scaleStack.depth;
-                if (poi.rpg?.surfacePoiId && this.surfaceOutpost) {
+                if (poi.rpg?.surfacePoiId === SURFACE_COMBAT_SITE_ID && this.surfaceCombat) {
+                    try {
+                        this.surfaceCombat.scan({
+                            siteId: poi.rpg.surfacePoiId,
+                            systemId: poi.rpg.namedSystemId,
+                            planetId: poi.rpg.planetId
+                        });
+                    } catch (error) {
+                        this.surfaceCombatError = {
+                            context: 'hostile-site navigation discovery',
+                            message: error instanceof Error ? error.message : String(error)
+                        };
+                    }
+                } else if (poi.rpg?.surfacePoiId && this.surfaceOutpost) {
                     try {
                         this.surfaceOutpost.scan(poi.rpg.surfacePoiId, {
                             systemId: poi.rpg.namedSystemId,
@@ -3742,6 +3991,12 @@ export class App {
     }
 
     _updateTelemetry() {
+        if (this.surfaceCombatCrosshair) {
+            this.surfaceCombatCrosshair.style.display = (
+                this.displayMode !== 'vr'
+                && this._surfaceWeaponEquipped()
+            ) ? 'block' : 'none';
+        }
         if (!this.telemetryNode) return;
 
         const controls = this.shipControls.getState();
@@ -3816,6 +4071,25 @@ export class App {
             }
         }
         if (this.combatError) lines.push(`<span class="warn">${escapeHtml(this.combatError.message)}</span>`);
+        const surfaceCombat = this.surfaceCombat?.getState();
+        if (surfaceCombat?.active) {
+            lines.push(
+                `<b>SURFACE COMBAT</b> ${escapeHtml((surfaceCombat.enemy?.phase ?? 'active').toUpperCase())}   `
+                + `DRONE ${Math.round(surfaceCombat.enemy?.integrity ?? 0)}   `
+                + `SUIT ${Math.round(surfaceCombat.saved.suitIntegrity)}`
+            );
+            lines.push(
+                `<b>PULSE HEAT</b> ${Math.round(surfaceCombat.heat * 100)}%   `
+                + (this._surfaceWeaponEquipped()
+                    ? `<span class="warn">Mouse / R2 / right select to fire</span>`
+                    : '<span class="off">WEAPONS SAFE</span>')
+            );
+        } else if (surfaceCombat?.saved?.checkpoint === 'objective_recovered') {
+            lines.push(`<b>BLACK CACHE</b> Core secured — return aboard`);
+        }
+        if (this.surfaceCombatError) {
+            lines.push(`<span class="warn">${escapeHtml(this.surfaceCombatError.message)}</span>`);
+        }
         const boarding = this.boarding?.getState();
         if (boarding && boarding.player.location !== 'ship') {
             const spatial = this.playerController.getBoardingPlayerState?.();
@@ -4005,6 +4279,13 @@ export class App {
         this.canvas.addEventListener('mousedown', (event) => {
             if (
                 event.button === 0
+                && this._surfaceWeaponEquipped()
+            ) {
+                this._fireSurfaceWeapon();
+                return;
+            }
+            if (
+                event.button === 0
                 && this.shipControls.pilotActive
                 && this.combat?.getState().active
                 && this.combat?.getState().combatMode
@@ -4032,7 +4313,11 @@ export class App {
                 return;
             }
 
-            if (event.code === 'KeyB' && !event.repeat && this.shipControls.pilotActive) {
+            if (
+                event.code === 'KeyB'
+                && !event.repeat
+                && canToggleCombatModeInPlayerState(this.playerController.getState())
+            ) {
                 event.preventDefault();
                 this._toggleCombatMode();
                 this._syncDebugDomState();
@@ -4657,6 +4942,40 @@ export class App {
                 openTerminal: () => this._openSurfaceOutpostPanel(),
                 closeTerminal: () => this._closeSurfaceOutpostPanel()
             },
+            surfaceCombat: {
+                getState: () => this.surfaceCombat?.getState() ?? {
+                    available: false,
+                    error: this.surfaceCombatError
+                },
+                getPlacement: () => {
+                    const placement = this.environment?.getSurfaceCombatPlacement?.() ?? null;
+                    if (!placement) return null;
+                    return {
+                        id: placement.id,
+                        objectivePosition: placement.objectivePosition,
+                        landingPoint: placement.landingPoint,
+                        structures: placement.structures,
+                        spawnCandidates: placement.spawnCandidates,
+                        patrolPoints: placement.patrolPoints
+                    };
+                },
+                getPerformance: () => ({
+                    runtime: this.surfaceCombat?.getPerformance() ?? null,
+                    presentation: this.surfaceCombatPresentation?.getState() ?? null
+                }),
+                scan: () => this.surfaceCombat?.scan({
+                    siteId: SURFACE_COMBAT_SITE_ID,
+                    systemId: 'index_hq',
+                    planetId: 'index_hq_planet_1'
+                }),
+                sync: () => this._syncSurfaceCombatProgress(),
+                fire: () => this._fireSurfaceWeapon(),
+                recoverObjective: () => this._recoverSurfaceCombatObjective(),
+                recordBoarded: () => this.surfaceCombat?.recordBoarded(),
+                recoverFromDefeat: () => this.surfaceCombat?.recoverFromDefeat(),
+                queryEvents: (query) => this.surfaceCombat?.queryEvents(query),
+                getPresentationState: () => this.surfaceCombatPresentation?.getState() ?? null
+            },
             boarding: {
                 getState: () => this.boarding?.getState() ?? {
                     available: false,
@@ -5151,6 +5470,10 @@ export class App {
             surfaceOutpost: this.surfaceOutpost?.getState() ?? {
                 available: false,
                 error: this.surfaceOutpostError
+            },
+            surfaceCombat: this.surfaceCombat?.getState() ?? {
+                available: false,
+                error: this.surfaceCombatError
             },
             boarding: this.boarding?.getState() ?? {
                 available: false,

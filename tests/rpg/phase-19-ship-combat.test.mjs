@@ -107,9 +107,9 @@ test('Phase 18 v7/RPG v5 migrates to v8/RPG v6 with clean combat state', () => {
     previous.rpg.worldFlags.preserved = true;
 
     const migrated = sanitizeSaveEnvelope(previous);
-    assert.equal(migrated.version, 10);
-    assert.equal(migrated.rpg.version, 8);
-    assert.equal(migrated.autosave.reason, 'phase-21-v9');
+    assert.equal(migrated.version, 11);
+    assert.equal(migrated.rpg.version, 9);
+    assert.equal(migrated.autosave.reason, 'phase-22-v10');
     assert.deepEqual(migrated.rpg.combat, createInitialCombatState());
     assert.equal(migrated.ship.condition.hull.current, 65);
     assert.equal(migrated.ship.inventory.repairParts, 2);

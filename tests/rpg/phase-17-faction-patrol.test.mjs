@@ -21,6 +21,7 @@ import {
 } from '../../src/save/index.js';
 import {
     findAuthoredNavigationReplacement,
+    findLiveNavigationReplacement,
     navigationTargetBelongsToDepth
 } from '../../src/ui/navigationTargetFrame.js';
 
@@ -108,9 +109,9 @@ test('Phase 16 envelope v5/RPG v4 migrates to v6/v5 with initialized patrol stat
     delete previous.rpg.patrol;
 
     const migrated = sanitizeSaveEnvelope(previous);
-    assert.equal(migrated.version, 10);
-    assert.equal(migrated.rpg.version, 8);
-    assert.equal(migrated.autosave.reason, 'phase-21-v9');
+    assert.equal(migrated.version, 11);
+    assert.equal(migrated.rpg.version, 9);
+    assert.equal(migrated.autosave.reason, 'phase-22-v10');
     assert.deepEqual(migrated.rpg.patrol, createInitialPatrolState());
     assert.equal(migrated.ship.credits, 1150);
     assert.equal(migrated.rpg.worldFlags['index_hq.archive_delivery_complete'], true);
@@ -319,6 +320,36 @@ test('authored navigation locks remain owned by their scale frame and remap by s
         live
     );
     assert.equal(findAuthoredNavigationReplacement([live], 'entry_hub'), null);
+});
+
+test('locked navigation targets refresh moving positions by stable identity', () => {
+    const stalePlanet = {
+        id: 'planet-1',
+        type: 'planet',
+        name: 'Moving world',
+        position: { x: 1, y: 2, z: 3 }
+    };
+    const livePlanet = {
+        ...stalePlanet,
+        position: { x: 40, y: 50, z: 60 }
+    };
+    assert.equal(findLiveNavigationReplacement([livePlanet], stalePlanet), livePlanet);
+
+    const staleSurface = {
+        type: 'surface outpost signal',
+        name: 'Old surface label',
+        rpg: { namedSystemId: 'index_hq', surfacePoiId: 'index_k7_black_cache' }
+    };
+    const liveSurface = {
+        type: 'surface outpost',
+        name: 'K-7 Black Cache',
+        position: { x: 7, y: 8, z: 9 },
+        rpg: { namedSystemId: 'index_hq', surfacePoiId: 'index_k7_black_cache' }
+    };
+    assert.equal(findLiveNavigationReplacement([liveSurface], staleSurface), liveSurface);
+    assert.equal(findLiveNavigationReplacement([livePlanet], {
+        rpg: { combatTargetId: 'hostile' }
+    }), null);
 });
 
 test('active-slot reset clears patrol progress and a reopened runtime recovers clean state', () => {

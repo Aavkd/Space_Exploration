@@ -16,8 +16,12 @@ import { createInitialSurfaceState, sanitizeSurfaceState } from './surfaceOutpos
 import { createInitialPatrolState, sanitizePatrolState } from './patrols.js';
 import { createInitialCombatState, sanitizeCombatState } from './combat.js';
 import { createInitialBoardingState, sanitizeBoardingState } from './boarding.js';
+import {
+    createInitialSurfaceCombatState,
+    sanitizeSurfaceCombatState
+} from './surfaceCombat.js';
 
-export const RPG_STATE_VERSION = 8;
+export const RPG_STATE_VERSION = 9;
 export const INITIAL_RPG_TIMESTAMP = '2026-06-26T00:00:00.000Z';
 
 export function createInitialRpgState() {
@@ -113,6 +117,7 @@ export function createInitialRpgState() {
         patrol: createInitialPatrolState(),
         combat: createInitialCombatState(),
         boarding: createInitialBoardingState(),
+        surfaceCombat: createInitialSurfaceCombatState(),
         comms: {
             activeContactId: null,
             llmFlavorEnabled: false
@@ -156,6 +161,7 @@ export function sanitizeRpgState(value) {
         patrol: sanitizePatrolState(value.patrol),
         combat: sanitizeCombatState(value.combat),
         boarding: sanitizeBoardingState(value.boarding),
+        surfaceCombat: sanitizeSurfaceCombatState(value.surfaceCombat),
         comms: sanitizeComms(value.comms, base.comms),
         eventLog: Array.isArray(value.eventLog)
             ? value.eventLog

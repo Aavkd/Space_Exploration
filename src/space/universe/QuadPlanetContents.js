@@ -17,8 +17,12 @@ import {
 } from './ParentSystemProjection.js';
 import {
     directionFromLatLon,
-    findSurfacePoiForPlanet
+    findSurfacePoisForPlanet
 } from '../../rpg/surfaceOutposts.js';
+import {
+    SURFACE_COMBAT_SITE_ID,
+    isSurfaceCombatLineClear
+} from '../../rpg/surfaceCombat.js';
 
 // --- Tier 3 rework / Tier 4: true-radius quadtree planet ------------------
 //
@@ -173,8 +177,11 @@ export class QuadPlanetContents {
             moonScale: 1
         });
         if (this.systemSky?.group) this.group.add(this.systemSky.group);
-        this.surfaceOutpost = this._createSurfaceOutpost();
-        if (this.surfaceOutpost?.group) this.group.add(this.surfaceOutpost.group);
+        this.surfaceOutposts = this._createSurfaceOutposts();
+        this.surfaceOutpost = this.surfaceOutposts[0] ?? null;
+        for (const outpost of this.surfaceOutposts) {
+            if (outpost.group) this.group.add(outpost.group);
+        }
     }
 
     // Gravity reach the App widens its field to while this level is active, so a
@@ -359,16 +366,16 @@ export class QuadPlanetContents {
             radius: this.radius,
             distance: shipPosition.distanceTo(this._centerScene)
         }];
-        if (this.surfaceOutpost) {
+        for (const surfaceOutpost of this.surfaceOutposts) {
             pois.unshift({
                 type: 'surface outpost',
-                name: this.surfaceOutpost.definition.name,
-                position: this.surfaceOutpost.landingPoint.clone(),
-                radius: this.surfaceOutpost.definition.landingRadiusMetres,
+                name: surfaceOutpost.definition.name,
+                position: surfaceOutpost.landingPoint.clone(),
+                radius: surfaceOutpost.definition.landingRadiusMetres,
                 rpg: {
-                    namedSystemId: this.surfaceOutpost.definition.systemId,
-                    planetId: this.surfaceOutpost.definition.planetId,
-                    surfacePoiId: this.surfaceOutpost.definition.id,
+                    namedSystemId: surfaceOutpost.definition.systemId,
+                    planetId: surfaceOutpost.definition.planetId,
+                    surfacePoiId: surfaceOutpost.definition.id,
                     markerScale: 'planetary'
                 }
             });
@@ -398,21 +405,32 @@ export class QuadPlanetContents {
     }
 
     getSurfaceInteraction(position) {
-        if (!this.surfaceOutpost || !position?.isVector3) return null;
-        const distance = position.distanceTo(this.surfaceOutpost.interactionPoint);
-        return {
-            id: this.surfaceOutpost.definition.terminalId,
-            surfacePoiId: this.surfaceOutpost.definition.id,
-            name: `${this.surfaceOutpost.definition.name} terminal`,
-            distance,
-            radius: this.surfaceOutpost.definition.interactionRadiusMetres,
-            available: distance <= this.surfaceOutpost.definition.interactionRadiusMetres
-        };
+        if (!this.surfaceOutposts.length || !position?.isVector3) return null;
+        return this.surfaceOutposts
+            .map((outpost) => {
+                const distance = position.distanceTo(outpost.interactionPoint);
+                return {
+                    id: outpost.definition.terminalId,
+                    surfacePoiId: outpost.definition.id,
+                    name: outpost.definition.hostileEncounterId
+                        ? 'stolen Index survey core'
+                        : `${outpost.definition.name} terminal`,
+                    action: outpost.definition.hostileEncounterId
+                        ? 'recoverSurfaceCombatObjective'
+                        : 'openSurfaceOutpost',
+                    distance,
+                    radius: outpost.definition.interactionRadiusMetres,
+                    available: distance <= outpost.definition.interactionRadiusMetres
+                };
+            })
+            .sort((a, b) => a.distance - b.distance)[0];
     }
 
-    getSurfaceOutpostPlacement() {
-        if (!this.surfaceOutpost) return null;
-        const outpost = this.surfaceOutpost;
+    getSurfaceOutpostPlacement(id = null) {
+        const outpost = id
+            ? this.surfaceOutposts.find((entry) => entry.definition.id === id)
+            : this.surfaceOutpost;
+        if (!outpost) return null;
         const landingSample = this.getSurfaceSample(outpost.landingPoint);
         const terminalSurface = this.projectToSurface(outpost.interactionPoint, 0, new THREE.Vector3());
         return {
@@ -434,12 +452,62 @@ export class QuadPlanetContents {
     }
 
     isWithinSurfaceOutpostLandingArea(position) {
+        return this.isWithinSurfacePoiLandingArea(this.surfaceOutpost?.definition.id, position);
+    }
+
+    isWithinSurfacePoiLandingArea(id, position) {
+        const outpost = this.surfaceOutposts.find((entry) => entry.definition.id === id);
         return Boolean(
-            this.surfaceOutpost
+            outpost
             && position?.isVector3
-            && position.distanceTo(this.surfaceOutpost.landingPoint)
-                <= this.surfaceOutpost.definition.landingRadiusMetres
+            && position.distanceTo(outpost.landingPoint)
+                <= outpost.definition.landingRadiusMetres
         );
+    }
+
+    getSurfaceCombatPlacement() {
+        const site = this.surfaceOutposts.find((entry) => entry.definition.id === SURFACE_COMBAT_SITE_ID);
+        if (!site) return null;
+        site.group.updateWorldMatrix(true, true);
+        const structures = (site.structureMeshes ?? []).map((mesh) => {
+            const box = new THREE.Box3().setFromObject(mesh);
+            return { id: mesh.name, min: box.min.toArray(), max: box.max.toArray() };
+        });
+        const toWorld = (local) => site.group.localToWorld(local.clone()).toArray();
+        const objectivePosition = site.interactionPoint.toArray();
+        const spawnCandidates = site.spawnCandidatesLocal.map((entry) => ({
+            id: entry.id,
+            position: toWorld(entry.position),
+            radius: entry.radius
+        }));
+        const patrolPoints = site.patrolPointsLocal.map(toWorld);
+        return {
+            id: site.definition.id,
+            objectivePosition,
+            landingPoint: site.landingPoint.toArray(),
+            structures,
+            spawnCandidates,
+            patrolPoints,
+            terrainClear: (position, radius) => {
+                const sample = this.getSurfaceSample(new THREE.Vector3().fromArray(position));
+                return sample.slopeDeg <= site.definition.maxLandingSlopeDeg + 18
+                    && sample.altitude >= -Math.max(0.25, radius);
+            },
+            lineClear: (start, end) => isSurfaceCombatLineClear({
+                start,
+                end,
+                structures,
+                terrainBlocked: (left, right) => this._surfaceCombatTerrainBlocked(left, right)
+            })
+        };
+    }
+
+    resolveSurfaceCombatMovement(current, candidate, radius = 0.45) {
+        const placement = this.getSurfaceCombatPlacement();
+        if (!placement) return candidate;
+        const position = candidate.toArray();
+        const blocked = placement.structures.some((box) => sphereIntersectsBox(position, radius, box));
+        return blocked ? current : candidate;
     }
 
     getHazardState() {
@@ -626,17 +694,19 @@ export class QuadPlanetContents {
         };
     }
 
-    _createSurfaceOutpost() {
+    _createSurfaceOutposts() {
         const rpg = this.descriptor.rpg ?? {};
-        const definition = findSurfacePoiForPlanet({
+        const definitions = findSurfacePoisForPlanet({
             systemId: rpg.namedSystemId,
             planetId: rpg.planetId,
             planetIndex: rpg.planetIndex,
             kind: this.kind,
             landable: this.landable
         });
-        if (!definition) return null;
+        return definitions.map((definition) => this._createSurfaceOutpost(definition));
+    }
 
+    _createSurfaceOutpost(definition) {
         const landingDirection = new THREE.Vector3().fromArray(
             directionFromLatLon(definition.latitudeDeg, definition.longitudeDeg)
         );
@@ -671,6 +741,7 @@ export class QuadPlanetContents {
             new THREE.CylinderGeometry(0.55, 0.8, 14, 8),
             new THREE.MeshStandardMaterial({ color: '#668ca0', emissive: '#163c54', emissiveIntensity: 0.5 })
         );
+        mast.name = `${definition.id}:mast`;
         mast.position.set(-9, 7, 6);
         group.add(mast);
 
@@ -678,6 +749,7 @@ export class QuadPlanetContents {
             new THREE.BoxGeometry(12, 5, 8),
             new THREE.MeshStandardMaterial({ color: '#334d5a', metalness: 0.45, roughness: 0.6 })
         );
+        shelter.name = `${definition.id}:shelter`;
         shelter.position.set(10, 2.6, 8);
         group.add(shelter);
 
@@ -700,6 +772,50 @@ export class QuadPlanetContents {
         group.add(terminal);
 
         const interactionPoint = terminalSurfacePoint.clone().addScaledVector(terminalNormal, 1.35);
+        const coverMeshes = [];
+        const structureMeshes = definition.id === SURFACE_COMBAT_SITE_ID
+            ? [mast, shelter, terminal]
+            : [];
+        const spawnCandidatesLocal = [];
+        const patrolPointsLocal = [];
+        if (definition.id === SURFACE_COMBAT_SITE_ID) {
+            screen.material.color.set('#ff735f');
+            const objectiveLocal = terminal.position.clone();
+            const planar = new THREE.Vector3(objectiveLocal.x, 0, objectiveLocal.z).normalize();
+            const side = new THREE.Vector3(-planar.z, 0, planar.x);
+            const coverSpecs = [
+                { id: 'BlackCacheCoverA', along: 0.48, side: 8, width: 9 },
+                { id: 'BlackCacheCoverB', along: 0.72, side: -8, width: 11 }
+            ];
+            for (const spec of coverSpecs) {
+                const cover = new THREE.Mesh(
+                    new THREE.BoxGeometry(spec.width, 2.8, 1.4),
+                    new THREE.MeshStandardMaterial({
+                        color: '#49383a',
+                        metalness: 0.58,
+                        roughness: 0.62
+                    })
+                );
+                cover.name = spec.id;
+                cover.position.copy(objectiveLocal).multiplyScalar(spec.along)
+                    .addScaledVector(side, spec.side);
+                cover.position.y = 1.4;
+                cover.rotation.y = Math.atan2(planar.x, planar.z);
+                group.add(cover);
+                coverMeshes.push(cover);
+                structureMeshes.push(cover);
+            }
+            const spawnBase = objectiveLocal.clone().addScaledVector(planar, 10);
+            spawnCandidatesLocal.push(
+                { id: 'black-cache-spawn-a', position: spawnBase.clone().addScaledVector(side, 10).setY(2.2), radius: 1.2 },
+                { id: 'black-cache-spawn-b', position: spawnBase.clone().addScaledVector(side, -10).setY(2.2), radius: 1.2 },
+                { id: 'black-cache-spawn-c', position: objectiveLocal.clone().addScaledVector(planar, 16).setY(2.2), radius: 1.2 }
+            );
+            patrolPointsLocal.push(
+                objectiveLocal.clone().addScaledVector(side, 13).setY(2.2),
+                objectiveLocal.clone().addScaledVector(side, -13).setY(2.2)
+            );
+        }
         return {
             definition,
             group,
@@ -707,13 +823,19 @@ export class QuadPlanetContents {
             terminalDirection,
             landingPoint,
             terminalSurfacePoint,
-            interactionPoint
+            interactionPoint,
+            coverMeshes,
+            structureMeshes,
+            spawnCandidatesLocal,
+            patrolPointsLocal
         };
     }
 
     _updateSurfaceOutpostPlacement() {
-        if (!this.surfaceOutpost) return;
-        const outpost = this.surfaceOutpost;
+        for (const outpost of this.surfaceOutposts) this._updateOneSurfaceOutpostPlacement(outpost);
+    }
+
+    _updateOneSurfaceOutpostPlacement(outpost) {
         const landingPoint = this.projectToSurface(outpost.landingDirection, 0, outpost.landingPoint);
         const terminalSurface = this.projectToSurface(
             outpost.terminalDirection,
@@ -731,6 +853,16 @@ export class QuadPlanetContents {
             .applyQuaternion(landingRotation.clone().invert());
         terminal.quaternion.copy(landingRotation.clone().invert().multiply(terminalRotation));
         outpost.interactionPoint.copy(terminalSurface).addScaledVector(terminalNormal, 1.35);
+    }
+
+    _surfaceCombatTerrainBlocked(start, end) {
+        const left = new THREE.Vector3().fromArray(start);
+        const right = new THREE.Vector3().fromArray(end);
+        for (let index = 1; index < 16; index += 1) {
+            const point = left.clone().lerp(right, index / 16);
+            if (this.getSurfaceSample(point).altitude < 0.15) return true;
+        }
+        return false;
     }
 
     _slopeDegrees(dir) {
@@ -1066,4 +1198,13 @@ function disposeProjectedSky(root) {
         object.geometry?.dispose?.();
         object.material?.dispose?.();
     });
+}
+
+function sphereIntersectsBox(position, radius, box) {
+    let distanceSquared = 0;
+    for (let axis = 0; axis < 3; axis += 1) {
+        const nearest = Math.max(box.min[axis], Math.min(box.max[axis], position[axis]));
+        distanceSquared += (position[axis] - nearest) ** 2;
+    }
+    return distanceSquared < radius * radius;
 }
