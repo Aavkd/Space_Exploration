@@ -1077,6 +1077,28 @@ maintained contact and built institutions around interpreting the signal and
 caring for those it changed. Other populations of the founding species may
 remain separate, hostile, hidden, or internally divided over that choice.
 
+#### Founding Species — Visual Foundation
+
+The Truth Seekers' founding species is a slender biped with two primary arms
+and a secondary visual language. Translucent sensory filaments, membranes, or
+comparable structures around the head and shoulders produce subtle
+bioluminescent patterns alongside speech.
+
+In ordinary communication, these patterns convey emotion, attention, context,
+and emphasis. They are not involuntary truth detectors and can be moderated,
+stylized, concealed, or misunderstood like any other language.
+
+In some changed interpreters, the visual language develops impossible timing or
+reference. Light may anticipate spoken words, respond to an absent observer,
+repeat a pattern associated with a distant person, or continue forming
+structured sequences during sleep.
+
+Transformation should not appear as generic corruption or bodily decay. The
+individual remains physically recognizable, while familiar communication
+begins relating to events and observers outside the local present. Exact
+anatomy, coloration, species name, and degree of voluntary control remain open
+for the species and visual bible.
+
 #### Political Form and Central Contradiction
 
 The Truth Seekers are a small network of listening sites, interpreter
@@ -1098,6 +1120,30 @@ Their politics asks who may consent to contact, whether a changed person can
 withdraw from a process that may no longer be local or linear, who owns an
 experience shared across minds, and whether refusing to listen is caution or
 abandonment.
+
+#### Enduring Political Interests
+
+Truth Seeker politics contains several durable interests:
+
+- **Care networks** defend changed individuals as people rather than
+  instruments, revelations, or factional resources.
+- **Deep listeners** pursue continued contact and argue that withdrawal may
+  abandon both knowledge and entities already entangled with the signal.
+- **Controlled-contact researchers** seek repeatable safeguards, exposure
+  limits, and methods that can distinguish observation from interpretation.
+- **Severance advocates** attempt to end, isolate, or quarantine communication,
+  whether to protect individuals or prevent consequences from spreading.
+- **Transformed interpreters** argue that conventional consent, locality, and
+  individual identity may no longer describe what contact creates; other
+  changed individuals strongly reject that claim.
+- **External liaisons** translate Truth Seeker experiences into evidence,
+  warnings, and diplomatic language that other civilizations can understand
+  and act upon.
+
+No interest is designated the uniquely rational or moral position. Care can
+become confinement, research can become exploitation, severance can be rescue or
+abandonment, and listening can express courage, compulsion, or institutional
+need.
 
 ---
 
@@ -1208,13 +1254,60 @@ develop from them.
 
 ## Tier 3 Entities
 
-Tier 3 civilizations are post-human or transhuman groups that have passed beyond conventional FTL society but have not yet reached Tier 4 singularity. They are not organized as factions — their internal structure is incomprehensible to Tier 2 standards. There are likely **one or two** known Tier 3 presences in the universe at any simulation start.
+Tier 3 civilizations are transitional or transformed groups that have passed beyond conventional FTL society but have not yet reached the Tier 4 discontinuity. They are not organized as factions—their internal structure is difficult to express through Tier 2 political categories. There is exactly **one known Tier 3 civilization** at the starting state.
+
+This starting singularity is not a permanent cap. Tier 2 civilizations,
+splinters, or other entities can enter Tier 3 through simulation events. They
+may stabilize, fragment, regress, collapse, or continue toward Tier 4. Group A
+is the only known precedent at the beginning, not a unique species entitled to
+the category.
 
 Tier 3 is also **transitional by nature** — a civilization at this tier is either still ascending toward Tier 4 or has stalled and may eventually fragment or collapse back to Tier 2 remnants.
 
 ### Tier 3 Group A *(name TBD)*
 
-A post-human collective that emerged from a Tier 2 civilization generations ago. They are still *legible* — they can be communicated with, they have something like goals, they remember what they were. But their values and their bodies have shifted beyond conventional recognition.
+A transformed collective that emerged from a separate Tier 2 civilization
+before the present six formed their shared interstellar political world. Its
+originating civilization left no conventional state behind. The enclave is not
+an advanced branch of any current faction, and no Tier 2 power possesses a valid
+ancestral claim over it.
+
+They remain partly *legible*: communication is possible, they have something
+like goals, and they retain contested relationships with what they once were.
+Their values, bodies, memory, and individuality have shifted beyond
+conventional Tier 2 categories without completing the Tier 4 discontinuity.
+
+Most surviving evidence of their pre-transformation culture comes through the
+enclave itself or ruins interpreted in light of what it has become. Neither
+source provides neutral access to its past. The six factions therefore project
+their own hopes, fears, and political programs onto a history they cannot
+independently reconstruct.
+
+#### Braided Consciousness
+
+Group A individuals can temporarily fork across multiple bodies or processes,
+exchange memory, and later attempt reintegration. A merge does not create one
+perfectly uncontested continuation. Versions may disagree about which
+experiences belong to whom, refuse reintegration, diverge into separate people,
+or retain memories shared by several legal identities.
+
+The enclave is not a hive mind. Privacy, consent, conflict, affection, property,
+responsibility, and political disagreement persist, but all require institutions
+capable of handling overlapping selves. Its law must answer questions Tier 2
+systems are poorly equipped even to phrase: whether a fork inherits an
+obligation, whether two merged people remain liable for separate acts, and
+whether a memory can be returned or withdrawn after it has become part of
+another person.
+
+Group A perceives more of the Common FTL Law than Tier 2 civilizations and can
+recognize relationships that conventional models hide. This perception remains
+partial and dangerous. They still require localized bodies, processes, and
+infrastructure; they cannot exist everywhere at once or act outside linear time
+as Tier 4 entities do.
+
+Their central tension is not individuality versus collectivism, but continuity
+versus autonomy: how much sharing is necessary to remain what they have become,
+and how much separation must remain possible for a person to exist at all.
 
 | Property | Value |
 |---|---|
@@ -1285,7 +1378,7 @@ Contested systems are not authored — they emerge from faction simulation dynam
 | 4 | TBD | Concordance pilgrimage site — near a Tier 4 trace | 2 | The Concordance | Not authored |
 | 5 | TBD | Company of Doom stronghold — anti-ascension bastion | 2 | Company of Doom | Not authored |
 | 6 | TBD | Truth Seeker site — partially transformed, unsettling | 2/3 border | The Truth Seekers | Not authored |
-| 7 | TBD | Tier 3 enclave — a post-human group’s domain | 3 | Tier 3 Group A | Not authored |
+| 7 | TBD | Tier 3 enclave — a transformed group’s domain | 3 | Tier 3 Group A | Not authored |
 | 8 | TBD | Tier 0 world — a pre-spaceflight civ on a true-scale planet | 0 | None (indigenous) | Not authored |
 | 9 | TBD | Deep void anomaly — Tier 4 trace, no faction claim | 4 trace | Ancient Ascended | Not authored |
 | 10 | TBD | The Threshold — where ascension becomes possible | 4 | Both Tier 4 sub-types | Not authored |
