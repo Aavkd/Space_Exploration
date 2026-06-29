@@ -41,6 +41,37 @@ export {
     refreshMarketIntel,
     sanitizeEconomyState
 } from './economy.js';
+export {
+    AGENDAS,
+    ATTITUDE_BANDS,
+    DRIVE_KEYS,
+    LOD_TIERS,
+    MAX_EMBODIED_ENTITIES,
+    MAX_SIMULATED_AGENTS,
+    MAX_WORLD_EVENT_LOG,
+    MAX_WORLD_TICKS_PER_UPDATE,
+    WORLD_COMMAND_TYPES,
+    WORLD_EVENT_TYPES,
+    WORLD_FACTION_IDS,
+    WORLD_SEED,
+    WORLD_STATE_VERSION,
+    WORLD_TICK_SECONDS,
+    advanceWorld,
+    compactWorldEvents,
+    createInitialWorldState,
+    enforceEmbodiedBudget,
+    enforceSimulatedBudget,
+    foldAgents,
+    getEntityLod,
+    getFactionAggregates,
+    getRelationshipAttitude,
+    getWorldTerritory,
+    materializeAgents,
+    sanitizeWorldState,
+    setEntityLod,
+    simStep
+} from './simWorld.js';
+export { WorldRuntime } from './WorldRuntime.js';
 export { SurfaceOutpostRuntime } from './SurfaceOutpostRuntime.js';
 export { EvaBoardingRuntime } from './EvaBoardingRuntime.js';
 export { PATROL_PHASE_DURATIONS, PatrolRuntime } from './PatrolRuntime.js';

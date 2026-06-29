@@ -14,6 +14,7 @@ export {
     migrateVersion7Envelope,
     migrateVersion8Envelope,
     migrateVersion9Envelope,
+    migrateVersion11Envelope,
     sanitizeSaveEnvelope
 } from './SaveEnvelope.js';
 export {

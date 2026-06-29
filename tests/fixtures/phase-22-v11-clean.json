@@ -1,0 +1,764 @@
+{
+  "version": 11,
+  "slot": {
+    "id": "slot-phase22",
+    "name": "Pre-Substrate Flight",
+    "createdAt": "2026-06-28T12:00:00.000Z",
+    "updatedAt": "2026-06-28T12:00:00.000Z"
+  },
+  "autosave": {
+    "kind": "manual",
+    "reason": "phase-22-v10",
+    "savedAt": "2026-06-28T12:00:00.000Z",
+    "sequence": 4
+  },
+  "player": {
+    "version": 1,
+    "location": "ship",
+    "referenceFrame": "ship-local",
+    "encounterId": null,
+    "position": [
+      0,
+      0,
+      0
+    ],
+    "velocity": [
+      0,
+      0,
+      0
+    ],
+    "yaw": 0,
+    "pitch": 0,
+    "oxygenRemaining": 180,
+    "oxygenUpdatedAtGameTime": 7200
+  },
+  "ship": {
+    "version": 2,
+    "credits": 980,
+    "fuel": {
+      "current": 100,
+      "capacity": 100,
+      "reserve": 15
+    },
+    "cargo": {
+      "capacityMass": 40,
+      "stacks": []
+    },
+    "travel": {
+      "currentSystemId": null,
+      "pendingJump": null
+    },
+    "condition": {
+      "hull": {
+        "current": 100,
+        "maximum": 100
+      },
+      "systems": {
+        "engine": {
+          "condition": 100
+        },
+        "hyperdrive": {
+          "condition": 100
+        },
+        "sensors": {
+          "condition": 100
+        },
+        "comms": {
+          "condition": 100
+        },
+        "life_support": {
+          "condition": 100
+        },
+        "weapons": {
+          "condition": 100
+        }
+      }
+    },
+    "inventory": {
+      "repairParts": 0,
+      "hullPlates": 0
+    },
+    "maintenance": {
+      "salvageSources": {
+        "index_k7_derelict_cache": {
+          "claimed": false,
+          "claimedAtGameTime": null
+        }
+      },
+      "hazards": {
+        "index_k7_micrometeoroid_shear": {
+          "triggered": false,
+          "triggeredAtGameTime": null
+        }
+      }
+    }
+  },
+  "rpg": {
+    "version": 9,
+    "createdAt": "2026-06-26T00:00:00.000Z",
+    "updatedAt": "2026-06-26T00:00:00.000Z",
+    "factions": {
+      "byId": {
+        "index": {
+          "id": "index",
+          "name": "Index",
+          "civTier": 2,
+          "reputation": 0
+        },
+        "drifters": {
+          "id": "drifters",
+          "name": "Drifters",
+          "civTier": 2,
+          "reputation": 0
+        },
+        "concordance": {
+          "id": "concordance",
+          "name": "The Concordance",
+          "civTier": 2,
+          "reputation": 0
+        },
+        "commonwealth": {
+          "id": "commonwealth",
+          "name": "The Commonwealth",
+          "civTier": 2,
+          "reputation": 0.25
+        },
+        "company_of_doom": {
+          "id": "company_of_doom",
+          "name": "Company of Doom",
+          "civTier": 2,
+          "reputation": 0
+        },
+        "truth_seekers": {
+          "id": "truth_seekers",
+          "name": "The Truth Seekers",
+          "civTier": 2,
+          "reputation": 0
+        }
+      }
+    },
+    "namedSystems": {
+      "byId": {
+        "entry_hub": {
+          "id": "entry_hub",
+          "name": "Port Meridian",
+          "navigationLabel": "Port Meridian",
+          "role": "Entry hub - first major port, multi-faction, dense",
+          "startingTier": 2,
+          "startingFactionId": "commonwealth",
+          "seed": "rpg-entry-hub-v1",
+          "position": [
+            12000,
+            1400,
+            -18000
+          ],
+          "star": {
+            "color": "#ffd89a",
+            "temperatureK": 5400,
+            "luminosity": 1.35
+          }
+        },
+        "index_hq": {
+          "id": "index_hq",
+          "name": "Index Relay K-7",
+          "navigationLabel": "Index Relay K-7",
+          "role": "Index HQ - the archive world, information is currency",
+          "startingTier": 2,
+          "startingFactionId": "index",
+          "seed": "rpg-index-hq-v1",
+          "position": [
+            -26000,
+            3500,
+            22000
+          ],
+          "star": {
+            "color": "#91c8ff",
+            "temperatureK": 7600,
+            "luminosity": 1.15
+          }
+        },
+        "drifter_convergence": {
+          "id": "drifter_convergence",
+          "name": "Wayfarer Exchange",
+          "navigationLabel": "Wayfarer Exchange",
+          "role": "Drifter convergence - ship-born meeting point",
+          "startingTier": 2,
+          "startingFactionId": "drifters",
+          "seed": "rpg-drifter-convergence-v1",
+          "position": [
+            34000,
+            -2800,
+            26000
+          ],
+          "star": {
+            "color": "#ffb27a",
+            "temperatureK": 4300,
+            "luminosity": 0.9
+          }
+        },
+        "concordance_pilgrimage_site": {
+          "id": "concordance_pilgrimage_site",
+          "name": "concordance_pilgrimage_site",
+          "navigationLabel": "concordance_pilgrimage_site",
+          "role": "Concordance pilgrimage site - near a Tier 4 trace",
+          "startingTier": 2,
+          "startingFactionId": "concordance",
+          "seed": null,
+          "position": null,
+          "star": null
+        },
+        "company_of_doom_stronghold": {
+          "id": "company_of_doom_stronghold",
+          "name": "company_of_doom_stronghold",
+          "navigationLabel": "company_of_doom_stronghold",
+          "role": "Company of Doom stronghold - anti-ascension bastion",
+          "startingTier": 2,
+          "startingFactionId": "company_of_doom",
+          "seed": null,
+          "position": null,
+          "star": null
+        },
+        "truth_seeker_site": {
+          "id": "truth_seeker_site",
+          "name": "truth_seeker_site",
+          "navigationLabel": "truth_seeker_site",
+          "role": "Truth Seeker site - partially transformed, unsettling",
+          "startingTier": 2,
+          "startingFactionId": "truth_seekers",
+          "seed": null,
+          "position": null,
+          "star": null
+        },
+        "tier_3_enclave": {
+          "id": "tier_3_enclave",
+          "name": "tier_3_enclave",
+          "navigationLabel": "tier_3_enclave",
+          "role": "Tier 3 enclave - a post-human group's domain",
+          "startingTier": 3,
+          "startingFactionId": null,
+          "seed": null,
+          "position": null,
+          "star": null
+        },
+        "tier_0_world": {
+          "id": "tier_0_world",
+          "name": "tier_0_world",
+          "navigationLabel": "tier_0_world",
+          "role": "Tier 0 world - pre-spaceflight civilization on a true-scale planet",
+          "startingTier": 0,
+          "startingFactionId": null,
+          "seed": null,
+          "position": null,
+          "star": null
+        },
+        "deep_void_anomaly": {
+          "id": "deep_void_anomaly",
+          "name": "deep_void_anomaly",
+          "navigationLabel": "deep_void_anomaly",
+          "role": "Deep void anomaly - Tier 4 trace, no faction claim",
+          "startingTier": 4,
+          "startingFactionId": null,
+          "seed": null,
+          "position": null,
+          "star": null
+        },
+        "threshold": {
+          "id": "threshold",
+          "name": "threshold",
+          "navigationLabel": "threshold",
+          "role": "The Threshold - where ascension becomes possible",
+          "startingTier": 4,
+          "startingFactionId": null,
+          "seed": null,
+          "position": null,
+          "star": null
+        }
+      }
+    },
+    "contacts": {
+      "byId": {
+        "port_meridian_harbormaster": {
+          "id": "port_meridian_harbormaster",
+          "type": "contact",
+          "name": "Harbormaster Vale",
+          "title": "Port Meridian Traffic Office",
+          "factionId": "commonwealth",
+          "civTier": 2,
+          "namedSystemId": "entry_hub",
+          "relationship": 0,
+          "alive": true,
+          "persistent": true,
+          "conversation": {
+            "nodeId": "intro",
+            "startedAt": null,
+            "updatedAt": null,
+            "lastChoiceId": null,
+            "choiceCount": 0
+          }
+        },
+        "index_hq_archivist": {
+          "id": "index_hq_archivist",
+          "type": "contact",
+          "name": "Archivist Senn",
+          "title": "Index Relay K-7 Intake",
+          "factionId": "index",
+          "civTier": 2,
+          "namedSystemId": "index_hq",
+          "relationship": 0,
+          "alive": true,
+          "persistent": true,
+          "conversation": {
+            "nodeId": "intro",
+            "startedAt": null,
+            "updatedAt": null,
+            "lastChoiceId": null,
+            "choiceCount": 0
+          }
+        }
+      }
+    },
+    "missions": {
+      "byId": {
+        "port_meridian_route_packet": {
+          "id": "port_meridian_route_packet",
+          "name": "A Clean Copy",
+          "status": "unavailable",
+          "contactId": "port_meridian_harbormaster",
+          "namedSystemId": "entry_hub",
+          "offeredAt": null,
+          "acceptedAt": null,
+          "resolvedAt": null,
+          "failedAt": null,
+          "outcomeId": null,
+          "lastBranchId": null,
+          "updatedAt": null,
+          "objectives": {
+            "currentObjectiveId": null,
+            "byId": {}
+          }
+        },
+        "index_archive_delivery": {
+          "id": "index_archive_delivery",
+          "name": "The Weight of a Copy",
+          "status": "unavailable",
+          "contactId": "port_meridian_harbormaster",
+          "namedSystemId": "entry_hub",
+          "offeredAt": null,
+          "acceptedAt": null,
+          "resolvedAt": null,
+          "failedAt": null,
+          "outcomeId": null,
+          "lastBranchId": null,
+          "updatedAt": null,
+          "objectives": {
+            "currentObjectiveId": null,
+            "byId": {
+              "load_archive_canisters": {
+                "id": "load_archive_canisters",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "travel_to_index_hq": {
+                "id": "travel_to_index_hq",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "deliver_archive_canisters": {
+                "id": "deliver_archive_canisters",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              }
+            }
+          }
+        },
+        "index_k7_surface_verification": {
+          "id": "index_k7_surface_verification",
+          "name": "K-7 Surface Verification",
+          "status": "unavailable",
+          "contactId": "index_hq_archivist",
+          "namedSystemId": "index_hq",
+          "offeredAt": null,
+          "acceptedAt": null,
+          "resolvedAt": null,
+          "failedAt": null,
+          "outcomeId": null,
+          "lastBranchId": null,
+          "updatedAt": null,
+          "objectives": {
+            "currentObjectiveId": null,
+            "byId": {
+              "discover_k7_outpost": {
+                "id": "discover_k7_outpost",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "land_at_k7_outpost": {
+                "id": "land_at_k7_outpost",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "access_k7_surface_terminal": {
+                "id": "access_k7_surface_terminal",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "return_to_ship": {
+                "id": "return_to_ship",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "report_k7_surface_survey": {
+                "id": "report_k7_surface_survey",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              }
+            }
+          }
+        },
+        "wayfarer_derelict_recovery": {
+          "id": "wayfarer_derelict_recovery",
+          "name": "A Quiet Crossing",
+          "status": "unavailable",
+          "contactId": null,
+          "namedSystemId": "drifter_convergence",
+          "offeredAt": null,
+          "acceptedAt": null,
+          "resolvedAt": null,
+          "failedAt": null,
+          "outcomeId": null,
+          "lastBranchId": null,
+          "updatedAt": null,
+          "objectives": {
+            "currentObjectiveId": null,
+            "byId": {
+              "secure_wayfarer_derelict": {
+                "id": "secure_wayfarer_derelict",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "board_wayfarer_derelict": {
+                "id": "board_wayfarer_derelict",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "recover_wayfarer_log": {
+                "id": "recover_wayfarer_log",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "return_from_wayfarer_derelict": {
+                "id": "return_from_wayfarer_derelict",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              }
+            }
+          }
+        },
+        "index_k7_black_cache_recovery": {
+          "id": "index_k7_black_cache_recovery",
+          "name": "Silence in the Dust",
+          "status": "unavailable",
+          "contactId": "index_hq_archivist",
+          "namedSystemId": "index_hq",
+          "offeredAt": null,
+          "acceptedAt": null,
+          "resolvedAt": null,
+          "failedAt": null,
+          "outcomeId": null,
+          "lastBranchId": null,
+          "updatedAt": null,
+          "objectives": {
+            "currentObjectiveId": null,
+            "byId": {
+              "discover_black_cache": {
+                "id": "discover_black_cache",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "land_at_black_cache": {
+                "id": "land_at_black_cache",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "recover_stolen_survey_core": {
+                "id": "recover_stolen_survey_core",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              },
+              "return_safely_with_core": {
+                "id": "return_safely_with_core",
+                "status": "pending",
+                "activatedAt": null,
+                "completedAt": null,
+                "failedAt": null
+              }
+            }
+          }
+        }
+      }
+    },
+    "npcs": {
+      "crewCapacity": 4,
+      "crewRoster": [
+        "crew_quartermaster_lyra"
+      ],
+      "byId": {
+        "crew_quartermaster_lyra": {
+          "id": "crew_quartermaster_lyra",
+          "presence": "aboard",
+          "locationId": "crewMessAnchor",
+          "relationship": 0,
+          "mood": "steady",
+          "memoryReferences": [],
+          "alive": true,
+          "recruited": true
+        }
+      }
+    },
+    "surface": {
+      "byId": {
+        "index_k7_cartography_outpost": {
+          "id": "index_k7_cartography_outpost",
+          "checkpoint": "undiscovered",
+          "discoveredAt": null,
+          "visitedAt": null,
+          "landedAt": null,
+          "interactedAt": null,
+          "returnedAt": null,
+          "completedAt": null
+        }
+      }
+    },
+    "patrol": {
+      "version": 2,
+      "presenceSystemId": null,
+      "nextSequence": 1,
+      "activeEncounter": null,
+      "history": []
+    },
+    "combat": {
+      "version": 1,
+      "enemy": {
+        "id": "scavenger_red_knife",
+        "disposition": "available",
+        "destroyedAtGameTime": null
+      },
+      "wreck": {
+        "id": "scavenger_red_knife_wreck",
+        "claimed": false,
+        "claimedAtGameTime": null
+      },
+      "lastOutcome": null,
+      "history": []
+    },
+    "boarding": {
+      "byId": {
+        "wayfarer_research_derelict": {
+          "id": "wayfarer_research_derelict",
+          "checkpoint": "undiscovered",
+          "discoveredAt": null,
+          "departedAt": null,
+          "enteredAt": null,
+          "logRecoveredAt": null,
+          "returningAt": null,
+          "completedAt": null,
+          "recoveryCount": 0,
+          "lastRecoveryReason": null
+        }
+      }
+    },
+    "surfaceCombat": {
+      "version": 1,
+      "byId": {
+        "index_k7_black_cache_encounter": {
+          "id": "index_k7_black_cache_encounter",
+          "siteId": "index_k7_black_cache",
+          "missionId": "index_k7_black_cache_recovery",
+          "checkpoint": "undiscovered",
+          "enemy": {
+            "id": "k7_scavenger_sentry_drone",
+            "disposition": "available",
+            "integrity": 100
+          },
+          "suitIntegrity": 100,
+          "objective": {
+            "id": "index_k7_stolen_survey_core",
+            "recovered": false,
+            "recoveredAtGameTime": null
+          },
+          "reward": {
+            "credits": 600,
+            "claimed": false,
+            "claimedAtGameTime": null
+          },
+          "route": null,
+          "lastOutcome": null,
+          "attempts": []
+        }
+      }
+    },
+    "comms": {
+      "activeContactId": null,
+      "llmFlavorEnabled": false
+    },
+    "eventLog": [],
+    "worldFlags": {}
+  },
+  "simulation": {
+    "gameTime": 7200,
+    "economy": {
+      "version": 1,
+      "seed": "deep-space-vr-economy-v1",
+      "lastTickGameTime": 7200,
+      "nextLedgerSequence": 1,
+      "markets": {
+        "byId": {
+          "port_meridian_exchange": {
+            "id": "port_meridian_exchange",
+            "systemId": "entry_hub",
+            "lastUpdatedAtGameTime": 7200,
+            "goods": {
+              "field_rations": {
+                "stock": 80
+              },
+              "navigation_components": {
+                "stock": 15
+              },
+              "unregistered_signal_scrambler": {
+                "stock": 5
+              }
+            }
+          },
+          "index_k7_exchange": {
+            "id": "index_k7_exchange",
+            "systemId": "index_hq",
+            "lastUpdatedAtGameTime": 7200,
+            "goods": {
+              "field_rations": {
+                "stock": 20
+              },
+              "navigation_components": {
+                "stock": 80
+              },
+              "unregistered_signal_scrambler": {
+                "stock": 20
+              }
+            }
+          },
+          "wayfarer_exchange": {
+            "id": "wayfarer_exchange",
+            "systemId": "drifter_convergence",
+            "lastUpdatedAtGameTime": 7200,
+            "goods": {
+              "field_rations": {
+                "stock": 15
+              },
+              "navigation_components": {
+                "stock": 25
+              },
+              "unregistered_signal_scrambler": {
+                "stock": 70
+              }
+            }
+          }
+        }
+      },
+      "intel": {
+        "byMarketId": {
+          "port_meridian_exchange": {
+            "observedAtGameTime": 7200,
+            "goods": {
+              "field_rations": {
+                "stock": 80,
+                "buyPrice": 8,
+                "sellPrice": 6
+              },
+              "navigation_components": {
+                "stock": 15,
+                "buyPrice": 44,
+                "sellPrice": 38
+              },
+              "unregistered_signal_scrambler": {
+                "stock": 5,
+                "buyPrice": 92,
+                "sellPrice": 82
+              }
+            }
+          },
+          "index_k7_exchange": {
+            "observedAtGameTime": 7200,
+            "goods": {
+              "field_rations": {
+                "stock": 20,
+                "buyPrice": 14,
+                "sellPrice": 12
+              },
+              "navigation_components": {
+                "stock": 80,
+                "buyPrice": 23,
+                "sellPrice": 19
+              },
+              "unregistered_signal_scrambler": {
+                "stock": 20,
+                "buyPrice": 82,
+                "sellPrice": 74
+              }
+            }
+          },
+          "wayfarer_exchange": {
+            "observedAtGameTime": 7200,
+            "goods": {
+              "field_rations": {
+                "stock": 15,
+                "buyPrice": 15,
+                "sellPrice": 13
+              },
+              "navigation_components": {
+                "stock": 25,
+                "buyPrice": 40,
+                "sellPrice": 36
+              },
+              "unregistered_signal_scrambler": {
+                "stock": 70,
+                "buyPrice": 51,
+                "sellPrice": 45
+              }
+            }
+          }
+        }
+      },
+      "ledger": []
+    }
+  },
+  "settings": {}
+}

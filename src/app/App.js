@@ -61,6 +61,7 @@ import {
     DeliveryRuntime,
     EvaBoardingRuntime,
     EconomyRuntime,
+    WorldRuntime,
     MARKET_DEFINITIONS,
     TRADE_GOOD_IDS,
     getCargoDefinition,
@@ -336,6 +337,8 @@ export class App {
         this.delivery = this._createDeliveryRuntimeSafely();
         this.economyError = null;
         this.economy = this._createEconomyRuntimeSafely();
+        this.worldError = null;
+        this.world = this._createWorldRuntimeSafely();
         this.conditionError = null;
         this.condition = this._createConditionRuntimeSafely();
         this._shipCapabilities = this.condition?.getState().capabilities ?? null;
@@ -562,6 +565,9 @@ export class App {
         this._syncSurfaceCombatProgress();
         if (clockActive) this._updateSurfaceCombat(dt);
         if (clockActive) this._updateEconomySafely();
+        // The autonomous world simulation ticks on a 60 s cadence, so it is
+        // advanced from the 5 s clock checkpoint (see _checkpointGameClock)
+        // rather than on the hot render frame.
         if (!this.paused) this.patrol?.update(this.gameClock.getTime());
         this._syncPatrolPresentation();
         if (clockActive && this.combat) {
@@ -1077,6 +1083,36 @@ export class App {
                 message: error instanceof Error ? error.message : String(error)
             };
             console.warn('Economy tick failed; flight remains active.', error);
+            return false;
+        }
+    }
+
+    _createWorldRuntimeSafely() {
+        try {
+            return new WorldRuntime({
+                slots: this.saveSlots,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.worldError = {
+                context: 'world simulation runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 23 world simulation unavailable; flight remains active.', error);
+            return null;
+        }
+    }
+
+    _updateWorldSafely() {
+        if (!this.world) return false;
+        try {
+            return this.world.update(this.gameClock.getTime()).changed;
+        } catch (error) {
+            this.worldError = {
+                context: 'world simulation tick',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('World simulation tick failed; flight remains active.', error);
             return false;
         }
     }
@@ -2136,6 +2172,7 @@ export class App {
         this.rpg.reload();
         this.delivery?.reload();
         this.economy?.reload();
+        this.world?.reload();
         this.condition?.reload();
         this._refreshShipCapabilities();
         this.surfaceOutpost?.reload();
@@ -2172,6 +2209,9 @@ export class App {
             { kind: 'auto', reason }
         );
         this._lastClockCheckpoint = envelope.simulation.gameTime;
+        // Advance the autonomous world here (off the render frame); its own 60 s
+        // tick guard means most checkpoints are a cheap no-op.
+        this._updateWorldSafely();
         return envelope;
     }
 
@@ -4860,6 +4900,20 @@ export class App {
                 sell: (cargoId, quantity = 1) => this.economy?.sell(cargoId, quantity),
                 openTerminal: () => this._openCargoTerminalPanel(),
                 closeTerminal: () => this._closeCargoTerminalPanel()
+            },
+            world: {
+                getState: () => this.world?.getState() ?? { unavailable: this.worldError },
+                getFaction: (id) => this.world?.getFaction(id),
+                getRelationships: () => this.world?.getRelationships(),
+                getTerritory: () => this.world?.getTerritory(),
+                getLod: (id) => (id ? this.world?.getLod(id) : this.world?.getLodMap()),
+                getEvents: (query) => this.world?.getEvents(query),
+                promote: (id, tier) => this.world?.promote(id, tier),
+                demote: (id, tier) => this.world?.demote(id, tier),
+                materialize: (id) => this.world?.materialize(id),
+                enqueueCommand: (command) => this.world?.enqueueCommand(command),
+                step: () => this.world?.update(this.gameClock.getTime()),
+                soak: (ticks = 1000000) => this.world?.soak(ticks)
             },
             condition: {
                 getState: () => this.condition?.getState() ?? { unavailable: this.conditionError },

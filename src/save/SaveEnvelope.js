@@ -1,5 +1,6 @@
 import { createInitialShipState, sanitizeShipState } from '../rpg/cargo.js';
 import { createInitialEconomyState, sanitizeEconomyState } from '../rpg/economy.js';
+import { createInitialWorldState, sanitizeWorldState } from '../rpg/simWorld.js';
 import { migrateRpgState } from '../rpg/migrations.js';
 import { createInitialRpgState, sanitizeRpgState } from '../rpg/state.js';
 import {
@@ -8,7 +9,7 @@ import {
     sanitizePlayerState
 } from '../player/playerState.js';
 
-export const SAVE_ENVELOPE_VERSION = 11;
+export const SAVE_ENVELOPE_VERSION = 12;
 export const MAX_EVENT_LOG_ENTRIES = 500;
 export const PROTECTED_EVENT_TYPES = Object.freeze([
     'mission.resolved',
@@ -43,7 +44,8 @@ export function createSaveEnvelope({
         rpg,
         simulation: {
             gameTime,
-            economy: createInitialEconomyState(gameTime)
+            economy: createInitialEconomyState(gameTime),
+            world: createInitialWorldState(gameTime)
         },
         settings: {}
     });
@@ -62,6 +64,7 @@ export function sanitizeSaveEnvelope(value) {
     if (value.version === 8) value = migrateVersion8Envelope(value);
     if (value.version === 9) value = migrateVersion9Envelope(value);
     if (value.version === 10) value = migrateVersion10Envelope(value);
+    if (value.version === 11) value = migrateVersion11Envelope(value);
     if (value.version !== SAVE_ENVELOPE_VERSION) {
         throw new Error(
             value.version > SAVE_ENVELOPE_VERSION
@@ -93,7 +96,8 @@ export function sanitizeSaveEnvelope(value) {
         rpg,
         simulation: {
             gameTime,
-            economy: sanitizeEconomyState(value.simulation?.economy, { gameTime })
+            economy: sanitizeEconomyState(value.simulation?.economy, { gameTime }),
+            world: sanitizeWorldState(value.simulation?.world, { gameTime })
         },
         settings: sanitizeEmptyDomain(value.settings, 'settings')
     };
@@ -294,6 +298,35 @@ export function migrateVersion10Envelope(value) {
         autosave: {
             kind: 'migration',
             reason: 'phase-22-v10',
+            savedAt,
+            sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
+        }
+    };
+}
+
+export function migrateVersion11Envelope(value) {
+    if (!value || value.version !== 11) {
+        throw new Error(`Expected save envelope version 11, received ${value?.version ?? 'missing'}.`);
+    }
+    const savedAt = typeof value.slot?.updatedAt === 'string'
+        ? value.slot.updatedAt
+        : new Date().toISOString();
+    const gameTime = sanitizeNonNegativeNumber(value.simulation?.gameTime, 'simulation.gameTime');
+    // The world facet is initialized at the saved gameTime and does not
+    // simulate elapsed pre-migration time (same rule as the Phase 20 economy).
+    // Phase 17 territory and Phase 20 economy migrate non-destructively and are
+    // reconciled as projections of the substrate.
+    return {
+        ...structuredClone(value),
+        version: 12,
+        simulation: {
+            ...structuredClone(value.simulation),
+            gameTime,
+            world: createInitialWorldState(gameTime)
+        },
+        autosave: {
+            kind: 'migration',
+            reason: 'phase-23-v11',
             savedAt,
             sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
         }

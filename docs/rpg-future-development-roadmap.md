@@ -427,7 +427,10 @@ Acceptance:
 
 ### Phase 23 - Autonomous World Simulation (Simulation Substrate)
 
-**Status:** Design locked; see
+**Status:** Implementation and T0–T4 automated/browser verification complete
+with 119 passing RPG regressions (128 across all test dirs) and all touched
+modules passing syntax checks. Owner-performed normal-control and gamepad/PCVR
+signoff (T5–T6) remain open, so the phase is partial; see
 [`phase-23-autonomous-simulation.md`](phase-23-autonomous-simulation.md).
 This is the architecture-defining phase: its deliverable is the **simulation
 substrate and its level-of-detail (LOD) contract**, not the three factions. The
@@ -446,11 +449,16 @@ reversible promotion/demotion, a seeded scheduler, stable event IDs, faction
 resources, behavioral drives, agendas, relationship matrix, event
 prerequisites/effects, and one tier-transition proof.
 
-**Locked design decision:** the Phase 20 economy is re-parented under the new
-`simulation.world` facet (save envelope v10→v11) as the L1 economic projection,
-and Phase 17 territory becomes a projection of the substrate rather than an
-independent owner. Existing economy/territory IDs, contracts, and tests are
-preserved.
+**Locked design decision (as built):** the save envelope advances v11→v12 (Phase
+22 had already reached v11) adding a `simulation.world` facet. The Phase 20
+economy stays co-located at `simulation.economy` and is treated as the L1
+economic projection *logically* (referenced by `WorldRuntime`), rather than being
+physically re-nested, so the existing Phase 20 tests that read
+`simulation.economy` directly stay green; the physical re-parent is a deferred
+mechanical follow-up. Phase 17 territory is projected by `getWorldTerritory` and
+agrees with `queryFactionInfluence`. The three factions reuse the existing
+registry IDs (`commonwealth`/`index`/`drifters`). Existing economy/territory IDs,
+contracts, and tests are preserved.
 
 Acceptance:
 
@@ -819,13 +827,16 @@ precedes the Phase 29 content program and all of ascension (30–34).
 
 ## Next Action
 
-Phases 12–22 are shipped. The current frontier is **Phase 23 — the simulation
-substrate** ([`phase-23-autonomous-simulation.md`](phase-23-autonomous-simulation.md)),
-whose design is locked. Its first implementation step is the pure `simCore`
-module and the L1↔L2 LOD round-trip no-op test with one synthetic entity — not
-the three factions.
+Phases 12–22 are shipped and **Phase 23 — the simulation substrate** is
+implemented through T0–T4
+([`phase-23-autonomous-simulation.md`](phase-23-autonomous-simulation.md)): the
+pure `simWorld` core, the four-tier LOD contract with a verified reversible
+round trip, three factions diverging from authored drives, the relationship
+matrix, one civ-tier transition, the save envelope v11→v12 migration, and the
+`WorldRuntime`/debug surface. Owner T5–T6 signoff is the remaining gate.
 
-After Phase 23's determinism and migration tests are green, write the **Phase 24
+With Phase 23's determinism and migration tests green, the next step is to write
+the **Phase 24
 implementation document** (hybrid dialogue) specifying: the authored-beat vs.
 open-LLM arbitration contract, the read-only context snapshot and side-effect-free
 output contract, LOD model routing and budget, the offline/failure state machine,

@@ -318,17 +318,98 @@ window.__deepSpaceDebug.world.soak(1000000)   // seeded invariant soak
 
 ## 11. Verification record
 
-To be completed when the phase is implemented. Expected commands:
+**Status:** Implemented 2026-06-29. T0–T4 automated/browser evidence recorded;
+T5–T6 remain owner normal-control/device signoff.
+
+Commands run:
 
 ```powershell
-node --experimental-default-type=module --test tests/rpg/*.test.mjs
-node --experimental-default-type=module --check <each src/test JavaScript file>
-git diff --check
+node --experimental-default-type=module --test tests/rpg/*.test.mjs   # 121 pass
+node --experimental-default-type=module --test tests/**/*.test.mjs    # 130 pass
+node --check <each touched src/ + tests/ file>                        # clean
+git diff --check                                                       # clean
 ```
 
-- T0–T3: pending.
-- T4: pending.
-- T5–T6: pending owner normal-control verification.
+- **T0 Static:** `node --check` clean on `simWorld.js`, `WorldRuntime.js`,
+  `rpg/index.js`, `save/SaveEnvelope.js`, `save/LocalSaveSlots.js`,
+  `save/index.js`, `app/App.js`, and the new test. `git diff --check` clean.
+- **T1 Domain:** `tests/rpg/phase-23-autonomous-simulation.test.mjs` — `simStep`
+  determinism, drive→agenda divergence (expanding/trading/consolidating),
+  relationship/conflict band events, LOD L1→L2→L1 fold no-op, embodied- and
+  simulated-tier hard-cap demotion by interest, one civ-tier transition
+  (data-only, not silently reversible), bounded catch-up (split == single; closed
+  game = no ticks), intervention changes event history, seeded soak invariants,
+  event-log compaction integrity.
+- **T2 Persistence:** v11→v12 migration from `tests/fixtures/phase-22-v11-clean.json`
+  (world initialized at saved `gameTime`, economy/ship/reputation unchanged),
+  v12 round trip, demote→save/reload→promote reconstruction from
+  `(seed, aggregates)`, corruption rejection (forged aggregates, out-of-range
+  attitude, non-monotonic sequences, time regression, unknown faction/system IDs,
+  bad LOD tier), active-slot reset.
+- **T3 Integration:** territory projection agrees with Phase 17 `queryFactionInfluence`;
+  WorldRuntime advances on play time, persists, and an intervention survives
+  reload; closing the game adds no world time; a corrupt world facet is rejected
+  at write while the economy facet on the same slots stays operable (flight/render
+  isolation, locked rule 7).
+- **T4 Browser:** static load on the live app (`http-server` :5990) — the world
+  tick runs in the animation loop and `window.__deepSpaceDebug.world`
+  (`getState`/`getFaction`/`getRelationships`/`getTerritory`/`getLod`/`getEvents`/
+  `promote`/`demote`/`materialize`/`enqueueCommand`/`step`/`soak`) returns live
+  telemetry with no console errors.
+- **T5–T6:** pending owner normal-control verification.
+
+### Implementation notes / decisions taken
+
+1. **Save version is v11→v12, not v10→v11.** Phase 22 had already advanced the
+   envelope to v11; this phase adds the `simulation.world` facet at v12 with the
+   `phase-23-v11` migration reason.
+2. **Faction IDs reuse the Phase 17 registry** (`commonwealth`/`index`/`drifters`)
+   rather than the `faction_*` placeholders in §4, so territory and reputation
+   read as projections of the same identities.
+3. **The economy facet stays co-located at `simulation.economy`** and is treated
+   as the L1 economic projection *logically* (the world substrate references it
+   via `WorldRuntime`/projection helpers). It was not physically re-nested under
+   `simulation.world` because acceptance criterion §6 requires the existing
+   Phase 20 tests — which read `envelope.simulation.economy` directly — to stay
+   green; the physical re-parent is deferred as a mechanical follow-up.
+4. **Territory is static in this phase** (each faction holds its home system);
+   the data-mutating, event-only proof of tier fluidity is the civ-tier descent.
+
+### Known deviations from §6 acceptance criteria
+
+These are the gaps where the shipped substrate does not yet meet a §6 bullet, kept
+as deliberate, documented deferrals (locked rule 10: out-of-scope discoveries go
+to follow-up backlog). The simulation-LOD machinery, determinism, persistence,
+and divergence criteria are met; the items below are the projection/ownership
+seams that later phases consume.
+
+1. **Territory changes do not emit events.** §6 requires "territory … changes
+   each trace to a stable event ID", but territory is static (note 4 above), so no
+   `territory.changed` event type exists. *Relationship*, *agenda*, and *civ-tier*
+   changes do trace to stable IDs. Closing this requires a deterministic
+   territory-capture rule on the tick; deferred to the §24B faction-content pass.
+2. **Market changes are not driven or projected by the substrate** and do not
+   trace to world event IDs. The Phase 20 economy remains the owner; it is the L1
+   economic projection only *logically* (note 3). Folding the economy tick under
+   `simStep` so market swings emit world events is the same mechanical re-parent
+   as item 3 above and is deferred with it.
+3. **Patrol attitudes remain owned by the Phase 17 faction/patrol systems** rather
+   than being projections of the substrate relationship matrix; patrol-policy
+   changes do not trace to world event IDs. The substrate relationship matrix and
+   `getRelationshipAttitude` exist as the future source; wiring Phase 17 patrols
+   to read them (and emit on change) is deferred to the §24B pass.
+4. **Full flight/render failure isolation is shown at the write boundary only.**
+   The node tests prove a corrupt world facet is rejected at `saveDomains` and
+   that other facets stay operable; the App-level containment of a *throwing tick*
+   (`_updateWorldSafely` / `_createWorldRuntimeSafely`) keeps flight/render alive
+   but is exercised at T4 (browser), not by a node unit, because the read path
+   re-clones clean state via `structuredClone` and the render loop needs `three`.
+
+Resolved during this pass (previously open): the **simulated-tier hard cap** is
+now deterministically enforced by `enforceSimulatedBudget` (mirroring
+`enforceEmbodiedBudget`), and a **demote → save/reload → promote** persistence
+test proves L2 state is reconstructed from `(seed, aggregates)` rather than
+retained detail.
 
 ---
 

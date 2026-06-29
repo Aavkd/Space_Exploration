@@ -170,7 +170,7 @@ test('Phase 21 v10/RPG v8 save migrates to v11/RPG v9 with clean Phase 22 state'
     previous.rpg.worldFlags['phase21.fixture-preserved'] = true;
     delete previous.rpg.surfaceCombat;
     const migrated = sanitizeSaveEnvelope(previous);
-    assert.equal(migrated.version, 11);
+    assert.equal(migrated.version, 12);
     assert.equal(migrated.rpg.version, 9);
     assert.equal(migrated.rpg.worldFlags['phase21.fixture-preserved'], true);
     assert.equal(
