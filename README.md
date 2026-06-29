@@ -357,6 +357,12 @@ The Phase 11A-E implementation and verification checklist are documented in
 - [docs/phase-19-ship-combat.md](docs/phase-19-ship-combat.md) - opt-in targeting, weapons, Tier 2 enemy, damage, recovery, and cleanup
 - [docs/phase-20-dynamic-economy.md](docs/phase-20-dynamic-economy.md) - three markets, active-play ticks, atomic trade, stale intel, and contraband value
 - [docs/phase-21-eva-boarding.md](docs/phase-21-eva-boarding.md) - secured untethered EVA, one derelict interior, log recovery, and safe return
+- [docs/phase-23-autonomous-simulation.md](docs/phase-23-autonomous-simulation.md) - simulation substrate: headless deterministic tick, simulation-LOD contract, faction agendas, tier fluidity, and economy/territory re-parenting
+- [docs/phase-24-hybrid-dialogue.md](docs/phase-24-hybrid-dialogue.md) - hybrid dialogue: authored-beat vs live-LLM arbitration, the state-safety contract, LOD-aware model routing/budget, and offline fallback
+- [docs/phase-25-biomes-and-regions.md](docs/phase-25-biomes-and-regions.md) - planet-gen depth: deterministic region/continent aggregation layer (placement substrate), plus instanced ground cover, water plane, and weather hooks
+- [docs/phase-26-npc-presence.md](docs/phase-26-npc-presence.md) - NPC presence: the embodiment service (L2→L3) across surface/station/ship venues, generalized presence contract, budget/selection, and the met-NPC registry
+- [docs/phase-27-procedural-cities.md](docs/phase-27-procedural-cities.md) - procedural settlements: deterministic layout generator (region/tier/faction/biome), terrain conformance, player-pull LOD instantiation, and style-as-parameters
+- [docs/phase-28-npc-life-simulation.md](docs/phase-28-npc-life-simulation.md) - NPC life-sim: deterministic schedule/needs model, the off-screen abstraction boundary (reconstruct, don't replay), event-traced relationships, and the leave-and-return proof
 - [docs/rpg-future-development-roadmap.md](docs/rpg-future-development-roadmap.md) - post-Phase-11 vertical slices, dependencies, tests, and acceptance gates
 - [docs/rpg-phase-agent-prompts.md](docs/rpg-phase-agent-prompts.md) - copy-paste implementation prompts for each future RPG phase
 

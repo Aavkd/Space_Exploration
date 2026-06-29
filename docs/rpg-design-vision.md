@@ -189,6 +189,19 @@ Tier 4 entities do **not** follow the standard NPC model. They are simulation-le
 
 **Current implementation note:** Phase 11C proves the deterministic comms/contact path, and Phase 11D adds the first deterministic mission consequence path. The LLM flavor lane exists only as a disabled-by-default stub (`source: 'stub'`) and cannot mutate contact, mission, reputation, or world state. Live voice/LLM service integration remains deferred.
 
+**Locked execution (Phase 24):** the hybrid system is specified end-to-end in
+[`phase-24-hybrid-dialogue.md`](phase-24-hybrid-dialogue.md). The deterministic
+*arbiter* (`resolveTurn` → authored beat / open dialogue / authored redirect)
+owns every turn: authored beats always win and are matched by a deterministic
+intent matcher (no LLM classifier on the gating path); the LLM only fills
+unclaimed conversational space and is contractually text-only and side-effect
+free, validated like the existing `CrewRuntime` `authority:'presentation-only'`
+adapter. LOD-aware model routing plus a token budget keep cost bounded at scale.
+The gating acceptance test is an adversarial state-safety corpus proving no LLM
+output can mutate combat, economy, missions, reputation, inventory, or world
+state. This is the first phase of the Living World horizon and precedes every new
+NPC venue.
+
 Phase 11E adds a versioned save-migration registry, dependency-free RPG
 regression tests, corrupt-storage recovery, and guarded app integration with an
 in-memory fallback so an RPG failure does not interrupt flight or rendering.

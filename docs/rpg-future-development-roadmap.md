@@ -118,13 +118,25 @@ live-provider checks are optional manual tests.
 | 20 | Three-market trade loop | Dynamic economy | 14, 17 |
 | 21 | EVA to one derelict | Untethered EVA and boarding transfer | 18 |
 | 22 | One hostile surface site | Surface combat | 16, 18 |
-| 23 | Three-faction autonomous simulation | Scheduler, agendas, relationships, tiers | 17, 20 |
-| 24 | Ten-system MVP content program | Content pipeline and breadth | Proven systems |
-| 25 | Qualify for ascension | Knowledge and Tier 4 traces | 23, 24 |
-| 26 | Ascend and indirectly influence | Phase transition and legacy | 25 |
-| 27 | Direct manifestation | Focused Tier 4 powers | 26 |
-| 28 | Cosmic construction/destruction | Procedural-universe mutation | 26, 27 |
-| 29 | Tier 4 politics | Sustained post-ascension simulation | 23, 26-28 |
+| 23 | Three-faction autonomous simulation (substrate + LOD) | Headless deterministic tick and simulation-LOD contract | 17, 20 |
+| 24 | Live NPC conversation | Hybrid authored + live-LLM dialogue, state-safe at real cost/latency | 15 |
+| 25 | Region/continent layer + biome depth | Deterministic placement substrate; ground-cover/water budget | 16 |
+| 26 | NPCs on surface, station, and ship | Cross-venue NPC presence and L2→L3 embodiment | 23, 24 |
+| 27 | One procedural city | Settlement layout by tier, faction, and biome | 25, 26 |
+| 28 | A city that lives | NPC life-sim: jobs, relationships, schedules | 23, 27 |
+| 29 | Ten-system MVP content program | Content pipeline and breadth | Proven systems |
+| 30 | Qualify for ascension | Knowledge and Tier 4 traces | 23, 29 |
+| 31 | Ascend and indirectly influence | Phase transition and legacy | 30 |
+| 32 | Direct manifestation | Focused Tier 4 powers | 31 |
+| 33 | Cosmic construction/destruction | Procedural-universe mutation | 31, 32 |
+| 34 | Tier 4 politics | Sustained post-ascension simulation | 23, 31-33 |
+
+> **Reweighted 2026-06-28.** The vision centers a *living procedural world* —
+> talk-to-every-NPC dialogue, biomes, cities, and NPCs with lives — over the
+> ascension ceiling. Horizon 5 (the living world, phases 24–28) now precedes the
+> content program and ascension. Ascension remains the endgame but is built last.
+> All five living-world phases consume the Phase 23 simulation substrate and its
+> LOD contract.
 
 ## Horizon 1 - Make The World Durable
 
@@ -402,18 +414,40 @@ Acceptance:
 - Mission state distinguishes authored evasion, defeat, and combat outcomes.
 - Desktop and VR aiming, comfort, feedback, and performance pass.
 
-### Phase 23 - Autonomous World Simulation
+### Phase 23 - Autonomous World Simulation (Simulation Substrate)
+
+**Status:** Design locked; see
+[`phase-23-autonomous-simulation.md`](phase-23-autonomous-simulation.md).
+This is the architecture-defining phase: its deliverable is the **simulation
+substrate and its level-of-detail (LOD) contract**, not the three factions. The
+factions are the test fixture; the substrate (`dormant → statistical →
+simulated → embodied`, plus a headless deterministic tick) is what every later
+plural-scale element reuses — crowds, populated cities, tier fluidity, the
+post-ascension god-view, and cosmic mutation.
 
 **Proof loop:** observe three factions pursue agendas over play time, receive a
 report of a political/economic change, intervene, and see a different outcome.
 
-Deliverables include a seeded scheduler, stable event IDs, faction resources,
-behavioral drives, agendas, relationship matrix, event prerequisites/effects,
-and one tier-transition proof.
+Deliverables include a renderer-decoupled pure simulation tick
+(`simCore.step({state, fromGameTime, toGameTime, seed, commands}) ->
+{state, events}`), the four-tier simulation-LOD contract with deterministic
+reversible promotion/demotion, a seeded scheduler, stable event IDs, faction
+resources, behavioral drives, agendas, relationship matrix, event
+prerequisites/effects, and one tier-transition proof.
+
+**Locked design decision:** the Phase 20 economy is re-parented under the new
+`simulation.world` facet (save envelope v10→v11) as the L1 economic projection,
+and Phase 17 territory becomes a projection of the substrate rather than an
+independent owner. Existing economy/territory IDs, contracts, and tests are
+preserved.
 
 Acceptance:
 
 - Seed plus command sequence reproduces the same event history.
+- The simulation core has no renderer/DOM/audio/`three` import (worker/WASM/
+  server move is later and mechanical).
+- LOD promotion L1→L2→L1 with no intervening sim is a verified no-op; demote→
+  reload→promote reconstructs equivalent state from `(seed, aggregates, events)`.
 - Catch-up is bounded and uses only accumulated play time.
 - Invalidated events cancel/transform without corrupting successors.
 - Territory, market, patrol, and relationship changes trace to event IDs.
@@ -421,27 +455,253 @@ Acceptance:
 - Long seeded soak tests preserve numeric/population invariants.
 - Three factions behave distinctly from their authored drive seeds.
 
-## Horizon 5 - Scale Content Safely
+## Horizon 5 - The Living World
 
-### Phase 24 - Ten-System MVP Content Program
+This horizon delivers the parts of the vision the earlier roadmap deferred:
+talking to NPCs naturally, surfaces worth standing on, cities, and NPCs with
+lives. Every phase here consumes the Phase 23 simulation substrate and its LOD
+contract (`dormant → statistical → simulated → embodied`); none of them reaches
+into rendering, flight, or persistence internals. The hard rule that LLM output
+never owns state (combat, economy, missions, reputation, world state) holds
+throughout.
 
-This is a sequence of independently shippable content batches, not one dump.
+### Phase 24 - Hybrid Dialogue System (Authored Beats + Live LLM)
 
-**24A - Authoring pipeline:** validate systems, planets, POIs, NPCs, dialogue,
+**Status:** Design locked; see
+[`phase-24-hybrid-dialogue.md`](phase-24-hybrid-dialogue.md).
+
+**Objective:** turn "interact naturally with every NPC" from a stub into a real,
+state-safe conversation layer, proven end-to-end against one live NPC at real
+cost and latency. This is the central mid-term promise and every later NPC venue
+depends on it, so it is built early — directly on the Phase 15 crew/NPC contract.
+
+**Proof loop:** approach one NPC, hold a free-text conversation that mixes
+authored mission-critical beats with open LLM responses, and confirm the LLM can
+discuss anything but can never change game state.
+
+Deliverables:
+
+- A dialogue runtime over the shared NPC contract: authored beats take priority,
+  interrupt, and redirect; open turns route to the Phase 09 voice/LLM service.
+- A read-only context snapshot (NPC memory, mood, faction, current world facts)
+  passed to the LLM; a strict output contract that is text-only and side-effect
+  free.
+- An intent/▸"the player asked for X" recognizer that maps to *authored*
+  deterministic actions when a beat exists; otherwise stays conversational.
+- LOD-aware model routing: cheap/local model (or canned lines) for ambient and
+  `statistical`-tier crowds, the strong model only for the active conversation,
+  with caching keyed on NPC memory state to bound cost.
+- Explicit offline/connecting/listening/responding/interrupted/failed states and
+  a deterministic text fallback that satisfies acceptance with the service down.
+
+Acceptance:
+
+- A mission-critical exchange completes with the voice/LLM service offline.
+- LLM text can never invent rewards, completion, cargo, damage, reputation, or
+  world changes; a fuzz/adversarial test proves injected "do X" output is inert.
+- Authored beats deterministically win over open dialogue where both apply.
+- Per-turn token cost and latency are measured and bounded by the LOD routing.
+- Malformed, late, and disconnected responses are ignored safely.
+- Desktop, gamepad, and XR can start, interrupt, exit, and reopen a conversation.
+
+Out of scope: many simultaneous live conversations, NPC-to-NPC dialogue, and
+voice synthesis quality bar (placeholder TTS is acceptable).
+
+Decision gate: model tiering per NPC LOD, and the per-session/per-day LLM budget.
+
+### Phase 25 - Biomes And Regions (Planet-Gen Depth)
+
+**Status:** Design locked; see
+[`phase-25-biomes-and-regions.md`](phase-25-biomes-and-regions.md).
+
+**Objective:** per-point biome *classification* already ships
+(`PlanetSurfaceModel.sampleAt` → biome/material/moisture/temperature, six
+guaranteed archetypes). This phase adds the two things that are actually missing:
+a **region/continent aggregation layer** with stable, queryable IDs (the
+placement substrate cities and POIs sit on), and **biome depth** (ground cover,
+water plane, weather hooks) so surfaces read as places. Valuable on its own as an
+exploration/visual upgrade; no dependency on the Phase 23 substrate.
+
+**Proof loop:** descend onto a planet, traverse two or more visibly distinct
+regions/biomes whose boundaries are deterministic and reproducible on re-entry,
+then resolve a `findRegions` candidate to coherent ground for placement.
+
+Deliverables:
+
+- A deterministic region map computed from a fixed low-res lattice of the
+  existing `sampleAt` field (connected land → continents, dominant-biome zones →
+  regions), independent of tile streaming/LOD: `regionAt(dir) → regionId`,
+  `getRegions()`, `findRegions({biome,kind,minArea})`, stable
+  `region:<planetSeed>:<n>` IDs.
+- Biome depth within the existing tile budget: instanced (visual-only) ground
+  cover that streams/disposes with its tile, a sea-level water plane with flat
+  collision, and per-region weather *descriptors* (not simulation).
+- Reuse of the streaming/LRU pipeline and the shipped surface model; no new
+  precision regime, no shader-only height.
+
+Acceptance:
+
+- `regionAt` agrees with `sampleAt` biome at the same `dir`; region map is a pure
+  function of planet seed with deterministically ordered, stable IDs.
+- Region identity is independent of streaming/LOD and reproduces on re-entry.
+- Region/biome boundaries do not flicker across LOD; the orbital silhouette is
+  unchanged; ground cover never alters `heightAt`/collision.
+- `findRegions` candidates resolve to in-tolerance terrain (never buried/floating)
+  via a placement smoke reusing the Phase 16 marker discipline.
+- A low-altitude pass with cover/water enabled holds the documented frame budget;
+  gas giants and non-landable bodies are unaffected.
+
+Out of scope: full hydrology, climate/weather simulation, fauna, vegetation
+simulation, destructible/persistent terrain, and content placement itself (the
+phase provides the substrate and helper only). No save-envelope bump — everything
+is seed-derived.
+
+Decision gate: region lattice resolution (not tied to render LOD), freezing the
+existing biome taxonomy as stable IDs, and the ground-cover budget.
+
+### Phase 26 - NPC Presence And Encounter Layer
+
+**Status:** Design locked; see
+[`phase-26-npc-presence.md`](phase-26-npc-presence.md).
+
+**Objective:** make NPCs appear and be interactable across all three venues the
+vision names — **surface, station, and ship** — by promoting substrate entities
+through the LOD tiers into embodied, conversational agents. This is the first
+real exercise of the Phase 23 `simulated → embodied` (L2→L3) boundary with
+content, and it leans on Phase 24 for interaction.
+
+**Proof loop:** encounter an NPC at a surface POI, a docked station, and aboard
+during a boarding event; talk to each via the Phase 24 system; leave and return
+and find their state coherent.
+
+Deliverables:
+
+- An instantiation service that promotes a `statistical`/`simulated` substrate
+  entity into an embodied NPC near the player and demotes it on departure,
+  folding changed state back to aggregates (the §23 reversible round trip).
+- A placeholder embodied NPC representation reused across venues (surface walker,
+  station resident, ship-boarder) sharing one NPC contract.
+- A minimal station docking + interior venue (or reuse of an existing interior
+  shell) so stations are a real interaction place, not just a map node.
+- Hard caps on embodied NPC count with proximity/interest selection.
+
+Acceptance:
+
+- The same NPC identity survives demote→reload→promote without duplication or
+  loss, reconstructed from `(seed, aggregates, events)`.
+- Embodied count stays within budget under a crowded scene; over-budget entities
+  demote deterministically.
+- Each venue can start, run, and exit a Phase 24 conversation.
+- No embodied NPC advances world time on its own; off-screen evolution is L1 only.
+- Saves at each venue restore coherent presence and relationship state.
+
+Out of scope: full city crowds (Phase 27), per-NPC daily schedules (Phase 28),
+and hostile boarding combat.
+
+Decision gate: station venue scope (new interior vs. reused shell) and the
+embodied-NPC budget.
+
+### Phase 27 - Procedural Settlements And Cities
+
+**Status:** Design locked; see
+[`phase-27-procedural-cities.md`](phase-27-procedural-cities.md).
+
+**Objective:** generate one settlement/city deterministically, with **layout and
+character driven by civ tier, controlling faction, and biome**, placed on a
+Phase 25 region. The container that Phase 28 fills with life.
+
+**Proof loop:** approach a flagged region, see a settlement signposted from
+orbit, land, and walk a coherent generated layout (paths, structures, function
+zones) appropriate to its tier and faction.
+
+Deliverables:
+
+- A settlement generator keyed on `(planet seed, region, civTier, factionId)`
+  producing a deterministic layout: footprint, road/path graph, structure
+  placement, and function zones (market, residential, civic, industry).
+- Tier/faction style parameters (e.g. Commonwealth "lived-in warm" vs. Company
+  of Doom "deliberately archaic") expressed as generation params, not bespoke art.
+- Terrain-conformant placement using `heightAt`/`biomeAt`; nothing buried or
+  floating; signposting from orbit (Phase 16 marker discipline).
+- Instantiation as a substrate `simulated`/`embodied` cluster (player-pull: full
+  detail only when landed/near; statistical otherwise).
+
+Acceptance:
+
+- Layout is deterministic and reproducible on re-entry from seed alone.
+- Structures and paths conform to terrain and biome within tolerance.
+- A clearly different tier/faction seed yields a visibly different city.
+- Generation and streaming hold the frame budget on approach and on foot.
+- Save/reload while in the city restores the same layout and placed NPCs.
+
+Out of scope: building interiors at scale (one or two enterable shells only),
+city-wide combat, and economy ownership of every structure.
+
+Decision gate: city size cap and how many structure interiors are enterable.
+
+### Phase 28 - NPC Life Simulation
+
+**Status:** Design locked; see
+[`phase-28-npc-life-simulation.md`](phase-28-npc-life-simulation.md).
+
+**Objective:** make a city's NPCs *live* — the deferred Phase 23 `simulated` (L2)
+tier becomes real content: jobs, relationships, hobbies, and daily schedules that
+run deterministically and stay coherent whether observed or abstracted.
+
+**Proof loop:** spend time in one city across a day cycle; watch NPCs go to work,
+move between places, and interact; leave for a long trip and return to find their
+lives have advanced plausibly (via the cheap L1 abstraction), not frozen.
+
+Deliverables:
+
+- An agent schedule/needs model (work, rest, social, leisure) ticked by the
+  Phase 23 deterministic clock at L2 while embodied, and folded into L1
+  aggregates when the player leaves (no per-agent off-screen simulation).
+- Relationship state between NPCs that emerges from co-location and events, traced
+  to substrate event IDs.
+- Role assignment from settlement function zones (a market NPC works the market).
+- Promotion/demotion that reconstructs an agent's plausible "current activity"
+  from `(seed, aggregates, events, time-of-day)` rather than stored detail.
+
+Acceptance:
+
+- A seeded day reproduces the same schedule history; injected time advances are
+  bounded and use accumulated play time only.
+- Leave-and-return shows advanced-but-coherent lives with no agent duplication,
+  loss, or teleport.
+- Relationship/role changes trace to events and survive reload.
+- L2 agent count per city stays within the documented budget; demotion to L1 is
+  lossless for aggregate purposes.
+- A long seeded soak keeps population/role/relationship invariants bounded.
+
+Out of scope: full social AI, NPC reproduction/aging at scale, and emergent
+politics within a single city (that lives at the faction substrate level).
+
+Decision gate: day-cycle length, L2 agent budget per city, and needs-model depth.
+
+## Horizon 6 - Scale Content Safely
+
+### Phase 29 - Ten-System MVP Content Program
+
+This is a sequence of independently shippable content batches, not one dump. It
+now lands *after* the living-world systems exist, so each authored system can use
+real dialogue, biomes, cities, and NPC lives rather than placeholders.
+
+**29A - Authoring pipeline:** validate systems, planets, POIs, NPCs, dialogue,
 missions, markets, signals, localization keys, references, and reachability.
 
-**24B - Tier 2 network:** complete the six faction hubs in small batches. Each
+**29B - Tier 2 network:** complete the six faction hubs in small batches. Each
 has a distinct role/landmark, at least two persistent NPCs, one multi-step
 thread, and observable favorable and hostile consequences.
 
-**24C - Civilization extremes:** add the Tier 3 enclave, Tier 0 world, deep-void
+**29C - Civilization extremes:** add the Tier 3 enclave, Tier 0 world, deep-void
 trace, and Threshold. Each proves a distinct interaction—not a reskinned market.
 
 Every authored system must have deterministic placement, reachable entry/exit
 and recovery, valid references, save checkpoints, content-only tests, a manual
 playthrough, and a performance spot check.
 
-Content starts earlier rather than waiting for Phase 24:
+Content starts earlier rather than waiting for Phase 29:
 
 | Phase | Minimum proof content |
 |---|---|
@@ -455,10 +715,15 @@ Content starts earlier rather than waiting for Phase 24:
 | 21 | One boardable interior |
 | 22 | One hostile POI |
 | 23 | Three faction drive sets |
+| 24 | One fully conversational NPC |
+| 25 | One planet with named regions and two biomes |
+| 26 | One NPC per venue (surface, station, ship) |
+| 27 | One procedural city |
+| 28 | One city that lives across a day |
 
-## Horizon 6 - Ascension
+## Horizon 7 - Ascension
 
-### Phase 25 - Ascension Precursor
+### Phase 30 - Ascension Precursor
 
 Discover a Tier 4 trace, accumulate explainable knowledge, receive higher-tier
 contact, and unlock—but do not trigger—the Threshold.
@@ -471,7 +736,7 @@ Acceptance:
 - LLM presentation cannot control eligibility or contact consequences.
 - Unrelated play cannot accidentally trigger ascension.
 
-### Phase 26 - Ascension And Indirect Influence
+### Phase 31 - Ascension And Indirect Influence
 
 Acceptance:
 
@@ -481,13 +746,13 @@ Acceptance:
 - One indirect action changes a simulation input, not a scripted outcome.
 - Saves on both sides cannot mix control modes.
 
-### Phase 27 - Direct Manifestation
+### Phase 32 - Direct Manifestation
 
 Ship one focused physical intervention with explicit targeting, precursors,
 effect, cancellation, aftermath, stable events, and lower-/higher-tier reaction.
 It must use general world mutation APIs and leave unrelated worlds untouched.
 
-### Phase 28 - Cosmic Construction And Destruction
+### Phase 33 - Cosmic Construction And Destruction
 
 Universe changes are sparse overlays on procedural generation. A system mutation
 must have precursors, cancellation, completion, aftermath, and referential-
@@ -495,7 +760,7 @@ integrity handling for navigation, missions, NPCs, markets, and legacy actors.
 Galaxy-scale destruction stays disabled until system-scale mutation passes
 long-run save and recovery tests.
 
-### Phase 29 - Tier 4 Politics And Living Legacy
+### Phase 34 - Tier 4 Politics And Living Legacy
 
 At least two non-player Tier 4 actors need distinct drives and plans. Alliance,
 opposition, indifference, and delayed response must emerge from shared agenda
@@ -516,8 +781,13 @@ scripts, and long seeded runs remain bounded and inspectable.
 | 19 | Defeat | Recoverable damage/tow, never save deletion |
 | 21 | EVA recovery | Conservative acceleration plus explicit recovery |
 | 22 | Priority | Defer if ship combat/boarding are not yet strong |
-| 24 | Names/art bar | Lock one content batch at a time |
-| 26 | First god-phase view | Familiar universe plus information overlay |
+| 24 | LLM model tiering and budget | Cheap/local for ambient, strong model only for the active conversation, cached on NPC memory |
+| 25 | Region lattice resolution, biome taxonomy, ground-cover budget | Lattice independent of render LOD; freeze the shipped biome set as IDs; instanced cover within the tile budget |
+| 26 | Station venue and embodied-NPC budget | Reuse an interior shell first; hard-cap embodied NPCs by proximity |
+| 27 | City size and enterable interiors | Small footprint, one or two enterable shells first |
+| 28 | Day-cycle length and L2 agent budget | Short day cycle; cap L2 agents per city, fold to L1 off-screen |
+| 29 | Names/art bar | Lock one content batch at a time |
+| 31 | First god-phase view | Familiar universe plus information overlay |
 
 ## Scope And Replanning Rules
 
@@ -529,12 +799,27 @@ before destructive state, or has no repeatable performance scene.
 Phases 15 and 16 may swap. Optional radio work is independent. Phase 18 must
 precede 19, Phase 16 precedes 22, and Phase 23 precedes full ascension.
 
+Living-world ordering (Horizon 5): Phase 23 precedes all of 24–28. Phase 24
+(dialogue) precedes 26 (NPCs are worth meeting only once they can talk). Phase 25
+(biomes/regions) precedes 26's surface venue and 27 (content is placed on
+regions). Phase 26 (embodiment) precedes 27's city population and 28. Phase 27
+(cities) precedes 28 (life-sim fills a city). The whole living-world horizon
+precedes the Phase 29 content program and all of ascension (30–34).
+
 ## Next Action
 
-After signoff, write a Phase 13 implementation document specifying save-envelope
-and migration contracts, the ship-computer interaction, autosave/import choices,
-the exact automated matrix, desktop/gamepad/XR checklist, and recovery behavior.
-Do not design Phase 14 saved state until Phase 13 contracts are stable.
+Phases 12–22 are shipped. The current frontier is **Phase 23 — the simulation
+substrate** ([`phase-23-autonomous-simulation.md`](phase-23-autonomous-simulation.md)),
+whose design is locked. Its first implementation step is the pure `simCore`
+module and the L1↔L2 LOD round-trip no-op test with one synthetic entity — not
+the three factions.
+
+After Phase 23's determinism and migration tests are green, write the **Phase 24
+implementation document** (hybrid dialogue) specifying: the authored-beat vs.
+open-LLM arbitration contract, the read-only context snapshot and side-effect-free
+output contract, LOD model routing and budget, the offline/failure state machine,
+and the adversarial test that proves LLM output is inert against game state. Do
+not design Phase 26 NPC venues until the Phase 24 dialogue contract is stable.
 
 Copy-paste implementation and audit prompts for every phase are available in
 [`rpg-phase-agent-prompts.md`](rpg-phase-agent-prompts.md).
