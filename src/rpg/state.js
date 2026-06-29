@@ -20,8 +20,9 @@ import {
     createInitialSurfaceCombatState,
     sanitizeSurfaceCombatState
 } from './surfaceCombat.js';
+import { createInitialDialogueState, sanitizeDialogueState } from './dialogue.js';
 
-export const RPG_STATE_VERSION = 9;
+export const RPG_STATE_VERSION = 10;
 export const INITIAL_RPG_TIMESTAMP = '2026-06-26T00:00:00.000Z';
 
 export function createInitialRpgState() {
@@ -118,6 +119,7 @@ export function createInitialRpgState() {
         combat: createInitialCombatState(),
         boarding: createInitialBoardingState(),
         surfaceCombat: createInitialSurfaceCombatState(),
+        dialogue: createInitialDialogueState(),
         comms: {
             activeContactId: null,
             llmFlavorEnabled: false
@@ -162,6 +164,7 @@ export function sanitizeRpgState(value) {
         combat: sanitizeCombatState(value.combat),
         boarding: sanitizeBoardingState(value.boarding),
         surfaceCombat: sanitizeSurfaceCombatState(value.surfaceCombat),
+        dialogue: sanitizeDialogueState(value.dialogue),
         comms: sanitizeComms(value.comms, base.comms),
         eventLog: Array.isArray(value.eventLog)
             ? value.eventLog

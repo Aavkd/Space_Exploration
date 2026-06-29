@@ -4,6 +4,7 @@ import { createInitialPatrolState, migratePatrolStateV1 } from './patrols.js';
 import { createInitialCombatState } from './combat.js';
 import { createInitialBoardingState } from './boarding.js';
 import { createInitialSurfaceCombatState } from './surfaceCombat.js';
+import { createInitialDialogueState } from './dialogue.js';
 import { RPG_STATE_VERSION } from './state.js';
 
 // Add one entry per historical version when RPG_STATE_VERSION is increased.
@@ -27,7 +28,8 @@ export const RPG_STATE_MIGRATIONS = Object.freeze({
             : migratePatrolStateV1(state.patrol)
     }),
     7: (state) => ({ ...state, version: 8, boarding: createInitialBoardingState() }),
-    8: (state) => ({ ...state, version: 9, surfaceCombat: createInitialSurfaceCombatState() })
+    8: (state) => ({ ...state, version: 9, surfaceCombat: createInitialSurfaceCombatState() }),
+    9: (state) => ({ ...state, version: 10, dialogue: createInitialDialogueState() })
 });
 
 export function migrateRpgState(value) {

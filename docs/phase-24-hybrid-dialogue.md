@@ -1,9 +1,16 @@
 # Phase 24 — Hybrid Dialogue System (Authored Beats + Live LLM)
 
-> **Status:** Proposed design — not started. First phase of Horizon 5 (The
-> Living World). Turns "interact naturally with every NPC" from a disabled stub
-> into a real, state-safe conversation layer, proven end-to-end against one live
-> NPC at real cost and latency.
+> **Status:** Implemented through T0–T3 (automated). 15 Phase 24 tests plus the
+> full 136-test RPG suite are green; all touched modules pass `node --check`. The
+> deterministic arbiter, intent matcher, hardened state-safety validator + the
+> adversarial corpus, LOD routing/budget, caching, offline fallback, dialogue
+> memory (v9→v10 / envelope v12→v13 migration with round trip + compaction +
+> forgery rejection), the `DialogueRuntime`, and the `__deepSpaceDebug.dialogue`
+> surface are in place. The live `/api/v1/conversation/text` provider is left as a
+> documented seam (no provider wired by default); T4 browser, T5 live-service, and
+> T6 device signoff remain owner-performed. First phase of Horizon 5 (The Living
+> World). Turns "interact naturally with every NPC" from a disabled stub into a
+> real, state-safe conversation layer.
 > **Dependencies:** Phase 09 voice-AI service (`/api/v1/conversation/text`,
 > personas, semantic memory, multi-provider LLM), Phase 11C comms/contact path
 > (`RpgRuntime` `getCommsState`/`startConversation`/dialogue choices, authored
@@ -188,14 +195,26 @@ Reuse the Phase 15 ephemeral, non-persisted interaction states exactly:
 ## 7. Saved-state contract
 
 Phase 24 adds **bounded per-NPC dialogue memory** so conversations have
-continuity without unbounded growth. The save envelope advances one version
-(v11→v12, assuming Phase 23 shipped v11) and the RPG `npcs` domain gains:
+continuity without unbounded growth.
+
+**As built (version reconciliation).** The repository's RPG facet was at **v9**
+and the outer save envelope at **v12** (the Phase 23 `simulation.world` facet is
+versioned independently and did *not* bump the RPG facet). Phase 24 therefore
+advances the **RPG facet v9→v10** (migration `9→10` initializes empty dialogue
+memory) and the **outer save envelope v12→v13** (`migrateVersion12Envelope`,
+reason `phase-24-v12`), rather than the doc's earlier "v11→v12" estimate.
+
+**As built (location).** Contacts live in `rpg.contacts.byId` and crew in
+`rpg.npcs.byId` — two different state containers. To key dialogue memory by *any*
+NPC id (contact, crew, or future embodied NPC) without forking the schema, the
+memory lives in a dedicated top-level RPG domain rather than under
+`npcs.byId.<id>`:
 
 ```text
-npcs.byId.<id>.dialogue: {
+rpg.dialogue.byNpcId.<id>: {
   version,
-  recentTurns: [{ role: 'player'|'npc', text, gameTime }],   // bounded ring
-  summaries: [{ text, gameTime }],                            // compacted older context
+  recentTurns: [{ role: 'player'|'npc', text, gameTime }],   // bounded ring (12)
+  summaries: [{ text, gameTime }],                            // compacted older context (8)
   lastModel: string,                                          // debug/telemetry
 }
 ```
@@ -306,17 +325,46 @@ window.__deepSpaceDebug.dialogue.clearMemory(npcId)
 
 ## 13. Verification record
 
-To be completed when implemented. Expected commands:
+Commands (run 2026-06-29):
 
 ```powershell
 node --experimental-default-type=module --test tests/rpg/*.test.mjs
-node --experimental-default-type=module --check <each src/test JavaScript file>
-git diff --check
+# → tests 136, pass 136, fail 0  (15 are the new phase-24 suite)
+node --experimental-default-type=module --test tests/ship/*.test.mjs tests/space/*.test.mjs
+# → tests 9, pass 9, fail 0
+node --check <each touched src/test JavaScript file>   # all pass
+git diff --check                                       # no whitespace errors
 ```
 
-- T0–T3: pending (the adversarial state-safety corpus is the gating test).
-- T4: pending.
-- T5–T6: pending owner normal-control + live-provider verification.
+New code:
+
+- `src/rpg/dialogue.js` — arbiter (`resolveTurn`), deterministic intent matcher,
+  LOD routing/budget, frozen read-only context, hardened output validator,
+  saved dialogue-memory model.
+- `src/rpg/DialogueRuntime.js` — orchestration (state machine, authoritative-beat
+  application, open-turn routing, caching, budget, memory persistence, debug hooks).
+- `src/rpg/state.js` / `migrations.js` — RPG facet v9→v10 + `dialogue` domain.
+- `src/save/SaveEnvelope.js` — envelope v12→v13 (`migrateVersion12Envelope`).
+- `src/app/App.js` — safe `DialogueRuntime` construction + `__deepSpaceDebug.dialogue`.
+- `tests/rpg/phase-24-hybrid-dialogue.test.mjs` — 15 tests (T1–T3).
+
+Test-ladder status:
+
+- **T0 Static:** ✅ `node --check` on all touched files; `git diff --check` clean.
+- **T1 Domain:** ✅ arbiter authored-vs-open-vs-redirect, deterministic intent
+  matcher, LOD routing, budget gate.
+- **T2 Persistence:** ✅ v12→v13 envelope + v9→v10 RPG migration, dialogue-memory
+  round trip, ring/summary compaction cap, forgery rejection, reset.
+- **T3 Integration:** ✅ runtime↔fake-provider boundary, **adversarial
+  state-safety corpus** (injection/mutation outputs leave authoritative state
+  byte-identical), offline mission-critical completion, late/malformed drop,
+  budget degrade, cache hit + invalidation. Dialogue failure never throws into
+  flight/render (every open-turn failure collapses to `failed`/canned).
+- **T4 Browser:** pending (debug surface + offline path are ready to exercise).
+- **T5–T6:** pending owner normal-control + live-provider + device verification.
+  The live `/api/v1/conversation/text` provider adapter is the remaining wiring
+  (a `voiceProvider` seam on `DialogueRuntime`); the deterministic/canned path is
+  the acceptance path and is complete.
 
 ---
 

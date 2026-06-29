@@ -126,6 +126,39 @@ export {
     selectAuthoredBeat
 } from './CrewRuntime.js';
 export {
+    DIALOGUE_BUDGET_DEFAULTS,
+    DIALOGUE_CANNED_REPLY,
+    DIALOGUE_CONTEXT_WINDOW,
+    DIALOGUE_INTENT_RULES,
+    DIALOGUE_INTERACTION_STATES,
+    DIALOGUE_MODELS,
+    DIALOGUE_STATE_VERSION,
+    DIALOGUE_TURN_KINDS,
+    MAX_DIALOGUE_RECENT_TURNS,
+    MAX_DIALOGUE_SUMMARIES,
+    appendDialogueTurn,
+    budgetExceeded,
+    createDialogueBudget,
+    createDialogueContext,
+    createInitialDialogueState,
+    createInitialNpcDialogueMemory,
+    decideRouting,
+    dialogueCacheKey,
+    dialogueMemoryHash,
+    estimateTokens,
+    getAuthoredChoices,
+    isKnownNpcId,
+    isMissionCriticalChoice,
+    matchIntent,
+    resolveNpcIdentity,
+    resolveTurn,
+    sanitizeDialogueState,
+    sanitizeNpcDialogueMemory,
+    validateDialogueResponse
+} from './dialogue.js';
+export { DialogueRuntime, createDialogueRuntime } from './DialogueRuntime.js';
+export { composeMessage, createConversationVoiceProvider } from './dialogueVoiceProvider.js';
+export {
     CREW_CAPACITY,
     CREW_LOCATION_ID,
     CREW_NPC_ID,

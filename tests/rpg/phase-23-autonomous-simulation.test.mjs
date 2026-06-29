@@ -309,8 +309,8 @@ test('version-11 save migrates to v12 and initializes the world facet non-destru
     assert.equal(raw.simulation.world, undefined);
 
     const migrated = sanitizeSaveEnvelope(raw);
-    assert.equal(migrated.version, 12);
-    assert.equal(migrated.autosave.reason, 'phase-23-v11');
+    assert.equal(migrated.version, 13);
+    assert.equal(migrated.autosave.reason, 'phase-24-v12');
     // The world is initialized at the saved gameTime, not back-simulated.
     assert.equal(migrated.simulation.world.lastTickGameTime, 7200);
     assert.deepEqual(migrated.simulation.world, createInitialWorldState(7200));

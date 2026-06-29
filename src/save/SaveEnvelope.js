@@ -9,7 +9,7 @@ import {
     sanitizePlayerState
 } from '../player/playerState.js';
 
-export const SAVE_ENVELOPE_VERSION = 12;
+export const SAVE_ENVELOPE_VERSION = 13;
 export const MAX_EVENT_LOG_ENTRIES = 500;
 export const PROTECTED_EVENT_TYPES = Object.freeze([
     'mission.resolved',
@@ -65,6 +65,7 @@ export function sanitizeSaveEnvelope(value) {
     if (value.version === 9) value = migrateVersion9Envelope(value);
     if (value.version === 10) value = migrateVersion10Envelope(value);
     if (value.version === 11) value = migrateVersion11Envelope(value);
+    if (value.version === 12) value = migrateVersion12Envelope(value);
     if (value.version !== SAVE_ENVELOPE_VERSION) {
         throw new Error(
             value.version > SAVE_ENVELOPE_VERSION
@@ -327,6 +328,29 @@ export function migrateVersion11Envelope(value) {
         autosave: {
             kind: 'migration',
             reason: 'phase-23-v11',
+            savedAt,
+            sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
+        }
+    };
+}
+
+export function migrateVersion12Envelope(value) {
+    if (!value || value.version !== 12) {
+        throw new Error(`Expected save envelope version 12, received ${value?.version ?? 'missing'}.`);
+    }
+    const savedAt = typeof value.slot?.updatedAt === 'string'
+        ? value.slot.updatedAt
+        : new Date().toISOString();
+    // Phase 24 bumps the RPG facet v9→v10, initializing empty per-NPC dialogue
+    // memory. No prior mission, reputation, contact, crew, world-flag, economy,
+    // or simulation outcome changes.
+    return {
+        ...structuredClone(value),
+        version: 13,
+        rpg: migrateRpgState(value.rpg),
+        autosave: {
+            kind: 'migration',
+            reason: 'phase-24-v12',
             savedAt,
             sequence: Math.max(0, Math.floor(Number(value.autosave?.sequence) || 0)) + 1
         }

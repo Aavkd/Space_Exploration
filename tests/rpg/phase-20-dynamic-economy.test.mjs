@@ -127,10 +127,10 @@ test('Phase 19 version-8 save migrates through Phase 21 without offline economy 
     delete previous.simulation.economy;
 
     const migrated = sanitizeSaveEnvelope(previous);
-    assert.equal(migrated.version, 12);
-    assert.equal(migrated.rpg.version, 9);
+    assert.equal(migrated.version, 13);
+    assert.equal(migrated.rpg.version, 10);
     assert.equal(migrated.rpg.patrol.version, 2);
-    assert.equal(migrated.autosave.reason, 'phase-23-v11');
+    assert.equal(migrated.autosave.reason, 'phase-24-v12');
     assert.equal(migrated.simulation.economy.lastTickGameTime, 1234);
     assert.equal(migrated.ship.credits, 1150);
     assert.deepEqual(

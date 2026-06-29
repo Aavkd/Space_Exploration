@@ -486,7 +486,13 @@ throughout.
 
 ### Phase 24 - Hybrid Dialogue System (Authored Beats + Live LLM)
 
-**Status:** Design locked; see
+**Status:** Implemented through T0–T3 (automated) with 15 Phase 24 tests and the
+full 136-test RPG suite green. The deterministic arbiter, intent matcher, hardened
+state-safety validator + adversarial corpus, LOD routing/budget, caching, offline
+fallback, dialogue memory (RPG facet v9→v10 / save envelope v12→v13 migration),
+the `DialogueRuntime`, and the `__deepSpaceDebug.dialogue` surface are in place.
+The live `/api/v1/conversation/text` provider is a documented seam; T4 browser and
+T5–T6 owner/device signoff remain open, so the phase is partial. See
 [`phase-24-hybrid-dialogue.md`](phase-24-hybrid-dialogue.md).
 
 **Objective:** turn "interact naturally with every NPC" from a stub into a real,

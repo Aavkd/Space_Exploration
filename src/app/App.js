@@ -58,6 +58,8 @@ import {
     BOARDING_SYSTEM_ID,
     CombatRuntime,
     CrewRuntime,
+    DialogueRuntime,
+    createConversationVoiceProvider,
     DeliveryRuntime,
     EvaBoardingRuntime,
     EconomyRuntime,
@@ -333,6 +335,14 @@ export class App {
         this.rpg = this._createRpgRuntimeSafely();
         this.crew = new CrewRuntime({ rpg: this.rpg });
         this._syncCrewPresence();
+        this.dialogueError = null;
+        // Live voice/LLM is opt-in: the adapter points at the Phase 09 service
+        // but the runtime degrades to authored/canned if it is down or disabled.
+        this.dialogueServiceBaseUrl = 'http://localhost:8000';
+        this.dialogueServiceEnabled = false;
+        this.dialogueVoiceProvider = this._createDialogueVoiceProviderSafely();
+        this.dialogue = this._createDialogueRuntimeSafely();
+        this.dialogue?.setServiceOnline(this.dialogueServiceEnabled);
         this.deliveryError = null;
         this.delivery = this._createDeliveryRuntimeSafely();
         this.economyError = null;
@@ -1084,6 +1094,37 @@ export class App {
             };
             console.warn('Economy tick failed; flight remains active.', error);
             return false;
+        }
+    }
+
+    _createDialogueVoiceProviderSafely() {
+        try {
+            return createConversationVoiceProvider({ baseUrl: this.dialogueServiceBaseUrl });
+        } catch (error) {
+            console.warn('Phase 24 voice provider unavailable; dialogue uses authored/canned replies.', error);
+            return null;
+        }
+    }
+
+    _createDialogueRuntimeSafely() {
+        try {
+            // Phase 24 hybrid dialogue. No live voice provider is wired by
+            // default: the deterministic authored track is the acceptance path,
+            // and open turns degrade to canned replies until a provider is set
+            // (owner T5 live-service check). LOD tier defaults to embodied for
+            // the active conversation.
+            return new DialogueRuntime({
+                rpg: this.rpg,
+                voiceProvider: this.dialogueVoiceProvider ?? null,
+                getGameTime: () => this.gameClock.getTime()
+            });
+        } catch (error) {
+            this.dialogueError = {
+                context: 'dialogue runtime initialization',
+                message: error instanceof Error ? error.message : String(error)
+            };
+            console.warn('Phase 24 dialogue unavailable; flight and comms remain active.', error);
+            return null;
         }
     }
 
@@ -3088,6 +3129,10 @@ export class App {
                 #crew-dialogue-panel .crew-text { margin:12px 0; padding:10px; border-left:2px solid #6ccbd1; }
                 #crew-dialogue-panel .crew-error { color:#ffaaa2; }
                 #crew-dialogue-panel button { margin:4px; padding:7px 9px; color:#e5fbff; background:#10313a; border:1px solid #559ca4; }
+                #crew-dialogue-panel .dlg-reply { margin:10px 0; padding:9px 10px; border-left:2px solid #74ffb0; background:rgba(20,50,40,.3); }
+                #crew-dialogue-panel .dlg-input-row { display:flex; gap:6px; margin:10px 4px 4px; }
+                #crew-dialogue-panel .dlg-input-row input { flex:1 1 auto; min-width:0; padding:7px 9px; color:#e5fbff; background:rgba(8,22,30,.9); border:1px solid #559ca4; font:inherit; }
+                #crew-dialogue-panel .dlg-status { margin:6px 4px; color:rgba(210,232,255,.55); font-size:11px; }
             </style>
             <div data-crew-content></div>
         `;
@@ -3113,7 +3158,23 @@ export class App {
                 this.crew.chooseRelationship(target.dataset.crewId);
                 this._syncCrewPresence();
                 this._updateCrewPanel();
+            } else if (action === 'llm-toggle') {
+                this._setDialogueServiceEnabled(!this.dialogueServiceEnabled);
+            } else if (action === 'say') {
+                const input = panel.querySelector('[data-crew-freetext]');
+                const value = input?.value ?? '';
+                if (input) input.value = '';
+                this._sayDialogueFreeText(this.crew.getState().npc.id, value, () => this._updateCrewPanel());
             }
+        });
+        panel.addEventListener('keydown', (event) => {
+            const input = event.target.closest?.('[data-crew-freetext]');
+            if (!input || event.key !== 'Enter') return;
+            event.preventDefault();
+            event.stopPropagation();
+            const value = input.value;
+            input.value = '';
+            this._sayDialogueFreeText(this.crew.getState().npc.id, value, () => this._updateCrewPanel());
         });
     }
 
@@ -3177,9 +3238,14 @@ export class App {
                 <button data-crew-action="voice">Optional voice/LLM presentation</button>
                 <button data-crew-action="interrupt">Interrupt</button>
             </div>
+            ${this._renderDialogueControlsHtml(state.npc.id, 'crew')}
             <div class="crew-error">${escapeHtml(state.error ?? '')}</div>
             <small>Authored text is authoritative and works offline. The optional provider receives read-only context and cannot change game state.</small>
         `;
+        if (this._refocusDialogueInput) {
+            this.crewContentNode.querySelector('[data-crew-freetext]')?.focus();
+            this._refocusDialogueInput = false;
+        }
     }
 
     _syncCrewPresence() {
@@ -3277,6 +3343,33 @@ export class App {
                     margin-top: 10px;
                     color: #ffcf8c;
                 }
+                #cockpit-comms-panel .dlg-reply {
+                    margin: 10px 0;
+                    padding: 9px 10px;
+                    border-left: 2px solid #74ffb0;
+                    color: #e9f5ff;
+                    background: rgba(20, 50, 40, 0.32);
+                }
+                #cockpit-comms-panel .dlg-input-row {
+                    display: flex;
+                    gap: 6px;
+                    margin-top: 10px;
+                }
+                #cockpit-comms-panel .dlg-input-row input {
+                    flex: 1 1 auto;
+                    min-width: 0;
+                    padding: 7px 9px;
+                    color: #e9f5ff;
+                    background: rgba(8, 22, 40, 0.9);
+                    border: 1px solid rgba(155, 220, 255, 0.42);
+                    border-radius: 4px;
+                    font: inherit;
+                }
+                #cockpit-comms-panel .dlg-status {
+                    margin-top: 8px;
+                    color: rgba(210, 232, 255, 0.6);
+                    font-size: 11px;
+                }
             </style>
             <div data-comms-content></div>
         `;
@@ -3292,6 +3385,24 @@ export class App {
             if (action === 'close') this._closeCommsPanel();
             else if (action === 'start') this._startCommsConversation(id);
             else if (action === 'choose') this._chooseCommsDialogue(id);
+            else if (action === 'llm-toggle') this._setDialogueServiceEnabled(!this.dialogueServiceEnabled);
+            else if (action === 'say') {
+                const input = panel.querySelector('[data-comms-freetext]');
+                const value = input?.value ?? '';
+                if (input) input.value = '';
+                const contactId = this.rpg.getCommsState().activeContactId;
+                this._sayDialogueFreeText(contactId, value, () => this._updateCommsPanel());
+            }
+        });
+        panel.addEventListener('keydown', (event) => {
+            const input = event.target.closest?.('[data-comms-freetext]');
+            if (!input || event.key !== 'Enter') return;
+            event.preventDefault();
+            event.stopPropagation();
+            const value = input.value;
+            input.value = '';
+            const contactId = this.rpg.getCommsState().activeContactId;
+            this._sayDialogueFreeText(contactId, value, () => this._updateCommsPanel());
         });
     }
 
@@ -3326,6 +3437,63 @@ export class App {
         this._updateCommsPanel();
         this._syncDebugDomState();
         return state;
+    }
+
+    // Phase 24 — route a free-text utterance through the dialogue arbiter. An
+    // authored beat is applied via the authoritative comms path (advancing the
+    // node); an open turn goes to the LLM/canned reply. Never throws into flight.
+    async _sayDialogueFreeText(npcId, rawText, refresh) {
+        const text = String(rawText ?? '').trim();
+        if (!text || !this.dialogue || !npcId) return;
+        try {
+            if (this.dialogue.npcId !== npcId || !this.dialogue.open) {
+                this.dialogue.openConversation(npcId);
+                this.dialogue.setServiceOnline(this.dialogueServiceEnabled);
+            }
+            this._dialoguePending = true;
+            refresh();
+            await this.dialogue.say(text);
+        } catch (error) {
+            console.warn('Dialogue turn failed; conversation remains usable.', error);
+        } finally {
+            this._dialoguePending = false;
+            this._refocusDialogueInput = true;
+            refresh();
+        }
+    }
+
+    _setDialogueServiceEnabled(enabled) {
+        this.dialogueServiceEnabled = Boolean(enabled);
+        this.dialogue?.setServiceOnline(this.dialogueServiceEnabled);
+        if (this.commsPanelOpen) this._updateCommsPanel();
+        if (this.crewPanelOpen) this._updateCrewPanel();
+        this._syncDebugDomState();
+        return this.dialogueServiceEnabled;
+    }
+
+    // Shared free-text controls for the comms and crew panels. `ns` is the panel's
+    // data-attribute namespace ('comms' | 'crew').
+    _renderDialogueControlsHtml(npcId, ns) {
+        if (!this.dialogue || !npcId) return '';
+        const dlg = this.dialogue.npcId === npcId ? this.dialogue.getState() : null;
+        const reply = dlg && dlg.lastTurnKind === 'open_dialogue' ? dlg.presentationText : null;
+        const routing = this.dialogue.getRouting?.(npcId) ?? null;
+        const budget = this.dialogue.getBudget?.() ?? null;
+        const llmLabel = this.dialogueServiceEnabled ? 'LLM: ON' : 'LLM: OFF';
+        const status = this._dialoguePending
+            ? 'Channel is responding…'
+            : `${routing ? `${escapeHtml(routing.model)} · ${escapeHtml(routing.reason)}` : 'authored/canned'}`
+                + `${budget ? ` · tokens ${budget.sessionTokens}/${budget.sessionTokenCap}` : ''}`;
+        const replyHtml = reply ? `<div class="dlg-reply">${escapeHtml(reply)}</div>` : '';
+        return `
+            ${replyHtml}
+            <div class="dlg-input-row">
+                <input type="text" data-${ns}-freetext placeholder="Say anything…" autocomplete="off" />
+                <button data-${ns}-action="say">Send</button>
+                <button data-${ns}-action="llm-toggle">${llmLabel}</button>
+            </div>
+            <div class="dlg-status">${status}</div>
+        `;
     }
 
     _handleCommsKeydown(event) {
@@ -3415,13 +3583,14 @@ export class App {
         });
         lines.push('</div>');
 
-        const llm = state.llmFlavor;
-        lines.push(
-            '<div class="comms-status">',
-            `LLM flavor gate: ${llm.enabled ? 'stub enabled' : 'disabled'} / ${escapeHtml(llm.source)} / no authority`,
-            '</div>'
-        );
+        // Phase 24 free-text dialogue: authored choices above stay authoritative;
+        // anything typed here is arbitrated and, if open, answered by the LLM.
+        lines.push(this._renderDialogueControlsHtml(active.id, 'comms'));
         this.commsContentNode.innerHTML = lines.join('');
+        if (this._refocusDialogueInput) {
+            this.commsContentNode.querySelector('[data-comms-freetext]')?.focus();
+            this._refocusDialogueInput = false;
+        }
     }
 
     _createNavigationPanel() {
@@ -4336,6 +4505,15 @@ export class App {
         window.addEventListener('keydown', (event) => {
             this._unlockAudioFromGesture();
 
+            // Typing in a text field (e.g. the dialogue free-text input) must
+            // never drive the ship or trigger keybinds. Escape still passes
+            // through so panels can close.
+            const focused = document.activeElement;
+            if (focused && typeof focused.matches === 'function'
+                && focused.matches('input, textarea') && event.code !== 'Escape') {
+                return;
+            }
+
             if (this._handleCombatWarningKeydown(event)) return;
             if (this._handlePatrolKeydown(event)) return;
             if (this._handleSurfaceOutpostKeydown(event)) return;
@@ -4970,6 +5148,28 @@ export class App {
                     return state;
                 },
                 syncPresence: () => this._syncCrewPresence()
+            },
+            // --- Phase 24 hybrid dialogue debug surface ---
+            dialogue: {
+                getState: (npcId) => (npcId && this.dialogue?.npcId !== npcId
+                    ? this.dialogue?.openConversation(npcId)
+                    : this.dialogue?.getState()) ?? { unavailable: this.dialogueError },
+                open: (npcId) => this.dialogue?.openConversation(npcId) ?? { unavailable: this.dialogueError },
+                close: () => this.dialogue?.closeConversation(),
+                resolveTurn: (npcId, text) => {
+                    if (npcId && this.dialogue?.npcId !== npcId) this.dialogue?.openConversation(npcId);
+                    return this.dialogue?.resolveTurn(text);
+                },
+                say: (npcId, text) => {
+                    if (npcId && this.dialogue?.npcId !== npcId) this.dialogue?.openConversation(npcId);
+                    return this.dialogue?.say(text);
+                },
+                setServiceOnline: (online) => this._setDialogueServiceEnabled(online),
+                getBudget: () => this.dialogue?.getBudget(),
+                getRouting: (npcId) => this.dialogue?.getRouting(npcId),
+                getMemory: (npcId) => this.dialogue?.getMemory(npcId),
+                injectRawResponse: (npcId, raw) => this.dialogue?.injectRawResponse(npcId, raw),
+                clearMemory: (npcId) => this.dialogue?.clearMemory(npcId)
             },
             surfaceOutpost: {
                 getState: () => this.surfaceOutpost?.getState() ?? {
