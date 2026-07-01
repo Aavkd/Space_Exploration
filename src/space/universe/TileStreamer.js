@@ -149,7 +149,7 @@ export class TileStreamer {
         this._queue.length = 0;
         this._queued.clear();
         for (const entry of this._cache.values()) {
-            entry.mesh.geometry.dispose();
+            disposeTileMesh(entry.mesh);
         }
         this._cache.clear();
     }
@@ -159,8 +159,13 @@ export class TileStreamer {
             const oldestKey = this._cache.keys().next().value;
             const oldest = this._cache.get(oldestKey);
             this._cache.delete(oldestKey);
-            oldest.mesh.geometry.dispose();
+            disposeTileMesh(oldest.mesh);
             this._stats.evictions++;
         }
     }
+}
+
+function disposeTileMesh(mesh) {
+    mesh.userData.disposeTile?.();
+    mesh.geometry.dispose();
 }

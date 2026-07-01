@@ -5399,6 +5399,31 @@ export class App {
             // --- True-radius quadtree planet (Tier 3 rework) debug surface ---
             // (docs/surface-eva-tier.md §13). No-ops on non-quadtree levels.
             getPlanetState: () => this.environment.getPlanetState?.(this.ship.position) ?? null,
+            regions: {
+                getRegions: () => this.environment.getRegions?.() ?? [],
+                regionAt: (lat, lon) => {
+                    const latitude = THREE.MathUtils.degToRad(Number(lat) || 0);
+                    const longitude = THREE.MathUtils.degToRad(Number(lon) || 0);
+                    const cosLat = Math.cos(latitude);
+                    return this.environment.regionAt?.(new THREE.Vector3(
+                        cosLat * Math.cos(longitude),
+                        Math.sin(latitude),
+                        cosLat * Math.sin(longitude)
+                    )) ?? null;
+                },
+                find: (query = {}) => this.environment.findRegions?.(query) ?? [],
+                teleportToRegion: (regionId, metres = 1000) =>
+                    this.environment.teleportShipToRegion?.(
+                        this.ship,
+                        regionId,
+                        metres,
+                        { seed: 'debug-teleport' }
+                    ) ?? null,
+                getCoverState: () => this.environment.getCoverState?.() ?? { available: false },
+                toggleCover: (enabled) => this.environment.toggleGroundCover?.(enabled) ?? false,
+                toggleWater: (enabled) => this.environment.toggleWater?.(enabled) ?? false,
+                getWeather: (regionId) => this.environment.getRegionWeather?.(regionId) ?? null
+            },
             // Run the §4 flat-horizon jitter test at the given altitudes (metres).
             // Default samples ground level and high altitude; returns per-altitude
             // camera-relative vs naive-absolute residual error in metres.

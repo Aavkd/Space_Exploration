@@ -1,6 +1,11 @@
 # Phase 25 — Biomes And Regions (Planet-Gen Depth)
 
-> **Status:** Proposed design — not started. Horizon 5 (The Living World). A
+> **Status:** **PARTIAL / VISUAL ACCEPTANCE FAILED.** The deterministic region,
+> placement, weather, cover-streaming, and water contracts are implemented and
+> automated tests pass. The actual normal-control landed view was rejected on
+> 2026-07-01: terrain, water, cover, materials, and scale composition still do
+> not meet the visual target. Phase 25 is not complete and must not be presented
+> as T4-approved. Horizon 5 (The Living World). A
 > standalone exploration/visual upgrade that *also* produces the placement
 > substrate Phase 27 cities and surface content sit on.
 > **Dependencies:** the shipped true-radius quadtree planet stack and shared
@@ -12,7 +17,107 @@
 > surface venues, and Phase 27 procedural cities.
 > **Source design:** `rpg-design-vision.md` §3.3 (planet population),
 > `rpg-future-development-roadmap.md` (Phase 25).
-> **Last updated:** 2026-06-28.
+> **Last updated:** 2026-07-01.
+
+---
+
+## 0. Rejected attempts and current live failure (2026-07-01)
+
+Owner review of the live build rejected the current planet rendering. This is
+not a polish problem: the screenshots show broken terrain representation and an
+art direction substantially worse than the intended Phase 25 result.
+
+Evidence reviewed:
+
+- [`assets/phase-25-live-player-failure-2026-07-01.png`](assets/phase-25-live-player-failure-2026-07-01.png)
+  — latest normal-control landed view after the replacement implementation.
+- `codex-clipboard-a4cbb24c-9aa9-481b-a1ec-c4df8441b99a.png` — true-radius
+  temperate planet viewed from the cockpit near the surface.
+- `codex-clipboard-2c101e73-6603-4b1b-bf8d-0eb179739358.png` — close surface view
+  of the generated ground cover.
+- Owner report: temperate planets remain visibly misshapen in the System-scale
+  view after the attempted scale isolation. This report is not represented by a
+  third screenshot but is an explicit failed acceptance result.
+
+### Latest live-build evidence
+
+![Rejected Phase 25 landed player view](assets/phase-25-live-player-failure-2026-07-01.png)
+
+The latest screenshot is authoritative over the isolated browser harness. It
+shows the real game at Tier 3, player walking, ship landed, and normal UI active.
+The geometry is no longer the original missing-face prototype, but the result is
+still visually unacceptable:
+
+| Area | Current live result | Severity |
+|---|---|---|
+| Terrain hierarchy | The foreground is a vast, almost flat lime plane followed by one broad dark ridge. There are no readable plains-to-foothills-to-ranges transitions, valleys, erosion, or useful landing-scale formations. | Critical |
+| Material/biome read | Temperate terrain is effectively two flat colors: luminous yellow-green ground and near-black ridges. Soil, grass, rock, moisture, slope, and regional transitions do not read as distinct materials. | Critical |
+| Ground cover | Cover technically streams and instances, but at player distance it reads as sparse black needles/spikes with repetitive silhouettes and arbitrary distribution. It does not read as vegetation or grounded rock. | Critical |
+| Water/horizon | The blue surface forms a huge opaque horizontal band/slab across the middle distance. Its shoreline, depth, reflection, and atmospheric relationship are unclear, so it reads as a rendering layer rather than water. | Critical |
+| Lighting and depth | Terrain and cover have weak contact shading, scale cues, and distance separation. The dark ridge collapses into a silhouette while the foreground remains uniformly bright. | High |
+| Planetary sky composition | Large overlapping star/moon discs dominate the surface sky and weaken scale credibility. This may originate in parent-system projection rather than the region model, but it is part of the failed landed experience. | High |
+| Exploration value | The visible world offers no landmark, route, terrain pocket, biome identity, or compelling destination. Stable region IDs do not yet correspond to regions the player can visually recognize. | Critical |
+
+**Owner verdict:** still ugly; Phase 25 visual acceptance failed.
+
+### Observed critical failures
+
+| Area | Observed result | Severity |
+|---|---|---|
+| Planetary silhouette | The true-radius terrain reads as a thin, jagged diagonal sheet/ribbon rather than a coherent spherical horizon. Large grey voids are visible below it. | Critical |
+| Surface continuity | The visible edge contains repeated triangular teeth, abrupt gaps/steps, and likely skirt or LOD-boundary exposure. The surface does not read as watertight. | Critical |
+| System-scale planet shape | Temperate planets are reported as no longer round. Phase-25 deformation leaked into, or otherwise failed to remain isolated from, the System-scale representation. | Critical |
+| Terrain form | Relief appears as noisy, uniformly corrugated displacement. There are no legible geological hierarchies such as plains → foothills → ranges or broad valley/canyon systems. | Critical |
+| Tessellation | Large individual terrain triangles and their color boundaries are plainly visible at walking distance. The ground reads as a low-poly debug mesh. | Critical |
+| Ground cover | Cover is represented by black cones with visibly repeated primitive silhouettes. It resembles debug collision markers, not grass, rocks, ice, or biome-specific debris. | Critical |
+| Cover placement | Cones are evenly and arbitrarily scattered, with poor scale variation and no convincing clustering, orientation, grounding, or relationship to terrain/material. | High |
+| Lighting/material response | Cover is effectively unlit black against dark terrain. Terrain colors form hard polygonal patches rather than continuous material transitions. | High |
+| Biome readability | The temperate surface is mostly dark green/black noise; biome boundaries, landforms, soil, rock, vegetation, and distance cues are not visually distinguishable. | High |
+| Exploration value | Neither screenshot presents a navigable landmark, readable route, safe landing pocket, canyon floor, or region identity. The result does not satisfy the requested terrain variety. | Critical |
+
+### Historical acceptance verdict
+
+- **Rejected:** Phase 25 is not implemented.
+- **Rejected:** ground cover must not ship in its current cone-placeholder form.
+- **Rejected:** regional relief/canyon work has not produced readable or
+  believable terrain.
+- **Rejected:** System-scale and Planet-scale shape isolation is not proven.
+- **Blocked:** region/placement APIs cannot be accepted while the underlying
+  visual and physical terrain representation is visibly broken.
+- **Do not continue to Phase 26/27** from this state.
+
+### Technical replacement attempt (not visually accepted)
+
+The replacement keeps region aggregation separate from rendered geometry and
+does not add terrain displacement. It fixes cube-face winding, returns terrain
+to front-face rendering, bounds the old 120 m skirt drops to 0.5-20 m, replaces
+black cones with lit biome-specific instancing, removes unstable planet-scale
+hash grain, adds flat sea-level water, and includes a repeatable browser harness.
+
+The following gates are failed or pending:
+
+1. **Failed:** owner normal-control landed/on-foot review shown above.
+2. **Pending:** System, orbital, and low-altitude comparison captures.
+3. **Pending:** re-entry comparison on target hardware.
+4. **Blocked:** sustained PCVR comfort/performance pass until desktop visuals
+   meet the baseline.
+
+The original required-recovery list is retained below as historical context:
+
+1. Restore a round, unchanged System-scale planet silhouette and prove the
+   System preview does not consume true-radius metre displacement.
+2. Restore a watertight, coherent true-radius surface with no exposed
+   skirts/voids and verify LOD transitions from orbit to ground.
+3. Establish a terrain-only visual benchmark with no cover enabled: broad plains,
+   readable ranges, valleys/canyons, stable normals, and continuous materials.
+4. Do not re-enable cover until terrain passes. Replace generic cones with a
+   deliberate biome asset/shape language and validate lighting, grounding,
+   density, and scale in close-up.
+5. Capture before/after screenshots at System, orbital, low-altitude, landed, and
+   on-foot distances. Owner visual approval is a gate, not a follow-up.
+
+The current experimental output is useful only as a failure record. Its visual
+choices and scale coupling are not approved design decisions.
 
 ---
 
@@ -59,10 +164,10 @@ re-entry reproduces them exactly.
 
 ```text
 buildRegionMap(planetSeed) ->                       // pure, cached per planet
-  1. Sample sampleAt(dir) over a fixed geodesic/cube-face lattice
-     (coarse, e.g. N×N per cube face) — deterministic sample points.
+  1. Sample `sampleAt(dir)` over a fixed 12×24 spherical latitude/longitude
+     lattice — coarse deterministic points unrelated to render tiles.
   2. Label connected components of `land` above sea level -> continents.
-  3. Within each continent, segment by dominant biome class -> regions.
+  3. Within each continent, aggregate cells by stable biome class -> regions.
   4. Emit stable region records with derived attributes.
 ```
 
@@ -156,26 +261,29 @@ the persistence itself.
 
 ## 6. Acceptance criteria
 
-- [ ] `getRegions()` returns a small, stable set of regions; `regionAt(dir)` is a
+- [x] `getRegions()` returns a small, stable set of regions; `regionAt(dir)` is a
       pure function of planet seed and reproduces exactly on re-entry.
-- [ ] `regionAt` biome agrees with `sampleAt` biome at the same `dir` (one source
+- [x] `regionAt` biome agrees with `sampleAt` biome at the same `dir` (one source
       of truth); region IDs are deterministically ordered and stable.
-- [ ] Region computation is independent of tile streaming/LOD — flying the planet
+- [x] Region computation is independent of tile streaming/LOD — flying the planet
       or changing view never changes region identity.
 - [ ] A planet shows two or more visibly distinct biomes/regions whose boundaries
       do not flicker across LOD transitions (fine layer stays zero-mean at the
       coarse band; orbital silhouette unchanged).
 - [ ] Instanced ground cover streams and disposes with its tile, is deterministic,
-      and never alters `heightAt`/collision.
+      and never alters `heightAt`/collision. The mechanical contract passes, but
+      the live cover still reads as rejected black spikes.
 - [ ] The sea-level water plane renders on ocean worlds with flat sea-level
-      collision; non-landable/gas bodies are unaffected.
+      collision; non-landable/gas bodies are unaffected. The layer exists, but
+      its live horizon/shoreline presentation is rejected.
 - [ ] A low-altitude pass across biomes/regions with cover enabled holds the
       documented frame budget; surface EVA still follows visible terrain.
-- [ ] `findRegions({biome,kind,minArea})` returns valid placement candidates that
+      Isolated harness timing is insufficient evidence for the normal game path.
+- [x] `findRegions({biome,kind,minArea})` returns valid placement candidates that
       a seeded offset can resolve to terrain within tolerance (never buried/
       floating) — proven with a placement smoke that reuses the Phase 16 marker
       discipline.
-- [ ] Existing landing, surface-EVA, planet-visual, and determinism tests remain
+- [x] Existing landing, surface-EVA, planet-visual, and determinism tests remain
       green.
 
 ---
@@ -201,9 +309,9 @@ the persistence itself.
 
 | Decision | Recommended default |
 |---|---|
-| Region lattice resolution | Coarse fixed per-face grid (tune for ~5–15 regions/planet); never tied to render LOD |
+| Region lattice resolution | Fixed 12×24 spherical grid; never tied to render LOD |
 | Biome taxonomy | Freeze the existing preset biome set as stable IDs; no new classes this phase |
-| Region segmentation | Connected land components → continents; dominant-biome zones → regions |
+| Region segmentation | Connected land components → continents; per-continent biome aggregates → regions |
 | Ground-cover budget | Instanced, deep-LOD-only, per-biome density cap inside the existing tile ms budget |
 | Water | Flat sea-level plane + flat collision; no hydrology |
 | Weather | Descriptor + optional near-player particles; no simulation |
@@ -228,7 +336,7 @@ seed twice and diff.
 
 ---
 
-## 10. Debug API (planned)
+## 10. Debug API
 
 ```js
 window.__deepSpaceDebug.regions.getRegions()
@@ -248,25 +356,39 @@ window.__deepSpaceDebug.regions.getWeather(regionId)
 
 ## 11. Verification record
 
-To be completed when implemented. Expected commands:
+The original prototype and the later replacement both failed owner visual
+review on 2026-07-01. Automated systems checks remain useful but do not override
+the live normal-control screenshot:
 
 ```powershell
-node --experimental-default-type=module --test tests/rpg/*.test.mjs
+node --experimental-default-type=module --test tests/rpg/*.test.mjs tests/space/*.test.mjs tests/ship/*.test.mjs
 node --experimental-default-type=module --check <each src/test JavaScript file>
 git diff --check
 ```
 
-- T0–T3: pending (region determinism + `regionAt`/`sampleAt` agreement gate).
-- T4–T6: pending owner low-altitude/on-foot + PCVR verification.
+- T0: all touched JavaScript passed syntax checks; `git diff --check` passed.
+- T1-T3: 6 Phase 25 domain tests and the full 154-test RPG/space/ship suite
+  passed. No save-envelope version changed.
+- T4 isolated diagnostic: `tests/browser/phase-25-harness.html` ran without new
+  console errors, reached LOD 17 with 459 leaves and 328 cover instances, and
+  measured 8.82 ms average frame time. This harness did not reproduce or catch
+  the unacceptable composition of the real landed game.
+- T4/T5 actual game: **failed.** The owner-provided landed/on-foot screenshot
+  shows flat lime terrain, black ridge bands, spike-like cover, slab-like water,
+  weak material/depth cues, and no recognizable region identity.
+- T6: blocked until the desktop normal-control visual baseline passes.
 
 ---
 
 ## 12. Next action
 
-If accepted, the first implementation step is the **region map and its queries**,
-not the visual depth. Build `buildRegionMap(planetSeed)` over a fixed lattice of
-existing `sampleAt` samples with connected-components labelling, expose
-`regionAt`/`getRegions`/`findRegions`, and land the determinism +
-`regionAt`↔`sampleAt` agreement tests. Only then add instanced ground cover, the
-water plane, and weather descriptors. Do not design Phase 27 city placement until
-the region IDs and the placement helper are stable.
+Treat the domain substrate as implemented but freeze Phase 26/27 dependencies
+until the visual surface passes. The next visual recovery must:
+
+1. Validate the normal game path with cover and water disabled.
+2. Establish readable terrain hierarchy and continuous biome materials.
+3. Fix the water/shoreline/horizon layer and landed parent-system sky scale.
+4. Reintroduce cover only after terrain and water pass, with recognizable,
+   grounded biome silhouettes and non-uniform clustering.
+5. Capture System, orbital, low-altitude, landed, and on-foot evidence from the
+   actual game before changing this status.

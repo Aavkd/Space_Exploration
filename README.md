@@ -54,7 +54,7 @@ Phase 21 boarding, and Phase 22 surface-combat migration, deterministic failures
 atomicity, checkpoint reloads, recovery, and long-run invariants:
 
 ```powershell
-node --experimental-default-type=module --test tests/rpg/*.test.mjs
+node --experimental-default-type=module --test tests/rpg/*.test.mjs tests/space/*.test.mjs tests/ship/*.test.mjs
 ```
 
 ## Custom Radio & Music Transceiver

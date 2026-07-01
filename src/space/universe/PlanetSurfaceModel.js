@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 import { PlanetHeightBasis } from './planetHeightBasis.js';
+import { PlanetRegionMap } from './PlanetRegionMap.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const RIGHT = new THREE.Vector3(1, 0, 0);
@@ -51,6 +52,12 @@ export class PlanetSurfaceModel {
         this._pd = new THREE.Vector3();
         this._tmpColor = new THREE.Color();
         this._tmpColorB = new THREE.Color();
+        this._c0 = new THREE.Color();
+        // Photoreal-leaning material palette derived once from the preset palette.
+        // The per-vertex albedo is a continuous blend of these across
+        // elevation/slope/moisture/latitude, not a single flat colour per biome.
+        this._matColors = buildMaterialColors(this.type, this.palette);
+        this._regionMap = null;
     }
 
     landAt(dir) {
@@ -64,17 +71,43 @@ export class PlanetSurfaceModel {
 
     surfaceRadiusAt(dir) {
         const fields = this._baseFields(dir);
-        let height = this.radius + this.reliefMetres * fields.elevationLand;
+        // Flat ocean floor at sea level; the water shell renders above it.
+        if (this.hasWater && fields.n < this.seaLevel) return this.radius;
 
-        const landMask = this.hasWater
-            ? THREE.MathUtils.smoothstep(fields.land, 0.02, 0.28)
-            : THREE.MathUtils.smoothstep(fields.elevationLand, 0.04, 0.22);
-        if (landMask > 0) {
-            height += this._basis.detailAt(dir) * (this.surface.detailAmplitude ?? 0) * landMask;
-            height += this._basis.ridgeAt(dir) * (this.surface.ridgeAmplitude ?? this.surface.localReliefAmplitude ?? 0) * landMask;
-            height += this._basis.microAt(dir) * (this.surface.microAmplitude ?? this.surface.microReliefAmplitude ?? 0) * landMask;
+        // Land amount in [0,1]: 0 at the shoreline, 1 at a continental interior.
+        const e = THREE.MathUtils.clamp(fields.elevationLand, 0, 1);
+
+        // Coastal shelf: flatten ONLY the first ~12% of land so beaches are broad
+        // and flat, then rise linearly so continents keep their full height and
+        // variation (a power curve on the whole range would crush the relief,
+        // since land values already peak well below 1).
+        const shelf = THREE.MathUtils.smoothstep(e, 0.0, 0.12);
+        let height = this.radius + this.reliefMetres * e * shelf;
+
+        // Coast gate: 0 at the waterline → 1 just inland, so relief never builds on
+        // the flat beach but reaches full strength across the continent quickly.
+        const inland = THREE.MathUtils.smoothstep(e, 0.03, 0.2);
+
+        if (inland > 0) {
+            // Low-frequency ruggedness belts: broad regions stay plains (gentle
+            // relief), others build into full mountain ranges — the source of
+            // large-scale terrain variety.
+            const belt = THREE.MathUtils.smoothstep(this._ruggednessAt(dir), 0.4, 0.72);
+
+            // Ridged noise → mountain ranges. Plains keep low rolling relief (0.15),
+            // belts build the tall ranges (up to ~1.15×).
+            const ridge = Math.max(0, this._basis.ridgeAt(dir));
+            const mountainAmp = this.surface.ridgeAmplitude ?? this.surface.localReliefAmplitude ?? 0;
+            height += ridge * mountainAmp * inland * (0.15 + belt);
+
+            // Mid-scale hills and fine roughness.
+            height += this._basis.detailAt(dir) * (this.surface.detailAmplitude ?? 0)
+                * inland * (0.55 + belt * 0.45);
+            height += this._basis.microAt(dir)
+                * (this.surface.microAmplitude ?? this.surface.microReliefAmplitude ?? 0) * inland;
         }
 
+        const landMask = inland;
         if (this.type === 'desert') height += this._duneAt(dir) * (this.surface.duneStrength ?? 0.5) * 260 * landMask;
         if (this.type === 'barren') height += this._craterHeightAt(dir);
         if (this.type === 'volcanic' || this.type === 'toxic') {
@@ -86,8 +119,18 @@ export class PlanetSurfaceModel {
             height += crack * (this.surface.crackStrength ?? 0.6) * 140;
         }
 
-        if (this.hasWater && fields.n < this.seaLevel) return this.radius;
         return height;
+    }
+
+    // Large-scale, low-frequency mask in ~[0,1] that decides where mountain belts
+    // form vs. where the land stays plains. Pure function of direction/seed.
+    _ruggednessAt(dir) {
+        const f = this.surface.ruggednessFreq ?? 1.7;
+        return this._basis._fbm(
+            dir.x * f + this._featureOffset.z * 0.3,
+            dir.y * f + this._featureOffset.x * 0.3,
+            dir.z * f + this._featureOffset.y * 0.3
+        );
     }
 
     sampleAt(dir, target = {}, { includeSlope = false, normal = null } = {}) {
@@ -126,7 +169,26 @@ export class PlanetSurfaceModel {
         target.roughnessHint = classification.roughnessHint;
         target.emissiveStrength = classification.emissiveStrength;
         target.isLiquid = isLiquid;
-        target.color = this._colorForSample(classification, target.color ?? new THREE.Color(), dir);
+
+        // Continuous slope factor in [0,1] (0 = flat, 1 = cliff). The rendered
+        // terrain path passes the real finite-difference normal; the low-res
+        // preview path falls back to the ridge field as a steepness proxy.
+        let slopeFactor;
+        if (normal) {
+            slopeFactor = 1 - THREE.MathUtils.clamp(normal.dot(dir), 0, 1);
+        } else {
+            slopeFactor = THREE.MathUtils.clamp(Math.abs(this._basis.ridgeAt(dir)) * 0.6, 0, 1);
+        }
+        target.color = this._colorForSample(classification, target.color ?? new THREE.Color(), dir, {
+            elev: normalizedElevation,
+            moist: moisture,
+            temp: temperature,
+            slope: slopeFactor,
+            land: fields.land,
+            coarse: fields.n,
+            lat: Math.abs(dir.y),
+            isLiquid
+        });
 
         if (includeSlope) {
             const n = normal ?? this.normalAt(dir, this._pa);
@@ -233,55 +295,131 @@ export class PlanetSurfaceModel {
         }
     }
 
-    _colorForSample(sample, target, dir) {
-        const p = this.palette;
-        const base = target;
-        switch (sample.material) {
-            case 'water':
-                base.set(p.water ?? '#1d5f91').lerp(this._tmpColor.set('#071c35'), 0.2);
+    getRegions() {
+        return this._getRegionMap().getRegions();
+    }
+
+    getRegion(regionId) {
+        return this._getRegionMap().getRegion(regionId);
+    }
+
+    regionAt(dir) {
+        return this._getRegionMap().regionAt(dir);
+    }
+
+    findRegions(query = {}) {
+        return this._getRegionMap().findRegions(query);
+    }
+
+    getRegionWeather(regionId) {
+        return this._getRegionMap().getWeather(regionId);
+    }
+
+    resolveRegionPlacement(regionId, options = {}) {
+        return this._getRegionMap().resolvePlacement(regionId, options);
+    }
+
+    _getRegionMap() {
+        this._regionMap ??= new PlanetRegionMap({
+            seed: this.seed,
+            surface: this
+        });
+        return this._regionMap;
+    }
+
+    // Continuous per-vertex albedo. Instead of one flat colour per biome band it
+    // blends the derived material palette across elevation, slope, moisture and
+    // latitude, then adds two-scale noise variation, so a temperate world reads as
+    // soil → grass → dry highland → bedrock → snow gradients rather than two
+    // luminous colour blocks. `ctx` carries the already-computed surface fields.
+    _colorForSample(sample, out, dir, ctx = {}) {
+        const m = this._matColors;
+        const S = THREE.MathUtils.smoothstep;
+        const clamp = THREE.MathUtils.clamp;
+        const elev = clamp(ctx.elev ?? sample?.normalizedElevation ?? 0, 0, 1.2);
+        const moist = ctx.moist ?? 0.5;
+        const temp = ctx.temp ?? 0.5;
+        const slope = ctx.slope ?? 0;
+        const land = ctx.land ?? 1;
+        const lat = ctx.lat ?? Math.abs(dir.y);
+        const isLiquid = ctx.isLiquid ?? sample?.isLiquid ?? false;
+        const c = out;
+
+        if (isLiquid) {
+            // Ocean floor / liquid bed tint; the sea-level shell renders above it.
+            const shoal = S(this.seaLevel - 0.16, this.seaLevel, ctx.coarse ?? this.seaLevel);
+            c.copy(m.waterDeep).lerp(m.waterShallow, shoal);
+            return this._applyGrain(c, dir, 0.05);
+        }
+
+        // Per-type ground base (continuous over elevation/moisture).
+        switch (this.type) {
+            case 'ice':
+                c.copy(m.ice).lerp(m.snow, S(0.08, 0.5, elev));
+                if (sample.material === 'blue ice') c.lerp(m.accent, 0.5);
                 break;
-            case 'acid':
-                base.set(p.water ?? '#8aa72c').lerp(this._tmpColor.set(p.emissive ?? '#a6ff21'), 0.22);
+            case 'desert':
+                c.copy(m.sand).lerp(m.soil, S(0.26, 0.6, elev));
+                c.lerp(m.highland, S(0.58, 0.85, elev));
+                if (sample.material === 'salt flat') c.lerp(m.snow, 0.28);
                 break;
-            case 'snow':
-                base.set(p.snow ?? '#f3f8ff');
+            case 'volcanic':
+                c.copy(m.rock).lerp(m.soil, S(0.2, 0.72, elev) * 0.6);
                 break;
-            case 'rock':
-            case 'dark rock':
-            case 'basalt':
-                base.set(p.rock ?? '#333333').lerp(this._tmpColor.set(p.highland ?? '#777777'), sample.material === 'dark rock' ? 0.12 : 0.28);
+            case 'barren':
+                c.copy(m.soil).lerp(m.highland, S(0.28, 0.8, elev));
                 break;
-            case 'lava':
-                base.set(p.emissive ?? '#ff5b1f').lerp(this._tmpColor.set(p.accent ?? '#b63a1e'), 0.28);
+            case 'toxic':
+                c.copy(m.grass).lerp(m.highland, S(0.4, 0.82, elev));
+                if (moist > 0.6) c.lerp(m.accent, 0.22);
                 break;
-            case 'sand':
-            case 'salt flat':
-                base.set(p.lowland ?? '#d0a354').lerp(this._tmpColor.set(p.accent ?? '#f0c66b'), sample.material === 'salt flat' ? 0.36 : 0.14);
-                break;
-            case 'mesa rock':
-                base.set(p.midland ?? '#9b5930').lerp(this._tmpColor.set(p.highland ?? '#6a4635'), 0.35);
-                break;
-            case 'ash':
-                base.set(p.midland ?? '#554943').lerp(this._tmpColor.set(p.rock ?? '#111111'), 0.45);
-                break;
-            case 'blue ice':
-                base.set(p.lowland ?? '#b9e4f0').lerp(this._tmpColor.set(p.accent ?? '#58c7ff'), 0.42);
-                break;
-            case 'ejecta rock':
-                base.set(p.highland ?? '#d0c3aa').lerp(this._tmpColor.set(p.rock ?? '#2f2d2a'), 0.18);
-                break;
-            case 'sulfur':
-            case 'acid crust':
-                base.set(p.midland ?? '#708236').lerp(this._tmpColor.set(p.accent ?? '#d7ff49'), sample.material === 'acid crust' ? 0.4 : 0.18);
-                break;
+            case 'temperate':
             default:
-                base.set(p.lowland ?? '#8fb37a').lerp(this._tmpColor.set(p.midland ?? '#9a7b45'), 0.25);
+                c.copy(m.drygrass).lerp(m.grass, S(0.3, 0.72, moist));
+                c.lerp(m.forest, S(0.6, 0.95, moist) * 0.7);
+                c.lerp(m.soil, S(0.36, 0.66, elev));
+                c.lerp(m.highland, S(0.62, 0.86, elev));
                 break;
         }
 
-        const fleck = this._basis.microAt ? this._basis.microAt(dir) : 0;
-        if (Number.isFinite(fleck)) base.multiplyScalar(0.95 + fleck * 0.04);
-        return base;
+        // Steep faces expose bedrock on every rocky world.
+        c.lerp(m.rock, S(0.16, 0.44, slope));
+
+        // Snow/ice caps on cold, high, or polar ground — never on hot worlds.
+        if (this.type !== 'volcanic' && this.type !== 'toxic') {
+            const cold = this.type === 'ice' ? 1 : clamp(1 - temp * 1.3, 0, 1);
+            const snowAmt = clamp((S(0.55, 0.86, elev) + S(0.8, 0.98, lat)) * (0.4 + cold), 0, 1)
+                * (1 - slope * 0.55);
+            if (snowAmt > 0) c.lerp(m.snow, snowAmt);
+        }
+
+        // Lava/acid channels stay emissive-bright over the blended base.
+        if ((sample.emissiveStrength ?? 0) > 0.3) {
+            c.lerp(m.emissive, clamp(sample.emissiveStrength, 0, 0.85));
+        }
+
+        // Sandy beach only in the thin band right at the waterline — never on the
+        // wider low-lying plains. Fully sand at the shore, fully ground by ~5% land.
+        if (this.hasWater && land < 0.06) {
+            this._c0.copy(c);
+            c.copy(m.beach).lerp(this._c0, S(0.006, 0.05, land));
+        }
+
+        return this._applyGrain(c, dir, 0.16);
+    }
+
+    // Two-scale value variation (broad patches + fine grain) to break up flat
+    // colour fields without touching hue. Pure function of direction, so it is
+    // deterministic and stable across LOD.
+    _applyGrain(c, dir, amount) {
+        const patch = this._basis._fbm(
+            dir.x * 11 + this._featureOffset.y,
+            dir.y * 11 + this._featureOffset.z,
+            dir.z * 11 + this._featureOffset.x
+        );
+        const grain = this._basis.microAt ? this._basis.microAt(dir) : 0;
+        const v = 1 + (patch - 0.5) * amount * 2 + grain * amount * 0.45;
+        return c.multiplyScalar(THREE.MathUtils.clamp(v, 0.72, 1.32));
     }
 
     _moistureAt(dir) {
@@ -371,6 +509,34 @@ export class PlanetSurfaceModel {
 
 function classResult(biome, material, roughnessHint, emissiveStrength) {
     return { biome, material, roughnessHint, emissiveStrength };
+}
+
+// Derive a small set of named material colours from a preset palette once per
+// planet. These are the stops the per-vertex albedo blends between; they are
+// read-only during sampling (no per-vertex allocation).
+function buildMaterialColors(type, palette = {}) {
+    const mk = (hex) => new THREE.Color(hex);
+    const water = palette.water ?? '#1d5f91';
+    const lowland = palette.lowland ?? '#4f9b58';
+    const midland = palette.midland ?? '#9a7b45';
+    const highland = palette.highland ?? '#60635f';
+    return {
+        waterDeep: mk(water).multiplyScalar(0.5),
+        waterShallow: mk(water).lerp(mk('#6fc7d6'), 0.5),
+        grass: mk(lowland),
+        forest: mk(lowland).lerp(mk('#20351f'), 0.55),
+        drygrass: mk(lowland).lerp(mk('#9a8f4a'), 0.42),
+        soil: mk(midland),
+        drysoil: mk(midland).lerp(mk('#6b5030'), 0.4),
+        highland: mk(highland),
+        rock: mk(palette.rock ?? '#343a36'),
+        snow: mk(palette.snow ?? '#e7f2f4'),
+        ice: mk(type === 'ice' ? lowland : '#cfe6ef'),
+        sand: mk(palette.accent ?? '#d8c98b'),
+        beach: mk(palette.accent ?? '#cbb887').lerp(mk('#b7a06a'), 0.4),
+        accent: mk(palette.accent ?? '#d8c98b'),
+        emissive: mk(palette.emissive ?? '#ff5b1f')
+    };
 }
 
 function randomUnitVector(rng, target) {

@@ -22,8 +22,8 @@ import { TileStreamer } from './TileStreamer.js';
 // tile keys over the shared height basis.
 
 const EPS = 1e-4; // finite-difference step in (u,v) for analytic-ish normals
-const MIN_SKIRT_DEPTH = 2;
-const MAX_SKIRT_DEPTH = 120;
+const MIN_SKIRT_DEPTH = 0.5;
+const MAX_SKIRT_DEPTH = 20;
 
 // Cube faces: forward = outward face normal, (right, up) span the face. A face
 // point (u,v) ∈ [-1,1]² maps to the cube point forward + u·right + v·up, then is
@@ -36,6 +36,16 @@ const FACES = [
     { forward: [0, 0, 1], right: [1, 0, 0], up: [0, 1, 0] }, // +Z
     { forward: [0, 0, -1], right: [-1, 0, 0], up: [0, 1, 0] } // -Z
 ];
+
+export function cubeFaceDirection(faceIndex, u, v, target = new THREE.Vector3()) {
+    const face = FACES[faceIndex];
+    if (!face) throw new RangeError(`Unknown cube-sphere face ${faceIndex}`);
+    return target.set(
+        face.forward[0] + u * face.right[0] + v * face.up[0],
+        face.forward[1] + u * face.right[1] + v * face.up[1],
+        face.forward[2] + u * face.right[2] + v * face.up[2]
+    ).normalize();
+}
 
 class QuadNode {
     constructor(faceIndex, u0, u1, v0, v1, depth, x = 0, y = 0) {
@@ -64,7 +74,8 @@ export class CubeSphereQuadTree {
         maxDepth,
         skirtFraction,
         streamingBudgetMs = 2.0,
-        cacheTiles = 384
+        cacheTiles = 384,
+        decorateTile = null
     }) {
         this.basis = basis;
         this.radius = basis.radius;
@@ -75,6 +86,7 @@ export class CubeSphereQuadTree {
         this.mergeThreshold = errorThreshold * 0.6;
         this.maxDepth = maxDepth;
         this.skirtFraction = skirtFraction;
+        this.decorateTile = decorateTile;
 
         // The tile root the provider anchors at the camera world position each
         // frame; all tile meshes hang off it (§4).
@@ -318,15 +330,25 @@ export class CubeSphereQuadTree {
             }
         }
 
-        // Surface indices.
+        // Surface indices. Cube faces do not all share the same (right x up)
+        // parity, so flip only the faces whose parameter-space normal points
+        // inward. This keeps the actual terrain front-facing.
         const indices = [];
+        const face = FACES[node.faceIndex];
+        const crossX = face.right[1] * face.up[2] - face.right[2] * face.up[1];
+        const crossY = face.right[2] * face.up[0] - face.right[0] * face.up[2];
+        const crossZ = face.right[0] * face.up[1] - face.right[1] * face.up[0];
+        const flipWinding = crossX * face.forward[0]
+            + crossY * face.forward[1]
+            + crossZ * face.forward[2] < 0;
         for (let j = 0; j < res; j++) {
             for (let i = 0; i < res; i++) {
                 const a = j * gridN + i;
                 const b = a + 1;
                 const c = a + gridN;
                 const d = c + 1;
-                indices.push(a, b, c, b, d, c);
+                if (flipWinding) indices.push(a, c, b, b, c, d);
+                else indices.push(a, b, c, b, d, c);
             }
         }
 
@@ -385,17 +407,13 @@ export class CubeSphereQuadTree {
 
         const mesh = new THREE.Mesh(geometry, this.material);
         mesh.name = `Tile:${node.key}`;
+        this.decorateTile?.(node, mesh, origin);
         return mesh;
     }
 
     // Unit sphere direction for a face's (u,v). Plain normalise of the cube point.
     _faceDir(faceIndex, u, v, target) {
-        const f = FACES[faceIndex];
-        return target.set(
-            f.forward[0] + u * f.right[0] + v * f.up[0],
-            f.forward[1] + u * f.right[1] + v * f.up[1],
-            f.forward[2] + u * f.right[2] + v * f.up[2]
-        ).normalize();
+        return cubeFaceDirection(faceIndex, u, v, target);
     }
 
     // Finite-difference surface normal from the shared height field, so the same
@@ -437,6 +455,7 @@ export class CubeSphereQuadTree {
     _disposeMesh(node) {
         if (!node.mesh) return;
         this.group.remove(node.mesh);
+        node.mesh.userData.disposeTile?.();
         node.mesh.geometry.dispose();
         node.mesh = null;
     }

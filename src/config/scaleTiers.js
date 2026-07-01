@@ -123,17 +123,20 @@ export const USE_QUAD_PLANET = true;
 // near the ground-track reach deep LOD and the far hemisphere stays coarse.
 export const QUAD_PLANET = Object.freeze({
     // Verts per tile edge (grid is tileRes × tileRes quads → (tileRes+1)^2 verts).
-    tileRes: 16,
+    // 22 keeps individual terrain triangles sub-metre at deep LOD so the ground
+    // reads as a continuous surface rather than a visible low-poly mesh underfoot.
+    tileRes: 22,
     // Subdivide when (tileEdgeMetres / distanceToCamera) > this. Larger = coarser.
     errorThreshold: 0.95,
-    // Hard cap on recursion depth. At R≈6.4e6 m, depth 16 → ~190 m tiles, whose
-    // vertices sit within ±100 m of the tile centre — comfortably inside float32
-    // precision once the tile is placed camera-relative (§4).
-    maxDepth: 17,
+    // Hard cap on recursion depth. At R≈6.4e6 m, depth 18 → ~95 m tiles, whose
+    // vertices sit within ±50 m of the tile centre — comfortably inside float32
+    // precision once the tile is placed camera-relative (§4). One level deeper
+    // than before so on-foot ground has walking-scale relief.
+    maxDepth: 18,
     // Skirt drop as a fraction of a tile's edge length: border verts are pulled
     // radially inward to hide cracks between adjacent LOD levels (§3.3). Cheap
     // first cut; geomorph/edge-stitch is deferred (§14).
-    skirtFraction: 0.5,
+    skirtFraction: 0.015,
     // Main-thread streaming budget for terrain geometry generation. One tile is
     // allowed to finish even if it slightly exceeds the budget; additional tiles
     // wait for later frames.

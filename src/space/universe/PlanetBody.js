@@ -130,7 +130,14 @@ export class PlanetBody {
         for (let i = 0; i < position.count; i++) {
             dir.set(position.getX(i), position.getY(i), position.getZ(i)).normalize();
             model.sampleAt(dir, sample);
-            const r = this.radius + (sample.height - this.radius) * 0.018;
+            // Displace by a small fraction of THIS sphere's radius, driven by the
+            // normalized elevation, NOT the absolute reliefMetres. The surface model
+            // is built at the true planetary radius (millions of m) where 16 km of
+            // relief is a fraction of a percent; reusing that absolute metre relief
+            // on the small system-preview sphere (~10^3 units) would deform it into
+            // lumps. normalizedElevation keeps the preview round at any radius.
+            const relief = THREE.MathUtils.clamp(sample.normalizedElevation ?? 0, -0.12, 1.4);
+            const r = this.radius * (1 + relief * 0.02);
             position.setXYZ(i, dir.x * r, dir.y * r, dir.z * r);
             const previewColor = previewColorForType(this.type, dir, sample, this.palette);
             colors[i * 3] = previewColor.r;

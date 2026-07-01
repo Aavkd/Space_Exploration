@@ -7,12 +7,12 @@ const MOON_DISTANCE_FACTOR = 0.94;
 const TRANSIT_DISTANCE_FACTOR = 0.91;
 const MAX_PROJECTED_BODIES = 10;
 const MAX_PROJECTED_MOONS = 16;
-const MIN_DISC_ANGULAR = 0.006;
-const MAX_DISC_ANGULAR = 0.055;
-const MIN_MOON_ANGULAR = 0.0035;
-const MAX_MOON_ANGULAR = 0.018;
-const SUN_MIN_ANGULAR = 0.026;
-const SUN_MAX_ANGULAR = 0.105;
+const MIN_DISC_ANGULAR = 0.005;
+const MAX_DISC_ANGULAR = 0.04;
+const MIN_MOON_ANGULAR = 0.003;
+const MAX_MOON_ANGULAR = 0.013;
+const SUN_MIN_ANGULAR = 0.02;
+const SUN_MAX_ANGULAR = 0.07;
 
 const scratchEuler = new THREE.Euler();
 const scratchVecA = new THREE.Vector3();
@@ -43,7 +43,7 @@ export function evaluateParentSystemSnapshot(snapshot, elapsedTime = 0, target =
     target.sunDirLocal = sunDirLocal;
     target.selectedSpinAngle = selectedSpinAngle;
     target.starDistance = Math.max(1, starVector.length());
-    target.starAngular = angularRadius(snapshot?.star?.radius ?? 1, target.starDistance, 9.5, SUN_MIN_ANGULAR, SUN_MAX_ANGULAR);
+    target.starAngular = angularRadius(snapshot?.star?.radius ?? 1, target.starDistance, 6.0, SUN_MIN_ANGULAR, SUN_MAX_ANGULAR);
     return target;
 }
 
@@ -343,7 +343,7 @@ function updateProjectedBody(entry, parentSystem, elapsedTime, skyOrigin, skyDis
     }
 
     const dir = parentToPlanetLocalDirection(rel, parentSystem.selected, elapsedTime, scratchVecC);
-    const angular = angularRadius(entry.body.radius, distance, 4.6 * entry.planetScale, MIN_DISC_ANGULAR, entry.body.kind === 'gas' ? MAX_DISC_ANGULAR : 0.04);
+    const angular = angularRadius(entry.body.radius, distance, 3.0 * entry.planetScale, MIN_DISC_ANGULAR, entry.body.kind === 'gas' ? MAX_DISC_ANGULAR : 0.028);
     const projectedScale = skyDistance * angular;
     entry.root.visible = true;
     entry.root.position.copy(skyOrigin).addScaledVector(dir, skyDistance * BODY_DISTANCE_FACTOR);
@@ -385,9 +385,9 @@ function updateProjectedMoon(entry, parentSystem, elapsedTime, skyOrigin, skyDis
     const angular = angularRadius(
         entry.moon.radius,
         distance,
-        selectedMoon ? 5.5 * entry.moonScale : 3.5 * entry.moonScale,
+        selectedMoon ? 4.0 * entry.moonScale : 2.6 * entry.moonScale,
         MIN_MOON_ANGULAR,
-        selectedMoon ? MAX_MOON_ANGULAR : 0.012
+        selectedMoon ? MAX_MOON_ANGULAR : 0.009
     );
     const projectedScale = skyDistance * angular;
 

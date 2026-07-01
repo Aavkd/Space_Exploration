@@ -4,6 +4,7 @@ import { planetTrueRadius, QUAD_PLANET } from '../../config/scaleTiers.js';
 import { createSeededRandom, deriveSeed, randomRange } from './rng.js';
 import { createPlanetSurfaceModel, normalizePlanetDescriptor, paletteToLegacyArray } from './planetPresets.js';
 import { CubeSphereQuadTree } from './CubeSphereQuadTree.js';
+import { GroundCoverManager } from './GroundCoverManager.js';
 import {
     atmosphereUniforms,
     buildProjectedSystemSky,
@@ -121,6 +122,10 @@ export class QuadPlanetContents {
             seed,
             radius: this.radius
         });
+        this.groundCover = new GroundCoverManager({
+            seed,
+            surface: this.basis
+        });
 
         this._material = this._createTileMaterial();
         this.quadtree = new CubeSphereQuadTree({
@@ -132,9 +137,12 @@ export class QuadPlanetContents {
             maxDepth: QUAD_PLANET.maxDepth,
             skirtFraction: QUAD_PLANET.skirtFraction,
             streamingBudgetMs: QUAD_PLANET.streamingBudgetMs,
-            cacheTiles: QUAD_PLANET.cacheTiles
+            cacheTiles: QUAD_PLANET.cacheTiles,
+            decorateTile: (node, mesh, origin) => this.groundCover.decorateTile(node, mesh, origin)
         });
         this.group.add(this.quadtree.group);
+        this.water = this._createWaterSurface();
+        if (this.water) this.group.add(this.water);
         this.atmosphere = this._createAtmosphere();
         if (this.atmosphere) this.group.add(this.atmosphere);
 
@@ -170,6 +178,13 @@ export class QuadPlanetContents {
         this._lastCamera = new THREE.Vector3();
         this.sunLight = this._createSunLight();
         this.group.add(this.sunLight, this.sunLight.target);
+        // Sky/ground fill so instanced cover and surface structures (all
+        // MeshStandardMaterial) are never rendered as unlit black silhouettes.
+        const skyFill = new THREE.Color(this.descriptor?.atmosphere?.color ?? '#8fb6ff')
+            .lerp(new THREE.Color('#ffffff'), 0.4);
+        this.fillLight = new THREE.HemisphereLight(skyFill, new THREE.Color('#41372c'), 0.85);
+        this.fillLight.name = 'PlanetaryHemisphereFill';
+        this.group.add(this.fillLight);
         this.systemSky = buildProjectedSystemSky({
             parentSystem: this.parentSystem,
             sunColor: this.sunColor,
@@ -203,6 +218,66 @@ export class QuadPlanetContents {
     // what you touch.
     heightAt(dir) {
         return this.basis.surfaceRadiusAt(dir);
+    }
+
+    getRegions() {
+        return this.basis.getRegions();
+    }
+
+    getRegion(regionId) {
+        return this.basis.getRegion(regionId);
+    }
+
+    regionAt(dir) {
+        return this.basis.regionAt(dir);
+    }
+
+    findRegions(query = {}) {
+        return this.basis.findRegions(query);
+    }
+
+    resolveRegionPlacement(regionId, options = {}) {
+        return this.basis.resolveRegionPlacement(regionId, options);
+    }
+
+    teleportShipToRegion(ship, regionId, metres = 1000, options = {}) {
+        if (!ship?.position?.isVector3) {
+            throw new TypeError('teleportShipToRegion requires a ship with a Vector3 position');
+        }
+        const placement = this.resolveRegionPlacement(regionId, options);
+        ship.position.copy(this._centerScene).addScaledVector(
+            new THREE.Vector3().fromArray(placement.direction),
+            placement.height + Math.max(0, metres)
+        );
+        ship.velocity?.set?.(0, 0, 0);
+        return placement;
+    }
+
+    getRegionWeather(regionId) {
+        return this.basis.getRegionWeather(regionId);
+    }
+
+    toggleGroundCover(enabled) {
+        return this.groundCover.setEnabled(enabled);
+    }
+
+    toggleWater(enabled) {
+        if (!this.water) return false;
+        this.water.visible = Boolean(enabled);
+        return this.water.visible;
+    }
+
+    getCoverState() {
+        return this.groundCover.getState(this.quadtree.leaves);
+    }
+
+    getWaterState() {
+        return {
+            available: Boolean(this.water),
+            enabled: Boolean(this.water?.visible),
+            radius: this.water ? this.radius + 0.35 : null,
+            material: this.descriptor.surface?.liquidMaterial ?? 'water'
+        };
     }
 
     get shipClearance() {
@@ -244,6 +319,19 @@ export class QuadPlanetContents {
         this._camLocal.copy(camera).sub(this._centerScene);
         this._lastLeafCount = this.quadtree.update(this._camLocal);
 
+        // Feed the terrain shader the local "up" (for hemispheric ambient) and an
+        // altitude-faded aerial-perspective strength (full haze near the ground,
+        // none from orbit so the limb stays crisp).
+        const camDist = Math.max(this._camLocal.length(), 1);
+        const altitude = camDist - this.radius;
+        this._material.uniforms.uUpDir.value.copy(this._camLocal).multiplyScalar(1 / camDist);
+        this._material.uniforms.uFogStrength.value =
+            1 - THREE.MathUtils.smoothstep(altitude, 2_000, 42_000);
+        if (this.water?.material?.uniforms?.uFogStrength) {
+            this.water.material.uniforms.uFogStrength.value = this._material.uniforms.uFogStrength.value;
+            this.water.material.uniforms.uTime.value = this._time;
+        }
+
         // Camera-relative placement pass (§4): anchor the tile root at the camera
         // world position, then offset each visible tile by (centre + tileOrigin −
         // camera) in float64. Both quantities are small near the camera, so the
@@ -256,6 +344,7 @@ export class QuadPlanetContents {
             if (leaf.depth > maxDepth) maxDepth = leaf.depth;
         }
         if (this.atmosphere) this.atmosphere.position.copy(this._centerScene);
+        if (this.water) this.water.position.copy(this._centerScene);
         this._updateSystemLightingAndSky(camera);
         this._lastMaxDepth = maxDepth;
     }
@@ -661,17 +750,23 @@ export class QuadPlanetContents {
         const ship = shipPosition ?? this._lastCamera;
         const toShip = this._tmp.copy(ship).sub(this._centerScene);
         const dist = toShip.length();
-        const dir = this._dir.copy(toShip).multiplyScalar(dist > 1e-6 ? 1 / dist : 0);
+        const dir = this._dir.copy(toShip);
+        if (dist > 1e-6) dir.multiplyScalar(1 / dist);
+        else dir.set(0.42, 0.55, 0.72).normalize();
         const lat = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)));
         const lon = THREE.MathUtils.radToDeg(Math.atan2(dir.z, dir.x));
         const tileStats = this.quadtree.getStats();
         const sample = this.basis.sampleAt(dir, {}, { includeSlope: true });
+        const regionId = this.regionAt(dir);
+        const region = this.getRegion(regionId);
         const altitude = dist - sample.height;
         return {
             name: this.name,
             kind: this.kind,
             planetType: this.type,
             biome: sample.biome,
+            regionId,
+            regionBiome: region.dominantBiome,
             material: sample.material,
             slopeDeg: sample.slopeDeg,
             elevation: sample.elevation,
@@ -689,6 +784,8 @@ export class QuadPlanetContents {
             leafTiles: this._lastLeafCount,
             maxLodDepth: this._lastMaxDepth,
             builtTiles: tileStats.totalBuilt,
+            cover: this.getCoverState(),
+            water: this.getWaterState(),
             parentSystemSky: projectedSkyTelemetry(this.systemSky, this._skyState),
             ...tileStats
         };
@@ -1023,12 +1120,26 @@ export class QuadPlanetContents {
     // --- Construction -------------------------------------------------------
 
     _createTileMaterial() {
+        // Ambient/fog tints derived from the atmosphere so the ground sits in the
+        // same light as the sky. Output is authored in display space (no tonemap
+        // include), so all lit values are kept in a controlled range here.
+        const atmo = new THREE.Color(this.descriptor?.atmosphere?.color ?? '#8fb6ff');
+        const skyColor = atmo.clone().lerp(new THREE.Color('#ffffff'), 0.34);
+        const groundColor = new THREE.Color('#39322a');
+        const fogColor = atmo.clone().lerp(new THREE.Color('#cdd9e6'), 0.32);
         return new THREE.ShaderMaterial({
-            side: THREE.DoubleSide,
+            side: THREE.FrontSide,
             uniforms: {
                 uSunDir: { value: this.sunDir.clone() },
                 uSunColor: { value: this.sunColor.clone() },
-                uAmbient: { value: 0.40 }
+                uAmbient: { value: 0.42 },
+                uSkyColor: { value: skyColor },
+                uGroundColor: { value: groundColor },
+                uUpDir: { value: new THREE.Vector3(0, 1, 0) },
+                uFogColor: { value: fogColor },
+                uFogNear: { value: this.radius * 0.0005 },
+                uFogFar: { value: this.radius * 0.02 },
+                uFogStrength: { value: 0 }
             },
             vertexShader: `
                 #include <common>
@@ -1038,13 +1149,16 @@ export class QuadPlanetContents {
                 varying vec3 vColor;
                 varying vec3 vMaterialData;
                 varying vec3 vWorldNormal;
-                varying vec3 vWorldPos;
+                varying vec3 vViewDir;
+                varying float vViewDist;
                 void main() {
                     vColor = aColor;
                     vMaterialData = aMaterialData;
                     vec4 worldPos = modelMatrix * vec4(position, 1.0);
-                    vWorldPos = worldPos.xyz;
                     vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                    vec3 toCam = cameraPosition - worldPos.xyz;
+                    vViewDir = normalize(toCam);
+                    vViewDist = length(toCam);
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                     #include <logdepthbuf_vertex>
                 }
@@ -1055,33 +1169,166 @@ export class QuadPlanetContents {
                 varying vec3 vColor;
                 varying vec3 vMaterialData;
                 varying vec3 vWorldNormal;
-                varying vec3 vWorldPos;
+                varying vec3 vViewDir;
+                varying float vViewDist;
                 uniform vec3 uSunDir;
                 uniform vec3 uSunColor;
                 uniform float uAmbient;
-                float hash31(vec3 p) {
-                    p = fract(p * 0.1031);
-                    p += dot(p, p.yzx + 33.33);
-                    return fract((p.x + p.y) * p.z);
-                }
+                uniform vec3 uSkyColor;
+                uniform vec3 uGroundColor;
+                uniform vec3 uUpDir;
+                uniform vec3 uFogColor;
+                uniform float uFogNear;
+                uniform float uFogFar;
+                uniform float uFogStrength;
                 void main() {
-                    float ndl = max(dot(normalize(vWorldNormal), normalize(uSunDir)), 0.0);
-                    float skyFill = 0.26 * smoothstep(-0.35, 0.45, dot(normalize(vWorldNormal), normalize(uSunDir)));
-                    float day = uAmbient + skyFill + smoothstep(-0.04, 0.42, ndl) * (1.18 + ndl * 0.72);
-                    vec3 cell = floor(vWorldPos * 0.65);
-                    float grain = hash31(cell);
+                    vec3 N = normalize(vWorldNormal);
+                    vec3 L = normalize(uSunDir);
+                    vec3 V = normalize(vViewDir);
+                    vec3 albedo = vColor;
                     float rough = clamp(vMaterialData.x, 0.0, 1.0);
-                    float micro = mix(0.86, 0.68, rough) + grain * mix(0.18, 0.42, rough);
-                    float pebble = smoothstep(0.82, 1.0, grain) * mix(0.06, 0.24, rough);
-                    float slopeShade = mix(1.0, 0.78, clamp(vMaterialData.z / 48.0, 0.0, 1.0));
-                    vec3 terrainColor = vColor * (micro + pebble) * slopeShade;
-                    vec3 emissive = vColor * vMaterialData.y * (1.4 + grain * 0.5);
-                    vec3 sunlight = mix(vec3(1.0), uSunColor, 0.72);
-                    gl_FragColor = vec4(terrainColor * day * sunlight + emissive, 1.0);
+
+                    float ndl = max(dot(N, L), 0.0);
+                    float terminator = smoothstep(-0.12, 0.16, dot(N, L));
+
+                    // Hemispheric ambient: sky tint above, warm bounce below.
+                    float hemi = clamp(dot(N, normalize(uUpDir)) * 0.5 + 0.5, 0.0, 1.0);
+                    vec3 ambient = mix(uGroundColor, uSkyColor, hemi) * uAmbient;
+
+                    vec3 direct = uSunColor * (1.2 * ndl) * terminator;
+
+                    // Crevice/slope self-shadowing from the baked slope angle.
+                    float slopeShade = mix(1.0, 0.7, clamp(vMaterialData.z / 55.0, 0.0, 1.0));
+
+                    vec3 color = albedo * (ambient + direct) * slopeShade;
+
+                    // Subtle sun specular, stronger on smooth/wet materials.
+                    vec3 H = normalize(L + V);
+                    float spec = pow(max(dot(N, H), 0.0), 28.0) * (1.0 - rough) * 0.35 * ndl;
+                    color += uSunColor * spec;
+
+                    // Emissive channels (lava, acid) glow through.
+                    color += albedo * vMaterialData.y * 1.6;
+
+                    // Aerial perspective: distant ground fades into atmospheric haze
+                    // near the surface; disabled at altitude so the limb stays crisp.
+                    float fog = uFogStrength * smoothstep(uFogNear, uFogFar, vViewDist);
+                    color = mix(color, uFogColor, fog);
+
+                    gl_FragColor = vec4(color, 1.0);
                     #include <logdepthbuf_fragment>
                 }
             `
         });
+    }
+
+    _createWaterSurface() {
+        if (!this.landable || !this.basis.hasWater) return null;
+        const isToxic = this.descriptor.surface?.liquidMaterial === 'acid' || this.type === 'toxic';
+        const color = new THREE.Color(
+            this.descriptor.palette?.water ?? (isToxic ? '#8aa72c' : '#1d5f91')
+        );
+        const atmo = new THREE.Color(this.descriptor?.atmosphere?.color ?? '#8fb6ff');
+        const skyColor = atmo.clone().lerp(new THREE.Color('#ffffff'), 0.4);
+        const fogColor = atmo.clone().lerp(new THREE.Color('#cdd9e6'), 0.32);
+        // Finer tessellation so the near-camera sea and the horizon line stay
+        // smooth rather than reading as a faceted low-poly disc.
+        const geometry = new THREE.SphereGeometry(this.radius + 0.35, 192, 96);
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                uColor: { value: color },
+                uSunColor: { value: this.sunColor.clone() },
+                uSunDir: { value: this.sunDir.clone() },
+                uSkyColor: { value: skyColor },
+                uFogColor: { value: fogColor },
+                uFogNear: { value: this.radius * 0.0006 },
+                uFogFar: { value: this.radius * 0.02 },
+                uFogStrength: { value: 0 },
+                uToxic: { value: isToxic ? 1 : 0 },
+                uTime: { value: 0 }
+            },
+            vertexShader: `
+                #include <common>
+                #include <logdepthbuf_pars_vertex>
+                varying vec3 vNormalWorld;
+                varying vec3 vViewDir;
+                varying vec3 vDir;
+                varying float vViewDist;
+                void main() {
+                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                    vNormalWorld = normalize(mat3(modelMatrix) * normal);
+                    vec3 toCam = cameraPosition - worldPos.xyz;
+                    vViewDir = normalize(toCam);
+                    vViewDist = length(toCam);
+                    vDir = normalize(position);
+                    gl_Position = projectionMatrix * viewMatrix * worldPos;
+                    #include <logdepthbuf_vertex>
+                }
+            `,
+            fragmentShader: `
+                #include <common>
+                #include <logdepthbuf_pars_fragment>
+                varying vec3 vNormalWorld;
+                varying vec3 vViewDir;
+                varying vec3 vDir;
+                varying float vViewDist;
+                uniform vec3 uColor;
+                uniform vec3 uSunColor;
+                uniform vec3 uSunDir;
+                uniform vec3 uSkyColor;
+                uniform vec3 uFogColor;
+                uniform float uFogNear;
+                uniform float uFogFar;
+                uniform float uFogStrength;
+                uniform float uToxic;
+                uniform float uTime;
+                void main() {
+                    vec3 N = normalize(vNormalWorld);
+                    vec3 L = normalize(uSunDir);
+                    vec3 V = normalize(vViewDir);
+
+                    // Animated micro-normal for a living, glinting surface. vDir is a
+                    // stable unit coordinate so the ripple phase never swims.
+                    float r1 = sin(vDir.x * 520.0 + uTime * 0.7) * cos(vDir.z * 470.0 - uTime * 0.5);
+                    float r2 = sin(vDir.y * 610.0 - uTime * 0.4) * cos(vDir.x * 560.0 + uTime * 0.6);
+                    vec3 Np = normalize(N + vec3(r1, 0.0, r2) * 0.05);
+
+                    float diff = max(dot(N, L), 0.0);
+                    float fresnel = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+
+                    vec3 deep = uColor * (0.32 + diff * 0.42);
+                    vec3 skyTint = mix(uColor, uSkyColor, 0.62);
+                    vec3 base = mix(deep, skyTint, clamp(fresnel * 0.75, 0.0, 0.75));
+
+                    // Sharp sun glint plus a broader sheen off the rippled normal.
+                    vec3 H = normalize(L + V);
+                    float ndh = max(dot(Np, H), 0.0);
+                    float glint = pow(ndh, 200.0) * 1.7 + pow(ndh, 36.0) * 0.14;
+                    vec3 color = base + uSunColor * glint * diff;
+
+                    // Toxic seas glow faintly instead of reflecting sky.
+                    color += uColor * uToxic * 0.12;
+
+                    float fog = uFogStrength * smoothstep(uFogNear, uFogFar, vViewDist);
+                    color = mix(color, uFogColor, fog);
+
+                    float alpha = mix(0.78, 0.97, clamp(diff + 0.35, 0.0, 1.0));
+                    alpha = mix(alpha, 1.0, fog);
+                    gl_FragColor = vec4(color, alpha);
+                    #include <logdepthbuf_fragment>
+                }
+            `,
+            transparent: true,
+            depthWrite: true,
+            side: THREE.FrontSide,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = isToxic ? 'AcidSeaLevelSurface' : 'WaterSeaLevelSurface';
+        mesh.frustumCulled = false;
+        return mesh;
     }
 
     _createSunLight() {
@@ -1096,6 +1343,9 @@ export class QuadPlanetContents {
         this.sunDir.copy(state.sunDirLocal);
         this._material.uniforms.uSunDir.value.copy(this.sunDir);
         this._material.uniforms.uSunColor.value.copy(this.sunColor);
+        if (this.water?.material?.uniforms?.uSunDir) {
+            this.water.material.uniforms.uSunDir.value.copy(this.sunDir);
+        }
         if (this.atmosphere?.material?.uniforms?.uSunDir) {
             this.atmosphere.material.uniforms.uSunDir.value.copy(this.sunDir);
         }
@@ -1182,7 +1432,12 @@ export class QuadPlanetContents {
 
     dispose() {
         this.quadtree.dispose();
+        this.groundCover.dispose();
         this._material.dispose();
+        if (this.water) {
+            this.water.geometry.dispose();
+            this.water.material.dispose();
+        }
         if (this.atmosphere) {
             this.atmosphere.geometry.dispose();
             this.atmosphere.material.dispose();

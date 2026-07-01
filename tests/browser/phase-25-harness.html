@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Phase 25 Browser Harness</title>
+    <style>
+        html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #020711; color: #dff7ff; font: 13px/1.4 monospace; }
+        canvas { display: block; width: 100%; height: 100%; }
+        #status { position: fixed; left: 12px; top: 12px; max-width: 460px; padding: 10px 12px; white-space: pre-wrap; background: rgba(0, 8, 16, .78); border: 1px solid #4d91a8; z-index: 2; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="status">starting</div>
+    <canvas id="planet"></canvas>
+    <script type="module" src="./phase-25-harness.js"></script>
+</body>
+</html>

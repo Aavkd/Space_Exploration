@@ -536,7 +536,12 @@ Decision gate: model tiering per NPC LOD, and the per-session/per-day LLM budget
 
 ### Phase 25 - Biomes And Regions (Planet-Gen Depth)
 
-**Status:** Design locked; see
+**Status:** **Partial; visual acceptance failed.** Stable region/query/placement
+contracts and automated tests pass, but the 2026-07-01 normal-control landed
+review still shows flat lime terrain, black banded ridges, spike-like cover,
+slab-like water, weak depth/material cues, and no recognizable visual region
+identity. The isolated harness is diagnostic evidence only, not T4 acceptance.
+Phase 26/27 must not treat the surface presentation as approved; see
 [`phase-25-biomes-and-regions.md`](phase-25-biomes-and-regions.md).
 
 **Objective:** per-point biome *classification* already ships
